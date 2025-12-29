@@ -49,6 +49,16 @@ h1{margin:0}
 .analysis-list{display:grid;gap:4px;font-size:12px;color:var(--muted)}
 .analysis-list ul{margin:0 0 0 16px;padding:0}
 .analysis-list li{margin:2px 0}
+.brief{margin-top:12px;padding:12px;border-radius:12px;background:#ffffff;border:1px solid #e2e8f0;box-shadow:0 6px 14px rgba(0,0,0,0.05)}
+.brief-title{font-size:13px;font-weight:600;color:var(--ink)}
+.brief-row{margin-top:6px;font-size:12px;color:var(--muted)}
+.brief-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-top:8px}
+.brief-col{background:#f8fafc;border-radius:10px;padding:8px}
+.brief-col ul{margin:6px 0 0 16px;padding:0;font-size:12px;color:var(--muted)}
+.brief-empty{font-size:12px;color:var(--muted)}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.filter-btn{border:1px solid #e2e8f0;background:#fff;border-radius:999px;padding:4px 10px;font-size:12px;color:var(--muted);cursor:pointer}
+.filter-btn.active{background:#0b1220;color:#fff;border-color:#0b1220}
 </style>
 </head>
 <body>
@@ -70,6 +80,18 @@ h1{margin:0}
       <div class="kpi">今日新增 {{TODAY_COUNT}}</div>
     </div>
   </header>
+
+  <section class="brief">
+    <div class="brief-title">今日摘要（战略 / 操作）</div>
+    {{DAILY_BRIEF}}
+  </section>
+
+  <div class="filters">
+    <button class="filter-btn active" data-impact="all">全部</button>
+    <button class="filter-btn" data-impact="利好">对中国利好</button>
+    <button class="filter-btn" data-impact="中性">对中国中性</button>
+    <button class="filter-btn" data-impact="利空">对中国利空</button>
+  </div>
 
   <div class="feed">
     {{CARDS}}
@@ -100,6 +122,36 @@ h1{margin:0}
   } catch (e) {
     // ignore
   }
+})();
+
+(function(){
+  const buttons = Array.from(document.querySelectorAll('.filter-btn'));
+  const rows = Array.from(document.querySelectorAll('.row'));
+  if (!buttons.length) return;
+
+  const setActive = (btn) => {
+    buttons.forEach((el) => el.classList.remove('active'));
+    btn.classList.add('active');
+  };
+
+  const applyFilter = (impact) => {
+    rows.forEach((row) => {
+      if (impact === 'all') {
+        row.style.display = '';
+        return;
+      }
+      const value = row.getAttribute('data-impact') || '';
+      row.style.display = value === impact ? '' : 'none';
+    });
+  };
+
+  buttons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const impact = btn.getAttribute('data-impact') || 'all';
+      setActive(btn);
+      applyFilter(impact);
+    });
+  });
 })();
 </script>
 </body>
