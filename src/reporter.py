@@ -548,13 +548,14 @@ class Reporter:
             f"近30天 {window_30.get('count', 0)} 条 · 高风险 {window_30.get('high_risk', 0)}"
             f" ｜ 近90天 {window_90.get('count', 0)} 条 · 高风险 {window_90.get('high_risk', 0)}"
         )
+        fallback = '<div class="meta">暂无</div>'
 
         return (
             f'<div class="rollups-row">{summary_line}</div>'
             f'<div class="rollups-grid">'
-            f'<div class="rollup-col"><div class="meta">矿种聚合</div>{top_minerals or "<div class=\"meta\">暂无</div>"}</div>'
-            f'<div class="rollup-col"><div class="meta">国家聚合</div>{top_countries or "<div class=\"meta\">暂无</div>"}</div>'
-            f'<div class="rollup-col"><div class="meta">动作聚合</div>{top_actions or "<div class=\"meta\">暂无</div>"}</div>'
+            f'<div class="rollup-col"><div class="meta">矿种聚合</div>{top_minerals or fallback}</div>'
+            f'<div class="rollup-col"><div class="meta">国家聚合</div>{top_countries or fallback}</div>'
+            f'<div class="rollup-col"><div class="meta">动作聚合</div>{top_actions or fallback}</div>'
             f'</div>'
         )
 
