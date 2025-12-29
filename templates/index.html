@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>稀土情报哨兵 · Atlas Feed</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0b1220; --muted:#536170; --bg:#e9eef5;
+  --card:#ffffff; --accent:#1d4ed8; --warn:#f59e0b; --risk:#ef4444;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Space Grotesk",sans-serif;background:linear-gradient(180deg,#f7f9fc,#e9eef5)}
+.container{max-width:1180px;margin:0 auto;padding:24px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:16px;flex-wrap:wrap}
+h1{margin:0}
+.meta{font-size:12px;color:var(--muted)}
+.kpis{display:flex;gap:12px;flex-wrap:wrap}
+.kpi{background:#fff;border-radius:10px;padding:10px 14px;box-shadow:0 6px 14px rgba(0,0,0,0.05);font-size:12px}
+.feed{display:grid;gap:10px;margin-top:10px}
+.row{
+  background:var(--card);border-radius:10px;padding:14px;
+  border-left:6px solid var(--accent);display:grid;gap:6px;
+}
+.row.risk{border-left-color:var(--risk)}
+.row.warn{border-left-color:var(--warn)}
+.title a{color:var(--ink);text-decoration:none}
+.title a:hover{text-decoration:underline}
+.tags{display:flex;gap:6px;flex-wrap:wrap}
+.tag{font-size:11px;background:#eff6ff;color:#1d4ed8;padding:3px 8px;border-radius:999px}
+.update{margin-top:6px}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>稀土情报哨兵</h1>
+      <div class="meta">Atlas Feed · 非中国项目情报流</div>
+      <div class="meta update">更新：{{LAST_UPDATE}}</div>
+    </div>
+    <div class="kpis">
+      <div class="kpi">累计情报 {{TOTAL_COUNT}}</div>
+      <div class="kpi">高风险 {{HIGH_RISK_COUNT}}</div>
+      <div class="kpi">今日新增 {{TODAY_COUNT}}</div>
+    </div>
+  </header>
+
+  <div class="feed">
+    {{CARDS}}
+  </div>
+</div>
+</body>
+</html>
