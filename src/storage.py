@@ -44,12 +44,13 @@ class Storage:
     def is_seen(self, url, seen_ids):
         return hash_url(url) in seen_ids
 
-    def build_record(self, item, analysis, content):
+    def build_record(self, item, analysis, content, content_source="fulltext", fetch_status=None, resolved_url=None):
         now = now_cst()
         return {
             "id": hash_url(item.get("url", "")),
             "title": item.get("title", ""),
             "url": item.get("url", ""),
+            "resolved_url": resolved_url or item.get("url", ""),
             "source_type": item.get("source_type", ""),
             "published_at": item.get("published_at", ""),
             "collected_at": isoformat(now),
@@ -66,6 +67,8 @@ class Storage:
             "china_dependency": analysis.get("china_dependency", "None"),
             "china_role": analysis.get("china_role", "Mentioned"),
             "confidence": analysis.get("confidence", 60),
+            "content_source": content_source,
+            "fetch_status": fetch_status or "",
             "content": content,
         }
 
