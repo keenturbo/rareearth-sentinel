@@ -1,4 +1,6 @@
 import argparse
+import json
+import os
 import time
 
 from src.config import Config
@@ -156,6 +158,100 @@ def run_pipeline(config):
         raise
 
 
+def _needs_backfill(record):
+    expert_summary = str(record.get("expert_summary", "")).strip()
+    return not expert_summary
+
+
+def _merge_analysis(record, analysis):
+    for key, value in analysis.items():
+        record[key] = value
+    return record
+
+
+def backfill_records(config, limit=0):
+    storage = Storage(config)
+    extractor = GeminiExtractor(config)
+    reporter = Reporter(config)
+
+    input_path = storage.jsonl_path
+    if not os.path.exists(input_path):
+        print("No history file found for backfill.")
+        return 0
+
+    tmp_path = input_path + ".tmp"
+    updated = 0
+    processed = 0
+    skipped = 0
+    analyze_fail = 0
+
+    with open(input_path, "r", encoding="utf-8") as src, open(
+        tmp_path, "w", encoding="utf-8"
+    ) as dst:
+        for line in src:
+            processed += 1
+            raw = line.rstrip("\n")
+            if not raw:
+                continue
+            try:
+                record = json.loads(raw)
+            except json.JSONDecodeError:
+                dst.write(raw + "\n")
+                continue
+
+            if not _needs_backfill(record):
+                dst.write(json.dumps(record, ensure_ascii=False) + "\n")
+                continue
+
+            if limit and updated >= limit:
+                dst.write(json.dumps(record, ensure_ascii=False) + "\n")
+                continue
+
+            content = str(record.get("content", "")).strip()
+            if not content:
+                skipped += 1
+                dst.write(json.dumps(record, ensure_ascii=False) + "\n")
+                continue
+
+            content = clean_text(content)
+            if len(content) < config.summary_min_chars:
+                skipped += 1
+                dst.write(json.dumps(record, ensure_ascii=False) + "\n")
+                continue
+
+            analysis = extractor.analyze(content)
+            if analysis is None:
+                analyze_fail += 1
+                dst.write(json.dumps(record, ensure_ascii=False) + "\n")
+                continue
+
+            record = _merge_analysis(record, analysis)
+            dst.write(json.dumps(record, ensure_ascii=False) + "\n")
+            updated += 1
+            title = str(record.get("title", ""))
+            print(f"[backfill] updated: {title[:120]}")
+
+            if config.analyze_delay_seconds > 0:
+                time.sleep(config.analyze_delay_seconds)
+
+    if updated > 0:
+        os.replace(tmp_path, input_path)
+        reporter.rebuild(storage)
+    else:
+        os.remove(tmp_path)
+
+    print(
+        "Backfill complete. Updated: {updated} | processed: {processed} | "
+        "skipped: {skipped} | analyze_fail: {analyze_fail}".format(
+            updated=updated,
+            processed=processed,
+            skipped=skipped,
+            analyze_fail=analyze_fail,
+        )
+    )
+    return updated
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -163,9 +259,24 @@ def main():
         action="store_true",
         help="Rebuild index.json and index.html from history",
     )
+    parser.add_argument(
+        "--backfill",
+        action="store_true",
+        help="Backfill expert fields for historical records",
+    )
+    parser.add_argument(
+        "--backfill-limit",
+        type=int,
+        default=0,
+        help="Max records to backfill (0 = no limit)",
+    )
     args = parser.parse_args()
 
     config = Config.from_env()
+
+    if args.backfill:
+        backfill_records(config, limit=args.backfill_limit)
+        return
 
     if args.rebuild:
         storage = Storage(config)
