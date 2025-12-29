@@ -10,6 +10,7 @@ class Storage:
         self.config = config
         os.makedirs(self.config.data_dir, exist_ok=True)
         os.makedirs(self.config.static_dir, exist_ok=True)
+        os.makedirs(self.archive_dir, exist_ok=True)
 
     @property
     def jsonl_path(self):
@@ -26,6 +27,14 @@ class Storage:
     @property
     def status_json_path(self):
         return os.path.join(self.config.static_dir, "status.json")
+
+    @property
+    def archive_dir(self):
+        return os.path.join(self.config.static_dir, "archive")
+
+    @property
+    def rollups_json_path(self):
+        return os.path.join(self.config.static_dir, "rollups.json")
 
     def load_existing_ids(self):
         seen = set()
@@ -120,6 +129,20 @@ class Storage:
                 recent.append(record)
         return total, list(recent)
 
+    def iter_records(self):
+        if not os.path.exists(self.jsonl_path):
+            return
+        with open(self.jsonl_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                yield record
+
     def write_index_json(self, index_data):
         with open(self.index_json_path, "w", encoding="utf-8") as f:
             json.dump(index_data, f, ensure_ascii=False, indent=2)
@@ -131,3 +154,13 @@ class Storage:
     def write_status_json(self, status_data):
         with open(self.status_json_path, "w", encoding="utf-8") as f:
             json.dump(status_data, f, ensure_ascii=False, indent=2)
+
+    def write_archive_json(self, month, data):
+        os.makedirs(self.archive_dir, exist_ok=True)
+        path = os.path.join(self.archive_dir, f"{month}.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def write_rollups_json(self, rollups):
+        with open(self.rollups_json_path, "w", encoding="utf-8") as f:
+            json.dump(rollups, f, ensure_ascii=False, indent=2)
