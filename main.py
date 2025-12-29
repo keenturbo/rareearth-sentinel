@@ -7,7 +7,6 @@ from src.fetcher import Fetcher
 from src.extractor import GeminiExtractor
 from src.storage import Storage
 from src.reporter import Reporter
-from src.utils import is_china_primary
 
 
 def run_pipeline(config):
@@ -18,15 +17,39 @@ def run_pipeline(config):
     extractor = GeminiExtractor(config)
     reporter = Reporter(config)
 
-    new_count = 0
+    stats = {
+        "total_items": 0,
+        "seen": 0,
+        "fetch_fail": 0,
+        "too_short": 0,
+        "analyze_fail": 0,
+        "saved": 0,
+    }
 
     for source in sources:
-        for item in source.fetch_items():
-            if storage.is_seen(item["url"], seen_ids):
+        items = source.fetch_items()
+        print(f"[source] {source.__class__.__name__}: {len(items)} items")
+
+        for item in items:
+            title = (item.get("title") or "").strip()
+            url = item.get("url")
+            stats["total_items"] += 1
+            print(f"[item] {title[:120]}")
+
+            if storage.is_seen(url, seen_ids):
+                stats["seen"] += 1
+                print("  - skip: seen")
                 continue
 
-            content = fetcher.fetch(item["url"])
-            if not content or len(content) < config.min_content_chars:
+            content = fetcher.fetch(url)
+            if not content:
+                stats["fetch_fail"] += 1
+                print("  - skip: fetch_fail")
+                continue
+
+            if len(content) < config.min_content_chars:
+                stats["too_short"] += 1
+                print(f"  - skip: too_short ({len(content)} chars)")
                 continue
 
             if config.fetch_delay_seconds > 0:
@@ -34,21 +57,21 @@ def run_pipeline(config):
 
             analysis = extractor.analyze(content)
             if analysis is None:
-                continue
-
-            if is_china_primary(analysis.get("country_primary", "")):
+                stats["analyze_fail"] += 1
+                print("  - skip: analyze_fail")
                 continue
 
             record = storage.build_record(item, analysis, content)
             storage.append_record(record)
             seen_ids.add(record["id"])
-            new_count += 1
+            stats["saved"] += 1
+            print("  + saved")
 
             if config.analyze_delay_seconds > 0:
                 time.sleep(config.analyze_delay_seconds)
 
     reporter.rebuild(storage)
-    return new_count
+    return stats
 
 
 def main():
@@ -69,8 +92,12 @@ def main():
         print("Rebuild complete.")
         return
 
-    new_count = run_pipeline(config)
-    print(f"Run complete. New records: {new_count}")
+    stats = run_pipeline(config)
+    print(
+        "Run complete. New records: {saved} | "
+        "items: {total_items}, seen: {seen}, fetch_fail: {fetch_fail}, "
+        "too_short: {too_short}, analyze_fail: {analyze_fail}".format(**stats)
+    )
 
 
 if __name__ == "__main__":
