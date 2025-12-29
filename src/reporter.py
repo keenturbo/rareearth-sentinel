@@ -47,14 +47,17 @@ class Reporter:
         with open(template_path, "r", encoding="utf-8") as f:
             template = f.read()
 
-        cards_html = self._render_cards(index_data.get("items", []))
+        items = index_data.get("items", [])
+        cards_html = self._render_cards(items)
         stats = index_data.get("stats", {})
+        daily_brief = self._render_daily_brief(items)
 
         html_out = (
             template.replace("{{TOTAL_COUNT}}", str(stats.get("total_count", 0)))
             .replace("{{HIGH_RISK_COUNT}}", str(stats.get("high_risk_count", 0)))
             .replace("{{TODAY_COUNT}}", str(stats.get("today_count", 0)))
             .replace("{{LAST_UPDATE}}", index_data.get("last_update", ""))
+            .replace("{{DAILY_BRIEF}}", daily_brief)
             .replace("{{CARDS}}", cards_html)
         )
         return html_out
@@ -77,6 +80,7 @@ class Reporter:
             risk_level = int(item.get("risk_level", 0) or 0)
             published = html.escape(item.get("published_at", ""))
             collected = html.escape(item.get("collected_at", ""))
+            impact = html.escape(item.get("china_impact") or "未知")
             date_label = published or collected
             meta_line = f"{country} · {action} · 风险 {risk_level}"
             if date_label:
@@ -106,7 +110,7 @@ class Reporter:
 
             rows.append(
                 """
-<div class="{row_class}">
+<div class="{row_class}" data-impact="{impact}">
   <div class="meta">{meta_line}</div>
   <div class="title"><a href="{url}" target="_blank">{title}</a></div>
   <div class="meta">摘要：{summary}</div>
@@ -121,6 +125,7 @@ class Reporter:
                     summary=summary or "-",
                     analysis_html=analysis_html,
                     tags_html=tags_html,
+                    impact=impact,
                 )
             )
 
@@ -256,6 +261,76 @@ class Reporter:
             f"{summary_html}"
             f"{details_html}"
             "</div>"
+        )
+
+    def _append_unique(self, target, seen, value, limit):
+        if len(target) >= limit:
+            return
+        text = str(value).strip()
+        if not text:
+            return
+        key = text.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        target.append(text)
+
+    def _render_brief_list(self, items, label):
+        if not items:
+            return (
+                f'<div class="brief-col"><div class="meta">{label}</div>'
+                '<div class="meta">暂无建议</div></div>'
+            )
+        list_html = "".join(f"<li>{html.escape(item)}</li>" for item in items)
+        return (
+            f'<div class="brief-col"><div class="meta">{label}</div>'
+            f"<ul>{list_html}</ul></div>"
+        )
+
+    def _is_today(self, item):
+        collected_at = item.get("collected_at", "")
+        if not collected_at:
+            return False
+        try:
+            dt = datetime.fromisoformat(collected_at)
+        except ValueError:
+            return False
+        return dt.date() == now_cst().date()
+
+    def _render_daily_brief(self, items):
+        strategy = []
+        tactical = []
+        seen_strategy = set()
+        seen_tactical = set()
+        impact_counts = {"利好": 0, "中性": 0, "利空": 0}
+        sample_count = 0
+
+        for item in items:
+            if not self._is_today(item):
+                continue
+            sample_count += 1
+            impact = str(item.get("china_impact", "")).strip()
+            if impact in impact_counts:
+                impact_counts[impact] += 1
+
+            for rec in item.get("recommendations_strategy") or []:
+                self._append_unique(strategy, seen_strategy, rec, 5)
+            for rec in item.get("recommendations_tactical") or []:
+                self._append_unique(tactical, seen_tactical, rec, 5)
+
+        if sample_count == 0:
+            return '<div class="brief-empty">今日暂无摘要</div>'
+
+        counts_line = (
+            f"样本 {sample_count} · 利好 {impact_counts['利好']} · "
+            f"中性 {impact_counts['中性']} · 利空 {impact_counts['利空']}"
+        )
+        strategy_html = self._render_brief_list(strategy, "战略建议")
+        tactical_html = self._render_brief_list(tactical, "操作建议")
+
+        return (
+            f'<div class="brief-row">{counts_line}</div>'
+            f'<div class="brief-grid">{strategy_html}{tactical_html}</div>'
         )
 
     def _prune_record(self, record):
