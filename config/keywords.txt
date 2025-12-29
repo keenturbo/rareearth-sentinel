@@ -1,8 +1,72 @@
-rare earth mining investment -china
-rare earth project financing -china
-rare earth discovery -china
-critical minerals policy -china
-lithium mine expansion -china
-cobalt mine investment -china
-gallium germanium export restriction -china
-rare earth processing plant -china
+# Core rare earth terms
+rare earth
+rare earths
+rare earth element
+rare earth oxide
+rare earth mining
+rare earth project
+rare earth deposit
+rare earth discovery
+rare earth resource estimate
+rare earth drilling results
+rare earth feasibility study
+rare earth pre-feasibility
+rare earth processing
+rare earth separation
+rare earth refinery
+rare earth processing plant
+rare earth concentrate
+rare earth magnet
+NdFeB magnet
+permanent magnet rare earth
+rare earth offtake agreement
+rare earth supply chain
+rare earth recycling
+monazite
+bastnaesite
+ion-adsorption clay
+rare earth carbonate
+rare earth chloride
+
+# LREE/HREE specific minerals
+lanthanum project
+cerium project
+praseodymium project
+neodymium project
+samarium project
+europium project
+gadolinium project
+terbium project
+dysprosium project
+yttrium project
+holmium project
+erbium project
+thulium project
+ytterbium project
+lutetium project
+scandium project
+
+# Critical materials & policy (DOE/USGS aligned)
+critical minerals policy
+critical minerals strategy
+critical minerals list
+critical materials list
+strategic minerals supply chain
+critical minerals financing
+critical minerals processing
+critical minerals refinery
+critical minerals offtake
+critical minerals export restriction
+
+# Critical minerals tied to REE supply chains
+lithium mine expansion
+cobalt mine investment
+nickel mine expansion
+graphite supply chain
+gallium supply
+germanium supply
+iridium supply
+platinum group metals mining
+silicon carbide supply
+magnesium supply
+fluorine supply
