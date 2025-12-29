@@ -57,6 +57,7 @@ class Config:
     fetch_delay_seconds: float
     analyze_delay_seconds: float
     min_content_chars: int
+    summary_min_chars: int
     index_limit: int
 
     @classmethod
@@ -78,6 +79,7 @@ class Config:
             fetch_delay_seconds=_get_float("FETCH_DELAY_SECONDS", 1.5),
             analyze_delay_seconds=_get_float("ANALYZE_DELAY_SECONDS", 1.5),
             min_content_chars=_get_int("MIN_CONTENT_CHARS", 800),
+            summary_min_chars=_get_int("SUMMARY_MIN_CHARS", 160),
             index_limit=_get_int("INDEX_LIMIT", 200),
         )
 
