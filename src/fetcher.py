@@ -16,12 +16,13 @@ class Fetcher:
 
     def fetch(self, url):
         if not url:
-            return None
+            return {"content": None, "status": "missing", "resolved_url": url}
         target_url = self._resolve_url(url)
-        content = self._fetch_jina(target_url)
+        content, status = self._fetch_jina(target_url)
         if content:
-            return content
-        return self._fetch_direct(target_url)
+            return {"content": content, "status": status, "resolved_url": target_url}
+        content, status = self._fetch_direct(target_url)
+        return {"content": content, "status": status, "resolved_url": target_url}
 
     def _fetch_jina(self, url):
         jina_url = self._to_jina_url(url)
@@ -34,12 +35,12 @@ class Fetcher:
             )
         except requests.RequestException as exc:
             print(f"  - fetch: jina_error {exc.__class__.__name__}")
-            return None
+            return None, "jina_error"
 
         if resp.status_code != 200:
             print(f"  - fetch: jina_status {resp.status_code}")
-            return None
-        return resp.text
+            return None, f"jina_status:{resp.status_code}"
+        return resp.text, "jina_ok"
 
     def _fetch_direct(self, url):
         try:
@@ -51,12 +52,12 @@ class Fetcher:
             )
         except requests.RequestException as exc:
             print(f"  - fetch: direct_error {exc.__class__.__name__}")
-            return None
+            return None, "direct_error"
 
         if resp.status_code != 200:
             print(f"  - fetch: direct_status {resp.status_code}")
-            return None
-        return resp.text
+            return None, f"direct_status:{resp.status_code}"
+        return resp.text, "direct_ok"
 
     def _resolve_url(self, url):
         parsed = urlparse(url)
