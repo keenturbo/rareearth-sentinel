@@ -30,6 +30,10 @@ h1{margin:0}
 .tags{display:flex;gap:6px;flex-wrap:wrap}
 .tag{font-size:11px;background:#eff6ff;color:#1d4ed8;padding:3px 8px;border-radius:999px}
 .update{margin-top:6px}
+.status{margin-top:10px;display:flex;gap:10px;flex-wrap:wrap}
+.badge{font-size:11px;background:#0b1220;color:#fff;padding:4px 8px;border-radius:999px}
+.badge.warn{background:#f59e0b}
+.badge.ok{background:#16a34a}
 </style>
 </head>
 <body>
@@ -39,6 +43,11 @@ h1{margin:0}
       <h1>稀土情报哨兵</h1>
       <div class="meta">Atlas Feed · 非中国项目情报流</div>
       <div class="meta update">更新：{{LAST_UPDATE}}</div>
+      <div class="status">
+        <span class="badge" id="run-status">运行状态：未知</span>
+        <span class="badge warn" id="run-progress">进度：-/-</span>
+        <span class="badge" id="run-current">当前：-</span>
+      </div>
     </div>
     <div class="kpis">
       <div class="kpi">累计情报 {{TOTAL_COUNT}}</div>
@@ -51,5 +60,32 @@ h1{margin:0}
     {{CARDS}}
   </div>
 </div>
+<script>
+(async function(){
+  try {
+    const res = await fetch('status.json', {cache: 'no-store'});
+    if (!res.ok) return;
+    const data = await res.json();
+    const statusEl = document.getElementById('run-status');
+    const progressEl = document.getElementById('run-progress');
+    const currentEl = document.getElementById('run-current');
+
+    const running = Boolean(data.running);
+    statusEl.textContent = running ? '运行状态：进行中' : '运行状态：空闲';
+    statusEl.className = running ? 'badge warn' : 'badge ok';
+
+    const processed = data.processed_items ?? 0;
+    const total = data.total_items ?? 0;
+    progressEl.textContent = `进度：${processed}/${total}`;
+    progressEl.className = running ? 'badge warn' : 'badge';
+
+    const current = data.current || {};
+    const title = current.title ? current.title.slice(0, 40) : '-';
+    currentEl.textContent = `当前：${title}`;
+  } catch (e) {
+    // ignore
+  }
+})();
+</script>
 </body>
 </html>
