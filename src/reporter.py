@@ -2,7 +2,7 @@ import html
 import os
 from datetime import datetime
 
-from .utils import isoformat, now_cst
+from .utils import isoformat, now_cst, is_china_primary
 
 
 class Reporter:
@@ -91,6 +91,8 @@ class Reporter:
             tags = []
             tags.extend(item.get("minerals", []))
             tags.extend([f"@{e}" for e in item.get("entities", [])])
+            if is_china_primary(item.get("country_primary", "")):
+                tags.append("ChinaPrimary")
             if item.get("china_dependency") and item.get("china_dependency") != "None":
                 tags.append(f"ChinaDep: {item.get('china_dependency')}")
             if item.get("china_involved"):
