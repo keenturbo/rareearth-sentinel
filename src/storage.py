@@ -36,6 +36,12 @@ class Storage:
     def rollups_json_path(self):
         return os.path.join(self.config.static_dir, "rollups.json")
 
+    def archive_json_path(self, month):
+        return os.path.join(self.archive_dir, f"{month}.json")
+
+    def archive_html_path(self, month):
+        return os.path.join(self.archive_dir, f"{month}.html")
+
     def load_existing_ids(self):
         seen = set()
         if not os.path.exists(self.jsonl_path):
@@ -157,9 +163,15 @@ class Storage:
 
     def write_archive_json(self, month, data):
         os.makedirs(self.archive_dir, exist_ok=True)
-        path = os.path.join(self.archive_dir, f"{month}.json")
+        path = self.archive_json_path(month)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def write_archive_html(self, month, html_content):
+        os.makedirs(self.archive_dir, exist_ok=True)
+        path = self.archive_html_path(month)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(html_content)
 
     def write_rollups_json(self, rollups):
         with open(self.rollups_json_path, "w", encoding="utf-8") as f:
