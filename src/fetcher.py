@@ -1,4 +1,6 @@
-from urllib.parse import urlparse
+import html
+import re
+from urllib.parse import parse_qs, unquote, urlparse
 
 import requests
 
@@ -60,21 +62,51 @@ class Fetcher:
         if parsed.netloc != "news.google.com":
             return url
 
+        # Some Google News links include the final URL in query params.
+        query = parse_qs(parsed.query)
+        for key in ("url", "u", "q"):
+            if key in query and query[key]:
+                return query[key][0]
+
         try:
             resp = self.session.get(
                 url,
                 headers=self.headers,
                 timeout=self.config.fetch_timeout_seconds,
                 allow_redirects=True,
-                stream=True,
             )
         except requests.RequestException as exc:
             print(f"  - fetch: resolve_error {exc.__class__.__name__}")
             return url
 
         final_url = resp.url or url
+        if urlparse(final_url).netloc != "news.google.com":
+            resp.close()
+            return final_url
+
+        resolved = self._extract_canonical(resp.text)
         resp.close()
-        return final_url
+        return resolved or final_url
+
+    def _extract_canonical(self, html_text):
+        if not html_text:
+            return None
+
+        patterns = [
+            r'<link[^>]+rel="canonical"[^>]+href="([^"]+)"',
+            r'<meta[^>]+property="og:url"[^>]+content="([^"]+)"',
+            r'url=(https?%3A%2F%2F[^&"\s]+)',
+            r'url=(https?://[^&"\s]+)',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, html_text, re.IGNORECASE)
+            if not match:
+                continue
+            candidate = html.unescape(match.group(1))
+            candidate = unquote(candidate)
+            if candidate.startswith("http"):
+                return candidate
+        return None
 
     def _to_jina_url(self, url):
         parsed = urlparse(url)
