@@ -1,6 +1,8 @@
 import html
 import os
-from datetime import datetime
+from collections import Counter, defaultdict
+from datetime import datetime, timedelta
+from email.utils import parsedate_to_datetime
 
 from .utils import isoformat, now_cst, is_china_primary
 
@@ -10,18 +12,176 @@ class Reporter:
         self.config = config
 
     def rebuild(self, storage):
-        total_count, recent_records = storage.read_recent(self.config.index_limit)
+        all_records = list(storage.iter_records())
+        total_count = len(all_records)
+        recent_records = (
+            all_records[-self.config.index_limit :] if total_count else []
+        )
         items = [self._prune_record(r) for r in reversed(recent_records)]
         stats = self._build_stats(items, total_count)
+        rollups = self._build_rollups(all_records)
+        archives = self._build_archives(storage, all_records, rollups)
+
         index_data = {
             "last_update": isoformat(now_cst()),
             "total_count": total_count,
             "items": items,
             "stats": stats,
+            "archives": archives,
+            "rollups": rollups,
         }
+        storage.write_rollups_json(rollups)
         storage.write_index_json(index_data)
         html_content = self._build_html(index_data)
         storage.write_index_html(html_content)
+
+    def _parse_date(self, text):
+        if not text:
+            return None
+        try:
+            return datetime.fromisoformat(text)
+        except ValueError:
+            pass
+        try:
+            return parsedate_to_datetime(text)
+        except (TypeError, ValueError):
+            return None
+
+    def _record_datetime(self, record):
+        published_at = record.get("published_at", "")
+        collected_at = record.get("collected_at", "")
+        return self._parse_date(published_at) or self._parse_date(collected_at)
+
+    def _month_key(self, dt):
+        if not dt:
+            return "unknown"
+        return dt.strftime("%Y-%m")
+
+    def _build_archives(self, storage, records, rollups):
+        grouped = defaultdict(list)
+        for record in records:
+            dt = self._record_datetime(record)
+            month = self._month_key(dt)
+            if month == "unknown":
+                continue
+            grouped[month].append(record)
+
+        months = sorted(grouped.keys(), reverse=True)
+        archives = []
+
+        for month in months:
+            month_records = grouped[month]
+            items = [self._prune_record(r) for r in reversed(month_records)]
+            stats = self._build_stats(items, len(month_records))
+            archive_data = {
+                "last_update": isoformat(now_cst()),
+                "total_count": len(month_records),
+                "items": items,
+                "stats": stats,
+                "archives": [{"month": m, "count": len(grouped[m])} for m in months],
+                "rollups": rollups,
+                "archive_month": month,
+            }
+            storage.write_archive_json(month, archive_data)
+            html_content = self._build_html(
+                archive_data,
+                archive_month=month,
+                archive_prefix="../",
+            )
+            storage.write_archive_html(month, html_content)
+            archives.append({"month": month, "count": len(month_records)})
+
+        return archives
+
+    def _build_rollups(self, records):
+        now = now_cst()
+        window_30 = now - timedelta(days=30)
+        window_90 = now - timedelta(days=90)
+
+        counts_minerals = Counter()
+        counts_countries = Counter()
+        counts_actions = Counter()
+        monthly_counts = Counter()
+        monthly_high = Counter()
+        impact_counts_30 = Counter()
+        impact_counts_90 = Counter()
+        count_30 = 0
+        count_90 = 0
+        high_30 = 0
+        high_90 = 0
+
+        for record in records:
+            minerals = record.get("minerals") or []
+            for mineral in minerals:
+                counts_minerals[str(mineral).strip()] += 1
+
+            country = str(record.get("country_primary", "")).strip()
+            if country:
+                counts_countries[country] += 1
+
+            action = str(record.get("action_type", "")).strip()
+            if action:
+                counts_actions[action] += 1
+
+            dt = self._record_datetime(record)
+            if dt:
+                monthly_counts[self._month_key(dt)] += 1
+                if int(record.get("risk_level", 0) or 0) >= 4:
+                    monthly_high[self._month_key(dt)] += 1
+
+                if dt >= window_30:
+                    count_30 += 1
+                    if int(record.get("risk_level", 0) or 0) >= 4:
+                        high_30 += 1
+                    impact = str(record.get("china_impact", "")).strip()
+                    if impact:
+                        impact_counts_30[impact] += 1
+
+                if dt >= window_90:
+                    count_90 += 1
+                    if int(record.get("risk_level", 0) or 0) >= 4:
+                        high_90 += 1
+                    impact = str(record.get("china_impact", "")).strip()
+                    if impact:
+                        impact_counts_90[impact] += 1
+
+        monthly = []
+        for month in sorted(monthly_counts.keys(), reverse=True)[:12]:
+            monthly.append(
+                {
+                    "month": month,
+                    "count": monthly_counts[month],
+                    "high_risk": monthly_high.get(month, 0),
+                }
+            )
+
+        def _top(counter, limit=6):
+            return [
+                {"name": name, "count": count}
+                for name, count in counter.most_common(limit)
+                if name
+            ]
+
+        return {
+            "generated_at": isoformat(now),
+            "total_records": len(records),
+            "windows": {
+                "30d": {
+                    "count": count_30,
+                    "high_risk": high_30,
+                    "china_impact": dict(impact_counts_30),
+                },
+                "90d": {
+                    "count": count_90,
+                    "high_risk": high_90,
+                    "china_impact": dict(impact_counts_90),
+                },
+            },
+            "top_minerals": _top(counts_minerals),
+            "top_countries": _top(counts_countries),
+            "top_actions": _top(counts_actions),
+            "monthly": monthly,
+        }
 
     def _build_stats(self, items, total_count):
         high_risk = sum(1 for i in items if int(i.get("risk_level", 0)) >= 4)
@@ -42,7 +202,7 @@ class Reporter:
             "today_count": today_count,
         }
 
-    def _build_html(self, index_data):
+    def _build_html(self, index_data, archive_month="", archive_prefix=""):
         template_path = os.path.join(self.config.templates_dir, "index.html")
         with open(template_path, "r", encoding="utf-8") as f:
             template = f.read()
@@ -51,6 +211,16 @@ class Reporter:
         cards_html = self._render_cards(items)
         stats = index_data.get("stats", {})
         daily_brief = self._render_daily_brief(items)
+        archive_nav = self._render_archive_nav(
+            index_data.get("archives", []),
+            archive_month=archive_month,
+            prefix=archive_prefix,
+        )
+        rollups_html = self._render_rollups(index_data.get("rollups", {}))
+
+        page_note = ""
+        if archive_month:
+            page_note = f"归档月份：{archive_month}"
 
         html_out = (
             template.replace("{{TOTAL_COUNT}}", str(stats.get("total_count", 0)))
@@ -59,6 +229,9 @@ class Reporter:
             .replace("{{LAST_UPDATE}}", index_data.get("last_update", ""))
             .replace("{{DAILY_BRIEF}}", daily_brief)
             .replace("{{CARDS}}", cards_html)
+            .replace("{{ARCHIVE_NAV}}", archive_nav)
+            .replace("{{ROLLUPS}}", rollups_html)
+            .replace("{{PAGE_NOTE}}", page_note)
         )
         return html_out
 
@@ -331,6 +504,58 @@ class Reporter:
         return (
             f'<div class="brief-row">{counts_line}</div>'
             f'<div class="brief-grid">{strategy_html}{tactical_html}</div>'
+        )
+
+    def _render_archive_nav(self, archives, archive_month="", prefix=""):
+        if not archives:
+            return ""
+        links = []
+        for entry in archives:
+            month = entry.get("month")
+            count = entry.get("count", 0)
+            if not month:
+                continue
+            active = " active" if month == archive_month else ""
+            href = f"{prefix}archive/{month}.html"
+            links.append(
+                f'<a class="archive-link{active}" href="{href}">{month} ({count})</a>'
+            )
+        return "".join(links)
+
+    def _render_rollups(self, rollups):
+        if not rollups:
+            return '<div class="rollups-empty">暂无汇总</div>'
+
+        windows = rollups.get("windows", {})
+        window_30 = windows.get("30d", {})
+        window_90 = windows.get("90d", {})
+
+        def _top_chips(entries):
+            chips = []
+            for entry in entries:
+                name = entry.get("name")
+                count = entry.get("count")
+                if not name:
+                    continue
+                chips.append(f'<span class="rollup-chip">{html.escape(name)} {count}</span>')
+            return "".join(chips)
+
+        top_minerals = _top_chips(rollups.get("top_minerals", []))
+        top_countries = _top_chips(rollups.get("top_countries", []))
+        top_actions = _top_chips(rollups.get("top_actions", []))
+
+        summary_line = (
+            f"近30天 {window_30.get('count', 0)} 条 · 高风险 {window_30.get('high_risk', 0)}"
+            f" ｜ 近90天 {window_90.get('count', 0)} 条 · 高风险 {window_90.get('high_risk', 0)}"
+        )
+
+        return (
+            f'<div class="rollups-row">{summary_line}</div>'
+            f'<div class="rollups-grid">'
+            f'<div class="rollup-col"><div class="meta">矿种聚合</div>{top_minerals or "<div class=\"meta\">暂无</div>"}</div>'
+            f'<div class="rollup-col"><div class="meta">国家聚合</div>{top_countries or "<div class=\"meta\">暂无</div>"}</div>'
+            f'<div class="rollup-col"><div class="meta">动作聚合</div>{top_actions or "<div class=\"meta\">暂无</div>"}</div>'
+            f'</div>'
         )
 
     def _prune_record(self, record):
