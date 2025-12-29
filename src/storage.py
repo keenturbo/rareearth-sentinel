@@ -48,7 +48,15 @@ class Storage:
     def is_seen(self, url, seen_ids):
         return hash_url(url) in seen_ids
 
-    def build_record(self, item, analysis, content, content_source="fulltext", fetch_status=None, resolved_url=None):
+    def build_record(
+        self,
+        item,
+        analysis,
+        content,
+        content_source="fulltext",
+        fetch_status=None,
+        resolved_url=None,
+    ):
         now = now_cst()
         return {
             "id": hash_url(item.get("url", "")),
@@ -71,6 +79,19 @@ class Storage:
             "china_dependency": analysis.get("china_dependency", "None"),
             "china_role": analysis.get("china_role", "Mentioned"),
             "confidence": analysis.get("confidence", 60),
+            "china_impact": analysis.get("china_impact", "中性"),
+            "china_risk_trend": analysis.get("china_risk_trend", "持平"),
+            "expert_summary": analysis.get("expert_summary", ""),
+            "recommendations_strategy": analysis.get("recommendations_strategy", []),
+            "recommendations_tactical": analysis.get("recommendations_tactical", []),
+            "supply_risk_score": analysis.get("supply_risk_score", 50),
+            "policy_risk_score": analysis.get("policy_risk_score", 50),
+            "price_pressure_score": analysis.get("price_pressure_score", 50),
+            "risk_score": analysis.get("risk_score", 50),
+            "forecast_6m": analysis.get("forecast_6m", {}),
+            "forecast_12m": analysis.get("forecast_12m", {}),
+            "forecast_24m": analysis.get("forecast_24m", {}),
+            "forecast_48m": analysis.get("forecast_48m", {}),
             "content_source": content_source,
             "fetch_status": fetch_status or "",
             "content": content,

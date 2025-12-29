@@ -102,12 +102,15 @@ class Reporter:
                 f'<span class="tag">{html.escape(str(tag))}</span>' for tag in tags
             )
 
+            analysis_html = self._render_expert(item)
+
             rows.append(
                 """
 <div class="{row_class}">
   <div class="meta">{meta_line}</div>
   <div class="title"><a href="{url}" target="_blank">{title}</a></div>
   <div class="meta">摘要：{summary}</div>
+  {analysis_html}
   <div class="tags">{tags_html}</div>
 </div>
 """.format(
@@ -116,11 +119,144 @@ class Reporter:
                     title=title,
                     url=html.escape(item.get("url", "")),
                     summary=summary or "-",
+                    analysis_html=analysis_html,
                     tags_html=tags_html,
                 )
             )
 
         return "\n".join(rows)
+
+    def _chip_class(self, label, mapping, default):
+        return mapping.get(label, default)
+
+    def _format_forecast(self, label, forecast):
+        if not isinstance(forecast, dict):
+            return ""
+        trend = forecast.get("price_pressure")
+        confidence = forecast.get("confidence")
+        if not trend:
+            return ""
+        symbol = {"Up": "↑", "Down": "↓", "Neutral": "→"}.get(trend, trend)
+        conf_text = f"{confidence}" if confidence not in (None, "") else "-"
+        return f"{label}{symbol}({conf_text})"
+
+    def _render_list(self, items, label):
+        if not items:
+            return ""
+        safe_items = []
+        for entry in items:
+            text = str(entry).strip()
+            if text:
+                safe_items.append(html.escape(text))
+            if len(safe_items) >= 3:
+                break
+        if not safe_items:
+            return ""
+        list_html = "".join(f"<li>{item}</li>" for item in safe_items)
+        return (
+            f'<div class="analysis-list"><div class="meta">{label}</div>'
+            f"<ul>{list_html}</ul></div>"
+        )
+
+    def _render_expert(self, item):
+        china_impact = str(item.get("china_impact", "")).strip()
+        china_risk_trend = str(item.get("china_risk_trend", "")).strip()
+        expert_summary = html.escape(item.get("expert_summary", ""))
+
+        supply = item.get("supply_risk_score")
+        policy = item.get("policy_risk_score")
+        price = item.get("price_pressure_score")
+        risk_score = item.get("risk_score")
+
+        forecast_items = [
+            self._format_forecast("6月", item.get("forecast_6m")),
+            self._format_forecast("12月", item.get("forecast_12m")),
+            self._format_forecast("24月", item.get("forecast_24m")),
+            self._format_forecast("48月", item.get("forecast_48m")),
+        ]
+        forecast_line = " · ".join([f for f in forecast_items if f])
+
+        strategy_html = self._render_list(item.get("recommendations_strategy", []), "战略建议")
+        tactical_html = self._render_list(item.get("recommendations_tactical", []), "操作建议")
+
+        impact_class = self._chip_class(
+            china_impact,
+            {"利好": "good", "中性": "neutral", "利空": "bad"},
+            "neutral",
+        )
+        trend_class = self._chip_class(
+            china_risk_trend,
+            {"加强": "trend-up", "持平": "trend-flat", "缓和": "trend-down"},
+            "trend-flat",
+        )
+
+        has_any = any(
+            [
+                china_impact,
+                china_risk_trend,
+                expert_summary,
+                supply is not None,
+                policy is not None,
+                price is not None,
+                risk_score is not None,
+                forecast_line,
+                strategy_html,
+                tactical_html,
+            ]
+        )
+        if not has_any:
+            return ""
+
+        score_line = ""
+        if supply is not None or policy is not None or price is not None:
+            score_line = (
+                f"供应链 {supply}/100 · 政策 {policy}/100 · 价格 {price}/100"
+            )
+
+        score_badge = ""
+        if risk_score is not None and risk_score != "":
+            score_badge = f"综合风险 {risk_score}/100"
+
+        head_parts = []
+        if china_impact:
+            head_parts.append(
+                f'<span class="chip {impact_class}">对中国：{html.escape(china_impact)}</span>'
+            )
+        if china_risk_trend:
+            head_parts.append(
+                f'<span class="chip {trend_class}">风险：{html.escape(china_risk_trend)}</span>'
+            )
+        if score_badge:
+            head_parts.append(f'<span class="chip score">{score_badge}</span>')
+
+        head_html = "".join(head_parts)
+        summary_html = (
+            f'<div class="analysis-summary">专家结论：{expert_summary}</div>'
+            if expert_summary
+            else ""
+        )
+
+        detail_blocks = []
+        if score_line:
+            detail_blocks.append(f'<div class="analysis-grid">分项：{score_line}</div>')
+        if forecast_line:
+            detail_blocks.append(
+                f'<div class="analysis-grid">预测：{forecast_line}</div>'
+            )
+        if strategy_html:
+            detail_blocks.append(strategy_html)
+        if tactical_html:
+            detail_blocks.append(tactical_html)
+
+        details_html = "".join(detail_blocks)
+
+        return (
+            '<div class="analysis">'
+            f'<div class="analysis-head">{head_html}</div>'
+            f"{summary_html}"
+            f"{details_html}"
+            "</div>"
+        )
 
     def _prune_record(self, record):
         fields = [
@@ -143,5 +279,18 @@ class Reporter:
             "china_dependency",
             "china_role",
             "confidence",
+            "china_impact",
+            "china_risk_trend",
+            "expert_summary",
+            "recommendations_strategy",
+            "recommendations_tactical",
+            "supply_risk_score",
+            "policy_risk_score",
+            "price_pressure_score",
+            "risk_score",
+            "forecast_6m",
+            "forecast_12m",
+            "forecast_24m",
+            "forecast_48m",
         ]
         return {key: record.get(key, "") for key in fields}

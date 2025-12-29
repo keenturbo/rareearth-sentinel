@@ -15,6 +15,24 @@ ACTION_TYPES = {
 
 CHINA_DEPENDENCY = {"None", "Low", "Medium", "High"}
 CHINA_ROLE = {"Supplier", "Processor", "Investor", "Policy", "Mentioned"}
+CHINA_IMPACT = {"利好", "中性", "利空"}
+CHINA_RISK_TREND = {"加强", "持平", "缓和"}
+FORECAST_TRENDS = {"Up", "Down", "Neutral"}
+TREND_ALIASES = {
+    "上涨": "Up",
+    "上行": "Up",
+    "上升": "Up",
+    "走强": "Up",
+    "下行": "Down",
+    "下跌": "Down",
+    "下降": "Down",
+    "走弱": "Down",
+    "中性": "Neutral",
+    "持平": "Neutral",
+    "平稳": "Neutral",
+    "稳定": "Neutral",
+    "无明显": "Neutral",
+}
 
 NOISE_PHRASES = [
     "cookie",
@@ -115,6 +133,26 @@ def _clamp_int(value, min_value, max_value, default):
     return max(min_value, min(max_value, ivalue))
 
 
+def _normalize_trend(value):
+    text = _as_str(value)
+    if not text:
+        return "Neutral"
+    if text in FORECAST_TRENDS:
+        return text
+    if text in TREND_ALIASES:
+        return TREND_ALIASES[text]
+    return "Neutral"
+
+
+def _normalize_forecast(value):
+    if not isinstance(value, dict):
+        return {}
+    return {
+        "price_pressure": _normalize_trend(value.get("price_pressure")),
+        "confidence": _clamp_int(value.get("confidence"), 0, 100, 50),
+    }
+
+
 def normalize_analysis(data):
     if not isinstance(data, dict):
         return None
@@ -134,6 +172,23 @@ def normalize_analysis(data):
         ),
         "china_role": _as_choice(data.get("china_role"), CHINA_ROLE, "Mentioned"),
         "confidence": _clamp_int(data.get("confidence"), 0, 100, 60),
+        "china_impact": _as_choice(data.get("china_impact"), CHINA_IMPACT, "中性"),
+        "china_risk_trend": _as_choice(
+            data.get("china_risk_trend"), CHINA_RISK_TREND, "持平"
+        ),
+        "expert_summary": _as_str(data.get("expert_summary")),
+        "recommendations_strategy": _as_list(data.get("recommendations_strategy")),
+        "recommendations_tactical": _as_list(data.get("recommendations_tactical")),
+        "supply_risk_score": _clamp_int(data.get("supply_risk_score"), 0, 100, 50),
+        "policy_risk_score": _clamp_int(data.get("policy_risk_score"), 0, 100, 50),
+        "price_pressure_score": _clamp_int(
+            data.get("price_pressure_score"), 0, 100, 50
+        ),
+        "risk_score": _clamp_int(data.get("risk_score"), 0, 100, 50),
+        "forecast_6m": _normalize_forecast(data.get("forecast_6m")),
+        "forecast_12m": _normalize_forecast(data.get("forecast_12m")),
+        "forecast_24m": _normalize_forecast(data.get("forecast_24m")),
+        "forecast_48m": _normalize_forecast(data.get("forecast_48m")),
     }
 
     return normalized
