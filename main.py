@@ -24,6 +24,7 @@ def run_pipeline(config):
         "too_short": 0,
         "analyze_fail": 0,
         "saved": 0,
+        "summary_fallback": 0,
     }
 
     for source in sources:
@@ -41,16 +42,34 @@ def run_pipeline(config):
                 print("  - skip: seen")
                 continue
 
-            content = fetcher.fetch(url)
-            if not content:
-                stats["fetch_fail"] += 1
-                print("  - skip: fetch_fail")
-                continue
+            fetch_result = fetcher.fetch(url)
+            content = fetch_result.get("content")
+            fetch_status = fetch_result.get("status")
+            resolved_url = fetch_result.get("resolved_url")
+            content_source = "fulltext"
 
-            if len(content) < config.min_content_chars:
-                stats["too_short"] += 1
-                print(f"  - skip: too_short ({len(content)} chars)")
-                continue
+            if not content:
+                summary = (item.get("summary") or "").strip()
+                if summary:
+                    content = summary
+                    content_source = "rss_summary"
+                    stats["summary_fallback"] += 1
+                    print("  - fallback: rss_summary")
+                else:
+                    stats["fetch_fail"] += 1
+                    print("  - skip: fetch_fail")
+                    continue
+
+            if content_source == "rss_summary":
+                if len(content) < config.summary_min_chars:
+                    stats["too_short"] += 1
+                    print(f"  - skip: too_short ({len(content)} chars)")
+                    continue
+            else:
+                if len(content) < config.min_content_chars:
+                    stats["too_short"] += 1
+                    print(f"  - skip: too_short ({len(content)} chars)")
+                    continue
 
             if config.fetch_delay_seconds > 0:
                 time.sleep(config.fetch_delay_seconds)
@@ -61,7 +80,14 @@ def run_pipeline(config):
                 print("  - skip: analyze_fail")
                 continue
 
-            record = storage.build_record(item, analysis, content)
+            record = storage.build_record(
+                item,
+                analysis,
+                content,
+                content_source=content_source,
+                fetch_status=fetch_status,
+                resolved_url=resolved_url,
+            )
             storage.append_record(record)
             seen_ids.add(record["id"])
             stats["saved"] += 1
@@ -96,7 +122,8 @@ def main():
     print(
         "Run complete. New records: {saved} | "
         "items: {total_items}, seen: {seen}, fetch_fail: {fetch_fail}, "
-        "too_short: {too_short}, analyze_fail: {analyze_fail}".format(**stats)
+        "too_short: {too_short}, analyze_fail: {analyze_fail}, "
+        "summary_fallback: {summary_fallback}".format(**stats)
     )
 
 
