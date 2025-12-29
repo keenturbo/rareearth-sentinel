@@ -23,6 +23,10 @@ class Storage:
     def index_html_path(self):
         return os.path.join(self.config.static_dir, "index.html")
 
+    @property
+    def status_json_path(self):
+        return os.path.join(self.config.static_dir, "status.json")
+
     def load_existing_ids(self):
         seen = set()
         if not os.path.exists(self.jsonl_path):
@@ -102,3 +106,7 @@ class Storage:
     def write_index_html(self, html_content):
         with open(self.index_html_path, "w", encoding="utf-8") as f:
             f.write(html_content)
+
+    def write_status_json(self, status_data):
+        with open(self.status_json_path, "w", encoding="utf-8") as f:
+            json.dump(status_data, f, ensure_ascii=False, indent=2)
