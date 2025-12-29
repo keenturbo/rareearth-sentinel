@@ -1,6 +1,7 @@
 import html
+import json
 import re
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import requests
 
@@ -68,6 +69,10 @@ class Fetcher:
             if key in query and query[key]:
                 return query[key][0]
 
+        decoded = self._decode_google_news(url)
+        if decoded:
+            return decoded
+
         try:
             resp = self.session.get(
                 url,
@@ -87,6 +92,130 @@ class Fetcher:
         resolved = self._extract_canonical(resp.text)
         resp.close()
         return resolved or final_url
+
+    def _decode_google_news(self, url):
+        parsed = urlparse(url)
+        article_id = parsed.path.split("/")[-1]
+        if not article_id:
+            return None
+
+        info_url = f"https://news.google.com/rss/articles/{article_id}"
+        try:
+            resp = self.session.get(
+                info_url,
+                headers=self.headers,
+                timeout=self.config.fetch_timeout_seconds,
+                allow_redirects=True,
+            )
+        except requests.RequestException as exc:
+            print(f"  - fetch: decode_error {exc.__class__.__name__}")
+            return None
+
+        if resp.status_code != 200:
+            return None
+
+        signature = self._extract_attr(resp.text, "data-n-a-sg")
+        timestamp = self._extract_attr(resp.text, "data-n-a-ts")
+        if not signature or not timestamp:
+            return None
+
+        payload = [
+            [
+                "Fbv4je",
+                json.dumps(
+                    [
+                        "garturlreq",
+                        [
+                            [
+                                "X",
+                                "X",
+                                ["X", "X"],
+                                None,
+                                None,
+                                1,
+                                1,
+                                "US:en",
+                                None,
+                                1,
+                                None,
+                                None,
+                                None,
+                                None,
+                                None,
+                                0,
+                                1,
+                            ],
+                            "X",
+                            "X",
+                            1,
+                            [1, 1, 1],
+                            1,
+                            1,
+                            None,
+                            0,
+                            0,
+                            None,
+                            0,
+                        ],
+                        article_id,
+                        int(timestamp),
+                        signature,
+                    ]
+                ),
+                None,
+                "generic",
+            ]
+        ]
+
+        data = "f.req=" + quote(json.dumps([payload]))
+        try:
+            resp = self.session.post(
+                "https://news.google.com/_/DotsSplashUi/data/batchexecute",
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+                    "User-Agent": self.headers["User-Agent"],
+                },
+                data=data,
+                timeout=self.config.fetch_timeout_seconds,
+            )
+        except requests.RequestException:
+            return None
+
+        if resp.status_code != 200:
+            return None
+
+        return self._extract_batchexecute_url(resp.text)
+
+    def _extract_batchexecute_url(self, text):
+        if not text:
+            return None
+        try:
+            json_text = text.split("\n\n", 1)[1]
+            outer = json.loads(json_text)
+        except (IndexError, json.JSONDecodeError, TypeError):
+            return None
+
+        for entry in outer:
+            if not isinstance(entry, list) or len(entry) < 3:
+                continue
+            payload = entry[2]
+            if not payload or "garturlres" not in payload:
+                continue
+            try:
+                inner = json.loads(payload)
+            except json.JSONDecodeError:
+                continue
+            if inner and inner[0] == "garturlres":
+                return inner[1]
+        return None
+
+    def _extract_attr(self, html_text, attr_name):
+        if not html_text:
+            return None
+        match = re.search(rf'{attr_name}="([^"]+)"', html_text)
+        if not match:
+            return None
+        return match.group(1)
 
     def _extract_canonical(self, html_text):
         if not html_text:
