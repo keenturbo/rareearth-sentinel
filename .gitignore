@@ -6,4 +6,6 @@ venv/
 data/
 static/index.json
 static/index.html
+static/archive/
+static/rollups.json
 .DS_Store
