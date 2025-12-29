@@ -22,7 +22,13 @@ class GeminiExtractor:
         prompt = f"""
 You are a strategic intelligence analyst focused on rare earths and critical minerals.
 Analyze the article and return ONLY a JSON object (no markdown, no commentary).
-If the content is not about rare earths/critical minerals OR the primary event location is China, return null.
+If the content is not about rare earths/critical minerals, return null.
+
+Guidance for location fields:
+- country_primary is where the main project/action occurs.
+- Do NOT set country_primary to China unless the primary event is in China.
+- If China is only mentioned as background, set china_involved/china_role but keep country_primary as the main non-China country.
+- If unsure, set country_primary to "Unknown".
 
 Required JSON fields:
 - summary_zh: one-sentence summary in Chinese
