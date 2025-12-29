@@ -78,8 +78,8 @@ class Config:
             fetch_timeout_seconds=_get_int("FETCH_TIMEOUT_SECONDS", 20),
             fetch_delay_seconds=_get_float("FETCH_DELAY_SECONDS", 1.5),
             analyze_delay_seconds=_get_float("ANALYZE_DELAY_SECONDS", 1.5),
-            min_content_chars=_get_int("MIN_CONTENT_CHARS", 800),
-            summary_min_chars=_get_int("SUMMARY_MIN_CHARS", 160),
+            min_content_chars=_get_int("MIN_CONTENT_CHARS", 300),
+            summary_min_chars=_get_int("SUMMARY_MIN_CHARS", 120),
             index_limit=_get_int("INDEX_LIMIT", 200),
         )
 

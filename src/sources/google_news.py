@@ -32,11 +32,13 @@ class GoogleNewsSource(Source):
             feed = feedparser.parse(rss_url)
 
             for entry in feed.entries[: self.config.max_items_per_keyword]:
+                summary = entry.get("summary") or entry.get("description") or ""
                 items.append(
                     {
                         "source_type": self.source_type,
                         "title": entry.get("title", ""),
                         "url": entry.get("link", ""),
+                        "summary": summary,
                         "published_at": entry.get("published", ""),
                         "language": self.config.google_news_lang,
                     }

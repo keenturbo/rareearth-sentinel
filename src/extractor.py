@@ -20,29 +20,39 @@ class GeminiExtractor:
         content = text[:12000]
 
         prompt = f"""
-You are a strategic intelligence analyst focused on rare earths and critical minerals.
+You are a rare earths and critical minerals intelligence analyst.
 Analyze the article and return ONLY a JSON object (no markdown, no commentary).
-If the content is not about rare earths/critical minerals, return null.
+If the content is not about rare earths or critical minerals, return null.
 
-Guidance for location fields:
+Location guidance:
 - country_primary is where the main project/action occurs.
 - Do NOT set country_primary to China unless the primary event is in China.
 - If China is only mentioned as background, set china_involved/china_role but keep country_primary as the main non-China country.
 - If unsure, set country_primary to "Unknown".
 
+Output rules:
+- summary_zh must be a concise professional Chinese summary.
+- minerals and entities must be arrays (can be empty).
+- action_type must be one of [Investment, Regulation, Discovery, Price, Geopolitics, Other].
+- risk_level and importance_score are integers 1-5.
+- china_involved is a boolean.
+- china_dependency is one of [None, Low, Medium, High].
+- china_role is one of [Supplier, Processor, Investor, Policy, Mentioned].
+- confidence is an integer 0-100.
+
 Required JSON fields:
-- summary_zh: one-sentence summary in Chinese
-- country_primary: primary event country, use English name
-- event_location: specific location if available, else empty string
-- minerals: list of minerals (e.g., Rare Earths, Lithium, Cobalt)
-- entities: list of companies or government bodies
-- action_type: one of [Investment, Regulation, Discovery, Price, Geopolitics, Other]
-- risk_level: integer 1-5
-- importance_score: integer 1-5
-- china_involved: boolean
-- china_dependency: one of [None, Low, Medium, High]
-- china_role: one of [Supplier, Processor, Investor, Policy, Mentioned]
-- confidence: integer 0-100
+- summary_zh
+- country_primary
+- event_location
+- minerals
+- entities
+- action_type
+- risk_level
+- importance_score
+- china_involved
+- china_dependency
+- china_role
+- confidence
 
 Article:
 {content}

@@ -16,6 +16,28 @@ ACTION_TYPES = {
 CHINA_DEPENDENCY = {"None", "Low", "Medium", "High"}
 CHINA_ROLE = {"Supplier", "Processor", "Investor", "Policy", "Mentioned"}
 
+NOISE_PHRASES = [
+    "cookie",
+    "privacy",
+    "terms of service",
+    "terms of use",
+    "subscribe",
+    "sign up",
+    "sign in",
+    "log in",
+    "newsletter",
+    "advertis",
+    "all rights reserved",
+    "accept all",
+    "manage consent",
+    "consent preferences",
+    "javascript",
+    "enable javascript",
+    "access denied",
+    "subscription",
+    "paywall",
+]
+
 
 def now_cst():
     return datetime.now(ZoneInfo("Asia/Shanghai"))
@@ -128,3 +150,21 @@ def is_china_primary(country):
         "中国",
         "中华人民共和国",
     }
+
+
+def clean_text(text):
+    if not text:
+        return ""
+    cleaned_lines = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or len(line) < 3:
+            continue
+        lower = line.lower()
+        if any(phrase in lower for phrase in NOISE_PHRASES):
+            continue
+        if re.fullmatch(r"\W+", line):
+            continue
+        line = re.sub(r"\s+", " ", line)
+        cleaned_lines.append(line)
+    return "\n".join(cleaned_lines).strip()

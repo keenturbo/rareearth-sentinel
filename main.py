@@ -7,6 +7,7 @@ from src.fetcher import Fetcher
 from src.extractor import GeminiExtractor
 from src.storage import Storage
 from src.reporter import Reporter
+from src.utils import clean_text
 
 
 def run_pipeline(config):
@@ -43,22 +44,30 @@ def run_pipeline(config):
                 continue
 
             fetch_result = fetcher.fetch(url)
-            content = fetch_result.get("content")
+            content = (fetch_result.get("content") or "").strip()
             fetch_status = fetch_result.get("status")
             resolved_url = fetch_result.get("resolved_url")
             content_source = "fulltext"
 
-            if not content:
-                summary = (item.get("summary") or "").strip()
-                if summary:
-                    content = summary
+            summary = (item.get("summary") or "").strip()
+            fallback_text = f"{title}\n\n{summary}".strip()
+
+            if (not content) or (len(content) < config.min_content_chars):
+                if len(fallback_text) >= config.summary_min_chars:
+                    content = fallback_text
                     content_source = "rss_summary"
                     stats["summary_fallback"] += 1
-                    print("  - fallback: rss_summary")
+                    print("  - fallback: title+summary")
                 else:
-                    stats["fetch_fail"] += 1
-                    print("  - skip: fetch_fail")
+                    if not content:
+                        stats["fetch_fail"] += 1
+                        print("  - skip: fetch_fail")
+                    else:
+                        stats["too_short"] += 1
+                        print(f"  - skip: too_short ({len(content)} chars)")
                     continue
+
+            content = clean_text(content)
 
             if content_source == "rss_summary":
                 if len(content) < config.summary_min_chars:
