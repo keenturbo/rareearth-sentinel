@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import time
+from dataclasses import replace
 
 from src.config import Config
 from src.sources.registry import get_sources
@@ -403,6 +404,11 @@ def main():
         help="Backfill expert fields using historical context",
     )
     parser.add_argument(
+        "--backfill-with-vector-context",
+        action="store_true",
+        help="Backfill expert fields using vector context",
+    )
+    parser.add_argument(
         "--backfill-retry",
         nargs="?",
         const=2,
@@ -419,13 +425,21 @@ def main():
     args = parser.parse_args()
 
     config = Config.from_env()
+    if args.backfill_with_vector_context:
+        config = replace(config, context_mode="vector")
 
-    if args.backfill or args.backfill_missing or args.backfill_with_context:
+    if (
+        args.backfill
+        or args.backfill_missing
+        or args.backfill_with_context
+        or args.backfill_with_vector_context
+    ):
         backfill_records(
             config,
             limit=args.backfill_limit,
             retry_attempts=args.backfill_retry,
-            use_context=args.backfill_with_context,
+            use_context=args.backfill_with_context
+            or args.backfill_with_vector_context,
         )
         return
 
