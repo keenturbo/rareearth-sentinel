@@ -280,6 +280,7 @@ class Reporter:
             )
 
             analysis_html = self._render_expert(item)
+            context_html = self._render_related_context(item)
 
             rows.append(
                 """
@@ -288,6 +289,7 @@ class Reporter:
   <div class="title"><a href="{url}" target="_blank">{title}</a></div>
   <div class="meta">摘要：{summary}</div>
   {analysis_html}
+  {context_html}
   <div class="tags">{tags_html}</div>
 </div>
 """.format(
@@ -297,6 +299,7 @@ class Reporter:
                     url=html.escape(item.get("url", "")),
                     summary=summary or "-",
                     analysis_html=analysis_html,
+                    context_html=context_html,
                     tags_html=tags_html,
                     impact=impact,
                 )
@@ -433,6 +436,29 @@ class Reporter:
             f'<div class="analysis-head">{head_html}</div>'
             f"{summary_html}"
             f"{details_html}"
+            "</div>"
+        )
+
+    def _render_related_context(self, item):
+        context_lines = item.get("related_context") or []
+        if not context_lines:
+            return ""
+        safe_lines = []
+        for line in context_lines:
+            text = str(line).strip()
+            if not text:
+                continue
+            safe_lines.append(html.escape(text))
+            if len(safe_lines) >= 6:
+                break
+        if not safe_lines:
+            return ""
+
+        list_html = "".join(f"<li>{line}</li>" for line in safe_lines)
+        return (
+            '<div class="analysis related">'
+            '<div class="analysis-head"><span class="chip">关联脉络</span></div>'
+            f'<div class="analysis-list"><ul>{list_html}</ul></div>'
             "</div>"
         )
 
@@ -593,5 +619,7 @@ class Reporter:
             "forecast_12m",
             "forecast_24m",
             "forecast_48m",
+            "related_context",
+            "analysis_with_context",
         ]
         return {key: record.get(key, "") for key in fields}
