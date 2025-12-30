@@ -59,6 +59,8 @@ class Config:
     min_content_chars: int
     summary_min_chars: int
     index_limit: int
+    context_window_days: int
+    context_max_items: int
 
     @classmethod
     def from_env(cls):
@@ -81,6 +83,8 @@ class Config:
             min_content_chars=_get_int("MIN_CONTENT_CHARS", 300),
             summary_min_chars=_get_int("SUMMARY_MIN_CHARS", 120),
             index_limit=_get_int("INDEX_LIMIT", 200),
+            context_window_days=_get_int("CONTEXT_WINDOW_DAYS", 365),
+            context_max_items=_get_int("CONTEXT_MAX_ITEMS", 6),
         )
 
 
