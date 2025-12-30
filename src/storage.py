@@ -71,6 +71,8 @@ class Storage:
         content_source="fulltext",
         fetch_status=None,
         resolved_url=None,
+        related_context=None,
+        analysis_with_context=False,
     ):
         now = now_cst()
         return {
@@ -97,8 +99,12 @@ class Storage:
             "china_impact": analysis.get("china_impact", "中性"),
             "china_risk_trend": analysis.get("china_risk_trend", "持平"),
             "expert_summary": analysis.get("expert_summary", ""),
-            "recommendations_strategy": analysis.get("recommendations_strategy", []),
-            "recommendations_tactical": analysis.get("recommendations_tactical", []),
+            "recommendations_strategy": analysis.get(
+                "recommendations_strategy", []
+            ),
+            "recommendations_tactical": analysis.get(
+                "recommendations_tactical", []
+            ),
             "supply_risk_score": analysis.get("supply_risk_score", 50),
             "policy_risk_score": analysis.get("policy_risk_score", 50),
             "price_pressure_score": analysis.get("price_pressure_score", 50),
@@ -107,6 +113,8 @@ class Storage:
             "forecast_12m": analysis.get("forecast_12m", {}),
             "forecast_24m": analysis.get("forecast_24m", {}),
             "forecast_48m": analysis.get("forecast_48m", {}),
+            "analysis_with_context": bool(analysis_with_context),
+            "related_context": related_context or [],
             "content_source": content_source,
             "fetch_status": fetch_status or "",
             "content": content,

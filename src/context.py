@@ -40,6 +40,28 @@ def _token_list(value):
     return [value]
 
 
+def _format_context_line(info, dt):
+    date_label = dt.date().isoformat() if dt else ""
+    minerals = ",".join(info.minerals[:2]) if info.minerals else ""
+    title = info.title.strip()
+    if len(title) > 80:
+        title = title[:77] + "..."
+    line = " | ".join(
+        part
+        for part in [
+            date_label,
+            info.country,
+            minerals,
+            info.action,
+            f"风险{info.risk_level}" if info.risk_level else "",
+            f"对中国{info.impact}" if info.impact else "",
+            title,
+        ]
+        if part
+    )
+    return line
+
+
 @dataclass(frozen=True)
 class ContextRecord:
     record_id: str
@@ -144,24 +166,62 @@ class ContextBuilder:
         scored.sort(key=lambda item: (item[0], item[1] or datetime.min), reverse=True)
         lines = []
         for _score, dt, info in scored[: self.max_items]:
-            date_label = dt.date().isoformat() if dt else ""
-            minerals = ",".join(info.minerals[:2]) if info.minerals else ""
-            title = info.title.strip()
-            if len(title) > 80:
-                title = title[:77] + "..."
-            line = " | ".join(
-                part
-                for part in [
-                    date_label,
-                    info.country,
-                    minerals,
-                    info.action,
-                    f"风险{info.risk_level}" if info.risk_level else "",
-                    f"对中国{info.impact}" if info.impact else "",
-                    title,
-                ]
-                if part
-            )
+            line = _format_context_line(info, dt)
             if line:
                 lines.append(f"- {line}")
+        return "\n".join(lines)
+
+
+class VectorContextBuilder:
+    def __init__(self, records, embedding_store, max_items=6, lookback_days=365):
+        self.max_items = max_items
+        self.lookback_days = lookback_days
+        self.embedding_store = embedding_store
+        self._records = {}
+        for record in records:
+            self.add_record(record)
+
+    def add_record(self, record):
+        info = ContextRecord.from_record(record)
+        if not info.record_id:
+            return
+        self._records[info.record_id] = info
+        if self.embedding_store:
+            self.embedding_store.ensure_record_embedding(record)
+
+    def build_context(self, title, summary, exclude_id=""):
+        query_text = f"{title or ''}\n{summary or ''}".strip()
+        if not query_text:
+            return ""
+        if not self.embedding_store:
+            return ""
+
+        vector = self.embedding_store.embed_query(query_text)
+        if not vector:
+            return ""
+
+        results = self.embedding_store.query(
+            vector, top_k=self.max_items + 4, exclude_id=exclude_id
+        )
+        if not results:
+            return ""
+
+        cutoff = None
+        if self.lookback_days:
+            cutoff = now_cst() - timedelta(days=self.lookback_days)
+
+        lines = []
+        for record_id, _score in results:
+            info = self._records.get(record_id)
+            if not info:
+                continue
+            dt = info.date()
+            if cutoff and dt and dt < cutoff:
+                continue
+            line = _format_context_line(info, dt)
+            if line:
+                lines.append(f"- {line}")
+            if len(lines) >= self.max_items:
+                break
+
         return "\n".join(lines)

@@ -61,6 +61,14 @@ class Config:
     index_limit: int
     context_window_days: int
     context_max_items: int
+    context_mode: str
+    embedding_model: str
+    embedding_doc_task_type: str
+    embedding_query_task_type: str
+    embedding_max_chars: int
+    embedding_min_chars: int
+    embedding_warmup_limit: int
+    embedding_delay_seconds: float
 
     @classmethod
     def from_env(cls):
@@ -85,6 +93,20 @@ class Config:
             index_limit=_get_int("INDEX_LIMIT", 200),
             context_window_days=_get_int("CONTEXT_WINDOW_DAYS", 365),
             context_max_items=_get_int("CONTEXT_MAX_ITEMS", 6),
+            context_mode=_get_env("CONTEXT_MODE", "vector"),
+            embedding_model=_get_env(
+                "EMBEDDING_MODEL", "models/text-embedding-004"
+            ),
+            embedding_doc_task_type=_get_env(
+                "EMBEDDING_DOC_TASK", "retrieval_document"
+            ),
+            embedding_query_task_type=_get_env(
+                "EMBEDDING_QUERY_TASK", "retrieval_query"
+            ),
+            embedding_max_chars=_get_int("EMBEDDING_MAX_CHARS", 4000),
+            embedding_min_chars=_get_int("EMBEDDING_MIN_CHARS", 80),
+            embedding_warmup_limit=_get_int("EMBEDDING_WARMUP_LIMIT", 2000),
+            embedding_delay_seconds=_get_float("EMBEDDING_DELAY_SECONDS", 0.2),
         )
 
 

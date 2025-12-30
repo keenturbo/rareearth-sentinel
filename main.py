@@ -9,7 +9,8 @@ from src.fetcher import Fetcher
 from src.extractor import GeminiExtractor
 from src.storage import Storage
 from src.reporter import Reporter
-from src.context import ContextBuilder
+from src.context import ContextBuilder, VectorContextBuilder
+from src.embeddings import EmbeddingStore
 from src.utils import clean_text, isoformat, now_cst
 
 
@@ -30,6 +31,30 @@ def _context_lines(context_summary, limit=0):
     return lines
 
 
+def _build_context_builder(config, records):
+    mode = (config.context_mode or "token").strip().lower()
+    if mode == "vector":
+        embedding_store = EmbeddingStore(config)
+        embedding_store.warmup(records, limit=config.embedding_warmup_limit)
+        return (
+            VectorContextBuilder(
+                records,
+                embedding_store,
+                max_items=config.context_max_items,
+                lookback_days=config.context_window_days,
+            ),
+            embedding_store,
+        )
+    return (
+        ContextBuilder(
+            records,
+            max_items=config.context_max_items,
+            lookback_days=config.context_window_days,
+        ),
+        None,
+    )
+
+
 def run_pipeline(config):
     storage = Storage(config)
     seen_ids = storage.load_existing_ids()
@@ -39,11 +64,7 @@ def run_pipeline(config):
     reporter = Reporter(config)
 
     history_records = list(storage.iter_records())
-    context_builder = ContextBuilder(
-        history_records,
-        max_items=config.context_max_items,
-        lookback_days=config.context_window_days,
-    )
+    context_builder, _embedding_store = _build_context_builder(config, history_records)
 
     stats = {
         "total_items": 0,
@@ -248,10 +269,8 @@ def backfill_records(config, limit=0, retry_attempts=0, use_context=False):
                 except json.JSONDecodeError:
                     continue
                 history_records.append(record)
-        context_builder = ContextBuilder(
-            history_records,
-            max_items=config.context_max_items,
-            lookback_days=config.context_window_days,
+        context_builder, _embedding_store = _build_context_builder(
+            config, history_records
         )
         print(f"[backfill] context loaded: {len(history_records)} records")
 
