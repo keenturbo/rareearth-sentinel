@@ -9,6 +9,7 @@ from src.fetcher import Fetcher
 from src.extractor import GeminiExtractor
 from src.storage import Storage
 from src.reporter import Reporter
+from src.context import ContextBuilder
 from src.utils import clean_text, isoformat, now_cst
 
 
@@ -19,6 +20,13 @@ def run_pipeline(config):
     fetcher = Fetcher(config)
     extractor = GeminiExtractor(config)
     reporter = Reporter(config)
+
+    history_records = list(storage.iter_records())
+    context_builder = ContextBuilder(
+        history_records,
+        max_items=config.context_max_items,
+        lookback_days=config.context_window_days,
+    )
 
     stats = {
         "total_items": 0,
@@ -125,7 +133,11 @@ def run_pipeline(config):
                     if config.fetch_delay_seconds > 0:
                         time.sleep(config.fetch_delay_seconds)
 
-                    analysis = extractor.analyze(content)
+                    context_summary = context_builder.build_context(
+                        title, summary or content[:600], exclude_id=""
+                    )
+
+                    analysis = extractor.analyze(content, context_summary=context_summary)
                     if analysis is None:
                         stats["analyze_fail"] += 1
                         print("  - skip: analyze_fail")
@@ -140,6 +152,7 @@ def run_pipeline(config):
                         resolved_url=resolved_url,
                     )
                     storage.append_record(record)
+                    context_builder.add_record(record)
                     seen_ids.add(record["id"])
                     stats["saved"] += 1
                     print("  + saved")
@@ -156,6 +169,9 @@ def run_pipeline(config):
     except Exception as exc:
         write_status(running=False, finished=True, error=str(exc))
         raise
+
+
+# Remaining functions (backfill, main) unchanged below
 
 
 def _needs_backfill(record):
@@ -270,6 +286,7 @@ def backfill_records(config, limit=0, retry_attempts=0):
         )
     )
     return updated
+
 
 
 def main():
