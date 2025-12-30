@@ -13,6 +13,23 @@ from src.context import ContextBuilder
 from src.utils import clean_text, isoformat, now_cst
 
 
+def _context_lines(context_summary, limit=0):
+    if not context_summary:
+        return []
+    lines = []
+    for raw in context_summary.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("-"):
+            line = line[1:].strip()
+        if line:
+            lines.append(line)
+        if limit and len(lines) >= limit:
+            break
+    return lines
+
+
 def run_pipeline(config):
     storage = Storage(config)
     seen_ids = storage.load_existing_ids()
@@ -136,6 +153,9 @@ def run_pipeline(config):
                     context_summary = context_builder.build_context(
                         title, summary or content[:600], exclude_id=""
                     )
+                    context_lines = _context_lines(
+                        context_summary, limit=config.context_max_items
+                    )
 
                     analysis = extractor.analyze(content, context_summary=context_summary)
                     if analysis is None:
@@ -150,6 +170,8 @@ def run_pipeline(config):
                         content_source=content_source,
                         fetch_status=fetch_status,
                         resolved_url=resolved_url,
+                        related_context=context_lines,
+                        analysis_with_context=bool(context_summary),
                     )
                     storage.append_record(record)
                     context_builder.add_record(record)
@@ -174,9 +196,16 @@ def run_pipeline(config):
 # Remaining functions (backfill, main) unchanged below
 
 
-def _needs_backfill(record):
+def _needs_backfill(record, force_context=False):
     expert_summary = str(record.get("expert_summary", "")).strip()
-    return not expert_summary
+    if not expert_summary:
+        return True
+    if force_context:
+        related_context = record.get("related_context")
+        context_flag = record.get("analysis_with_context")
+        if not related_context or not context_flag:
+            return True
+    return False
 
 
 def _merge_analysis(record, analysis):
@@ -185,10 +214,10 @@ def _merge_analysis(record, analysis):
     return record
 
 
-def _analyze_with_retry(extractor, content, retry_attempts, retry_delay):
+def _analyze_with_retry(extractor, content, retry_attempts, retry_delay, context_summary=""):
     attempts = max(0, int(retry_attempts))
     for attempt in range(attempts + 1):
-        analysis = extractor.analyze(content)
+        analysis = extractor.analyze(content, context_summary=context_summary)
         if analysis is not None:
             return analysis, attempt
         if attempt < attempts and retry_delay > 0:
@@ -196,7 +225,7 @@ def _analyze_with_retry(extractor, content, retry_attempts, retry_delay):
     return None, attempts
 
 
-def backfill_records(config, limit=0, retry_attempts=0):
+def backfill_records(config, limit=0, retry_attempts=0, use_context=False):
     storage = Storage(config)
     extractor = GeminiExtractor(config)
     reporter = Reporter(config)
@@ -205,6 +234,26 @@ def backfill_records(config, limit=0, retry_attempts=0):
     if not os.path.exists(input_path):
         print("No history file found for backfill.")
         return 0
+
+    context_builder = None
+    if use_context:
+        history_records = []
+        with open(input_path, "r", encoding="utf-8") as src:
+            for line in src:
+                raw = line.strip()
+                if not raw:
+                    continue
+                try:
+                    record = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                history_records.append(record)
+        context_builder = ContextBuilder(
+            history_records,
+            max_items=config.context_max_items,
+            lookback_days=config.context_window_days,
+        )
+        print(f"[backfill] context loaded: {len(history_records)} records")
 
     tmp_path = input_path + ".tmp"
     updated = 0
@@ -226,7 +275,7 @@ def backfill_records(config, limit=0, retry_attempts=0):
                 dst.write(raw + "\n")
                 continue
 
-            if not _needs_backfill(record):
+            if not _needs_backfill(record, force_context=use_context):
                 dst.write(json.dumps(record, ensure_ascii=False) + "\n")
                 continue
 
@@ -246,8 +295,27 @@ def backfill_records(config, limit=0, retry_attempts=0):
                 dst.write(json.dumps(record, ensure_ascii=False) + "\n")
                 continue
 
+            title = str(record.get("title", ""))
+            summary = str(record.get("summary_zh", "")).strip()
+            if not summary:
+                summary = content[:600]
+
+            context_summary = ""
+            context_lines = []
+            if use_context and context_builder:
+                context_summary = context_builder.build_context(
+                    title, summary, exclude_id=record.get("id", "")
+                )
+                context_lines = _context_lines(
+                    context_summary, limit=config.context_max_items
+                )
+
             analysis, _attempt = _analyze_with_retry(
-                extractor, content, retry_attempts, config.analyze_delay_seconds
+                extractor,
+                content,
+                retry_attempts,
+                config.analyze_delay_seconds,
+                context_summary=context_summary,
             )
             if analysis is None:
                 analyze_fail += 1
@@ -262,6 +330,10 @@ def backfill_records(config, limit=0, retry_attempts=0):
                 continue
 
             record = _merge_analysis(record, analysis)
+            if use_context:
+                record["analysis_with_context"] = bool(context_summary)
+                record["related_context"] = context_lines
+
             dst.write(json.dumps(record, ensure_ascii=False) + "\n")
             updated += 1
             title = str(record.get("title", ""))
@@ -307,6 +379,11 @@ def main():
         help="Backfill only missing expert fields (alias of --backfill)",
     )
     parser.add_argument(
+        "--backfill-with-context",
+        action="store_true",
+        help="Backfill expert fields using historical context",
+    )
+    parser.add_argument(
         "--backfill-retry",
         nargs="?",
         const=2,
@@ -324,9 +401,12 @@ def main():
 
     config = Config.from_env()
 
-    if args.backfill or args.backfill_missing:
+    if args.backfill or args.backfill_missing or args.backfill_with_context:
         backfill_records(
-            config, limit=args.backfill_limit, retry_attempts=args.backfill_retry
+            config,
+            limit=args.backfill_limit,
+            retry_attempts=args.backfill_retry,
+            use_context=args.backfill_with_context,
         )
         return
 
