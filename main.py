@@ -169,7 +169,18 @@ def _merge_analysis(record, analysis):
     return record
 
 
-def backfill_records(config, limit=0):
+def _analyze_with_retry(extractor, content, retry_attempts, retry_delay):
+    attempts = max(0, int(retry_attempts))
+    for attempt in range(attempts + 1):
+        analysis = extractor.analyze(content)
+        if analysis is not None:
+            return analysis, attempt
+        if attempt < attempts and retry_delay > 0:
+            time.sleep(retry_delay)
+    return None, attempts
+
+
+def backfill_records(config, limit=0, retry_attempts=0):
     storage = Storage(config)
     extractor = GeminiExtractor(config)
     reporter = Reporter(config)
@@ -219,9 +230,18 @@ def backfill_records(config, limit=0):
                 dst.write(json.dumps(record, ensure_ascii=False) + "\n")
                 continue
 
-            analysis = extractor.analyze(content)
+            analysis, _attempt = _analyze_with_retry(
+                extractor, content, retry_attempts, config.analyze_delay_seconds
+            )
             if analysis is None:
                 analyze_fail += 1
+                if retry_attempts:
+                    title = str(record.get("title", ""))
+                    print(
+                        "[backfill] analyze_fail after {attempts} attempts: {title}".format(
+                            attempts=retry_attempts + 1, title=title[:120]
+                        )
+                    )
                 dst.write(json.dumps(record, ensure_ascii=False) + "\n")
                 continue
 
@@ -265,6 +285,19 @@ def main():
         help="Backfill expert fields for historical records",
     )
     parser.add_argument(
+        "--backfill-missing",
+        action="store_true",
+        help="Backfill only missing expert fields (alias of --backfill)",
+    )
+    parser.add_argument(
+        "--backfill-retry",
+        nargs="?",
+        const=2,
+        type=int,
+        default=0,
+        help="Retry analyze failures during backfill (default 2)",
+    )
+    parser.add_argument(
         "--backfill-limit",
         type=int,
         default=0,
@@ -274,8 +307,10 @@ def main():
 
     config = Config.from_env()
 
-    if args.backfill:
-        backfill_records(config, limit=args.backfill_limit)
+    if args.backfill or args.backfill_missing:
+        backfill_records(
+            config, limit=args.backfill_limit, retry_attempts=args.backfill_retry
+        )
         return
 
     if args.rebuild:
