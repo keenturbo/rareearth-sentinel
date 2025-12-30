@@ -204,6 +204,16 @@ def normalize_analysis(data):
         "forecast_48m": _normalize_forecast(data.get("forecast_48m")),
     }
 
+    related_context = data.get("related_context")
+    if isinstance(related_context, list):
+        normalized["related_context"] = [
+            _as_str(entry) for entry in related_context if _as_str(entry)
+        ]
+    if data.get("analysis_with_context") is not None:
+        normalized["analysis_with_context"] = _as_bool(
+            data.get("analysis_with_context")
+        )
+
     return normalized
 
 
