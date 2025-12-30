@@ -57,6 +57,19 @@ NOISE_PHRASES = [
 ]
 
 
+# Tokenization helper for context indexing
+TOKEN_RE = re.compile(r"[^\w\s\u4e00-\u9fff\-]+", re.UNICODE)
+
+
+def normalize_token(text):
+    if not text:
+        return ""
+    text = str(text).strip().lower()
+    text = TOKEN_RE.sub("", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
 def now_cst():
     return datetime.now(ZoneInfo("Asia/Shanghai"))
 
