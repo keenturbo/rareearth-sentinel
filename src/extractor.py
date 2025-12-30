@@ -13,11 +13,17 @@ class GeminiExtractor:
             generation_config={"temperature": 0.2},
         )
 
-    def analyze(self, text):
+    def analyze(self, text, context_summary=""):
         if not text:
             return None
 
         content = text[:12000]
+        context_block = ""
+        if context_summary:
+            context_block = (
+                "\nRELATED HISTORY (for context only):\n"
+                f"{context_summary}\n"
+            )
 
         prompt = f"""
 You are a rare earths and critical minerals intelligence analyst.
@@ -83,6 +89,7 @@ Required JSON fields:
 
 Article:
 {content}
+{context_block}
 """
 
         try:
