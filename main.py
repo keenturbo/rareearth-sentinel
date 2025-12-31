@@ -14,6 +14,7 @@ from src.context import ContextBuilder, VectorContextBuilder
 from src.embeddings import EmbeddingStore
 from src.normalizer import Normalizer
 from src.utils import clean_text, isoformat, now_cst
+from src.datasets import build_datasets
 
 
 def _context_lines(context_summary, limit=0):
@@ -441,11 +442,20 @@ def main():
         default=0,
         help="Max records to backfill (0 = no limit)",
     )
+    parser.add_argument(
+        "--build-datasets",
+        action="store_true",
+        help="Build training datasets (extract/reason) from history",
+    )
     args = parser.parse_args()
 
     config = Config.from_env()
     if args.backfill_with_vector_context:
         config = replace(config, context_mode="vector")
+
+    if args.build_datasets:
+        build_datasets(config)
+        return
 
     if (
         args.backfill
