@@ -69,6 +69,13 @@ class Config:
     embedding_min_chars: int
     embedding_warmup_limit: int
     embedding_delay_seconds: float
+    datasets_dir: str
+    dataset_min_credibility: int
+    dataset_negative_ratio: float
+    dataset_min_chars: int
+    dataset_split_train: float
+    dataset_split_valid: float
+    dataset_random_seed: int
 
     @classmethod
     def from_env(cls):
@@ -107,6 +114,13 @@ class Config:
             embedding_min_chars=_get_int("EMBEDDING_MIN_CHARS", 80),
             embedding_warmup_limit=_get_int("EMBEDDING_WARMUP_LIMIT", 2000),
             embedding_delay_seconds=_get_float("EMBEDDING_DELAY_SECONDS", 0.2),
+            datasets_dir=_get_env("DATASETS_DIR", "data/datasets"),
+            dataset_min_credibility=_get_int("DATASET_MIN_CREDIBILITY", 60),
+            dataset_negative_ratio=_get_float("DATASET_NEGATIVE_RATIO", 0.15),
+            dataset_min_chars=_get_int("DATASET_MIN_CHARS", 200),
+            dataset_split_train=_get_float("DATASET_SPLIT_TRAIN", 0.8),
+            dataset_split_valid=_get_float("DATASET_SPLIT_VALID", 0.1),
+            dataset_random_seed=_get_int("DATASET_RANDOM_SEED", 42),
         )
 
 
