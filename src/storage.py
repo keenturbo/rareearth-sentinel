@@ -73,9 +73,11 @@ class Storage:
         resolved_url=None,
         related_context=None,
         analysis_with_context=False,
+        normalized=None,
+        credibility=None,
     ):
         now = now_cst()
-        return {
+        record = {
             "id": hash_url(item.get("url", "")),
             "title": item.get("title", ""),
             "url": item.get("url", ""),
@@ -119,6 +121,11 @@ class Storage:
             "fetch_status": fetch_status or "",
             "content": content,
         }
+        if normalized is not None:
+            record["normalized"] = normalized
+        if credibility is not None:
+            record["credibility"] = credibility
+        return record
 
     def append_record(self, record):
         with open(self.jsonl_path, "a", encoding="utf-8") as f:

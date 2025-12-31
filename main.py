@@ -12,6 +12,7 @@ from src.storage import Storage
 from src.reporter import Reporter
 from src.context import ContextBuilder, VectorContextBuilder
 from src.embeddings import EmbeddingStore
+from src.normalizer import Normalizer
 from src.utils import clean_text, isoformat, now_cst
 
 
@@ -66,6 +67,7 @@ def run_pipeline(config):
 
     history_records = list(storage.iter_records())
     context_builder, _embedding_store = _build_context_builder(config, history_records)
+    normalizer = Normalizer(history_records, config)
 
     stats = {
         "total_items": 0,
@@ -185,6 +187,10 @@ def run_pipeline(config):
                         print("  - skip: analyze_fail")
                         continue
 
+                    normalized, credibility = normalizer.normalize_and_score(
+                        item, analysis, content, content_source
+                    )
+
                     record = storage.build_record(
                         item,
                         analysis,
@@ -194,9 +200,12 @@ def run_pipeline(config):
                         resolved_url=resolved_url,
                         related_context=context_lines,
                         analysis_with_context=bool(context_summary),
+                        normalized=normalized,
+                        credibility=credibility,
                     )
                     storage.append_record(record)
                     context_builder.add_record(record)
+                    normalizer.add_record(record)
                     seen_ids.add(record["id"])
                     stats["saved"] += 1
                     print("  + saved")
@@ -257,19 +266,22 @@ def backfill_records(config, limit=0, retry_attempts=0, use_context=False):
         print("No history file found for backfill.")
         return 0
 
+    history_records = []
+    with open(input_path, "r", encoding="utf-8") as src:
+        for line in src:
+            raw = line.strip()
+            if not raw:
+                continue
+            try:
+                record = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            history_records.append(record)
+
+    normalizer = Normalizer(history_records, config)
+
     context_builder = None
     if use_context:
-        history_records = []
-        with open(input_path, "r", encoding="utf-8") as src:
-            for line in src:
-                raw = line.strip()
-                if not raw:
-                    continue
-                try:
-                    record = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
-                history_records.append(record)
         context_builder, _embedding_store = _build_context_builder(
             config, history_records
         )
@@ -295,7 +307,10 @@ def backfill_records(config, limit=0, retry_attempts=0, use_context=False):
                 dst.write(raw + "\n")
                 continue
 
-            if not _needs_backfill(record, force_context=use_context):
+            needs_backfill = _needs_backfill(record, force_context=use_context)
+            needs_norm = not record.get("normalized") or not record.get("credibility")
+
+            if not needs_backfill and not needs_norm:
                 dst.write(json.dumps(record, ensure_ascii=False) + "\n")
                 continue
 
@@ -303,64 +318,68 @@ def backfill_records(config, limit=0, retry_attempts=0, use_context=False):
                 dst.write(json.dumps(record, ensure_ascii=False) + "\n")
                 continue
 
-            content = str(record.get("content", "")).strip()
-            if not content:
-                skipped += 1
-                dst.write(json.dumps(record, ensure_ascii=False) + "\n")
-                continue
+            analysis_updated = False
 
-            content = clean_text(content)
-            if len(content) < config.summary_min_chars:
-                skipped += 1
-                dst.write(json.dumps(record, ensure_ascii=False) + "\n")
-                continue
+            if needs_backfill:
+                content = str(record.get("content", "")).strip()
+                if not content:
+                    skipped += 1
+                else:
+                    content = clean_text(content)
+                    if len(content) < config.summary_min_chars:
+                        skipped += 1
+                    else:
+                        title = str(record.get("title", ""))
+                        summary = str(record.get("summary_zh", "")).strip()
+                        if not summary:
+                            summary = content[:600]
 
-            title = str(record.get("title", ""))
-            summary = str(record.get("summary_zh", "")).strip()
-            if not summary:
-                summary = content[:600]
+                        context_summary = ""
+                        context_lines = []
+                        if use_context and context_builder:
+                            context_summary = context_builder.build_context(
+                                title, summary, exclude_id=record.get("id", "")
+                            )
+                            context_lines = _context_lines(
+                                context_summary, limit=config.context_max_items
+                            )
 
-            context_summary = ""
-            context_lines = []
-            if use_context and context_builder:
-                context_summary = context_builder.build_context(
-                    title, summary, exclude_id=record.get("id", "")
-                )
-                context_lines = _context_lines(
-                    context_summary, limit=config.context_max_items
-                )
-
-            analysis, _attempt = _analyze_with_retry(
-                extractor,
-                content,
-                retry_attempts,
-                config.analyze_delay_seconds,
-                context_summary=context_summary,
-            )
-            if analysis is None:
-                analyze_fail += 1
-                if retry_attempts:
-                    title = str(record.get("title", ""))
-                    print(
-                        "[backfill] analyze_fail after {attempts} attempts: {title}".format(
-                            attempts=retry_attempts + 1, title=title[:120]
+                        analysis, _attempt = _analyze_with_retry(
+                            extractor,
+                            content,
+                            retry_attempts,
+                            config.analyze_delay_seconds,
+                            context_summary=context_summary,
                         )
-                    )
-                dst.write(json.dumps(record, ensure_ascii=False) + "\n")
-                continue
+                        if analysis is None:
+                            analyze_fail += 1
+                            if retry_attempts:
+                                title = str(record.get("title", ""))
+                                print(
+                                    "[backfill] analyze_fail after {attempts} attempts: {title}".format(
+                                        attempts=retry_attempts + 1, title=title[:120]
+                                    )
+                                )
+                        else:
+                            record = _merge_analysis(record, analysis)
+                            analysis_updated = True
+                            if use_context:
+                                record["analysis_with_context"] = bool(context_summary)
+                                record["related_context"] = context_lines
 
-            record = _merge_analysis(record, analysis)
-            if use_context:
-                record["analysis_with_context"] = bool(context_summary)
-                record["related_context"] = context_lines
+            if analysis_updated or needs_norm:
+                normalized, credibility = normalizer.normalize_and_score_from_record(
+                    record
+                )
+                record["normalized"] = normalized
+                record["credibility"] = credibility
+                updated += 1
+                title = str(record.get("title", ""))
+                print(f"[backfill] updated: {title[:120]}")
+                if analysis_updated and config.analyze_delay_seconds > 0:
+                    time.sleep(config.analyze_delay_seconds)
 
             dst.write(json.dumps(record, ensure_ascii=False) + "\n")
-            updated += 1
-            title = str(record.get("title", ""))
-            print(f"[backfill] updated: {title[:120]}")
-
-            if config.analyze_delay_seconds > 0:
-                time.sleep(config.analyze_delay_seconds)
 
     if updated > 0:
         os.replace(tmp_path, input_path)
