@@ -70,6 +70,10 @@ h1{margin:0}
 .archive-link{font-size:12px;color:#0b1220;border:1px solid #e2e8f0;border-radius:999px;padding:4px 10px;background:#fff;text-decoration:none}
 .archive-link.active{background:#0b1220;color:#fff;border-color:#0b1220}
 .page-note{font-size:12px;color:var(--muted);margin-top:4px}
+.legend{margin-top:12px;padding:10px 12px;border-radius:12px;background:#ffffff;border:1px solid #e2e8f0;box-shadow:0 6px 14px rgba(0,0,0,0.05)}
+.legend-title{font-size:12px;font-weight:600;color:var(--ink)}
+.legend-text{margin-top:4px;font-size:12px;color:var(--muted);line-height:1.5}
+.legend-row{margin-top:6px;display:flex;gap:6px;flex-wrap:wrap}
 </style>
 </head>
 <body>
@@ -92,6 +96,17 @@ h1{margin:0}
       <div class="kpi">今日新增 {{TODAY_COUNT}}</div>
     </div>
   </header>
+
+  <section class="legend">
+    <div class="legend-title">评分说明 / 图例</div>
+    <div class="legend-text">分项分数范围 0-100，数值越高表示对中国供应链风险越大；综合风险为分项加权后的结果。预测箭头表示压力方向（↑ 上行 / ↓ 下行 / → 中性），括号内为置信度（0-100）。</div>
+    <div class="legend-row">
+      <span class="chip score">分项评分 0-100</span>
+      <span class="chip trend-up">↑ 上行压力</span>
+      <span class="chip trend-flat">→ 持平</span>
+      <span class="chip trend-down">↓ 下行压力</span>
+    </div>
+  </section>
 
   <section class="rollups">
     <div class="rollups-title">趋势汇总</div>
