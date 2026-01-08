@@ -38,8 +38,8 @@ Location guidance:
 - If unsure, set country_primary to "Unknown".
 
 China perspective output:
-- china_impact must be one of [83d1d, 420070c, 49407a]
-- china_risk_trend must be one of [47af3a, 42bf73, 313930c]
+- china_impact must be one of [83d, 42000c, 4940a]
+- china_risk_trend must be one of [47a3a, 42b73, 31390c]
 - expert_summary must be 1-2 Chinese sentences for decision makers.
 - recommendations_strategy is an array of 2-3 strategic suggestions (policy/industry chain).
 - recommendations_tactical is an array of 2-3 tactical actions (investment/M&A/export/stockpile).
@@ -168,3 +168,65 @@ Article:
         if data is None:
             return None
         return normalize_analysis_en(data)
+
+    def _normalize_daily_report(self, data):
+        if not isinstance(data, dict):
+            return None
+        headline = str(data.get("headline", "")).strip()
+        body = str(data.get("body", "")).strip()
+        bullets = data.get("bullets") or []
+        if isinstance(bullets, str):
+            bullets = [
+                entry.strip("- ").strip()
+                for entry in bullets.splitlines()
+                if entry.strip()
+            ]
+        if not isinstance(bullets, list):
+            bullets = []
+        bullets = [str(entry).strip() for entry in bullets if str(entry).strip()]
+        return {
+            "headline": headline,
+            "body": body,
+            "bullets": bullets[:3],
+        }
+
+    def analyze_daily_report(self, context_text, lang="zh"):
+        if not context_text:
+            return None
+
+        if lang == "en":
+            prompt = f"""
+You are an intelligence editor. Write a concise daily report in English for Western decision makers.
+Use the event list below. Output ONLY JSON with fields: headline, body, bullets.
+Constraints:
+- headline: short and clear (<= 12 words).
+- body: 120-180 words, concise and analytical.
+- bullets: array of 3 short bullet points.
+If signals are weak, keep the tone neutral.
+
+Event list:
+{context_text}
+"""
+        else:
+            prompt = f"""
+You are an intelligence editor. Write a concise daily report in Chinese for Chinese decision makers.
+Use the event list below. Output ONLY JSON with fields: headline, body, bullets.
+Constraints:
+- headline: <= 20 Chinese characters.
+- body: 150-300 Chinese characters, concise and analytical.
+- bullets: array of 3 short bullet points.
+If signals are weak, keep the tone neutral.
+
+Event list:
+{context_text}
+"""
+
+        try:
+            response = self.model.generate_content(prompt)
+        except Exception:
+            return None
+
+        data = extract_json(getattr(response, "text", ""))
+        if data is None:
+            return None
+        return self._normalize_daily_report(data)
