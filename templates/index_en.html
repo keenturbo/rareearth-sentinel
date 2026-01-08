@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Rare Earth Sentinel · Atlas Feed</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0b1220; --muted:#536170; --bg:#e9eef5;
+  --card:#ffffff; --accent:#1d4ed8; --warn:#f59e0b; --risk:#ef4444;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Space Grotesk",sans-serif;background:linear-gradient(180deg,#f7f9fc,#e9eef5)}
+.container{max-width:1180px;margin:0 auto;padding:24px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:16px;flex-wrap:wrap}
+h1{margin:0}
+.meta{font-size:12px;color:var(--muted)}
+.lang-switch{font-size:12px;color:var(--accent);text-decoration:none;border:1px solid var(--accent);padding:4px 10px;border-radius:999px}
+.lang-switch:hover{background:var(--accent);color:#fff}
+.kpis{display:flex;gap:12px;flex-wrap:wrap}
+.kpi{background:#fff;border-radius:10px;padding:10px 14px;box-shadow:0 6px 14px rgba(0,0,0,0.05);font-size:12px}
+.feed{display:grid;gap:10px;margin-top:10px}
+.row{
+  background:var(--card);border-radius:10px;padding:14px;
+  border-left:6px solid var(--accent);display:grid;gap:6px;
+}
+.row.risk{border-left-color:var(--risk)}
+.row.warn{border-left-color:var(--warn)}
+.title a{color:var(--ink);text-decoration:none}
+.title a:hover{text-decoration:underline}
+.tags{display:flex;gap:6px;flex-wrap:wrap}
+.tag{font-size:11px;background:#eff6ff;color:#1d4ed8;padding:3px 8px;border-radius:999px}
+.update{margin-top:6px}
+.status{margin-top:10px;display:flex;gap:10px;flex-wrap:wrap}
+.badge{font-size:11px;background:#0b1220;color:#fff;padding:4px 8px;border-radius:999px}
+.badge.warn{background:#f59e0b}
+.badge.ok{background:#16a34a}
+.analysis{margin-top:6px;padding:10px;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0;display:grid;gap:8px}
+.analysis-head{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.chip{font-size:11px;padding:3px 8px;border-radius:999px;background:#e2e8f0;color:#334155}
+.chip.good{background:#dcfce7;color:#166534}
+.chip.bad{background:#fee2e2;color:#991b1b}
+.chip.neutral{background:#e2e8f0;color:#334155}
+.chip.trend-up{background:#fee2e2;color:#991b1b}
+.chip.trend-flat{background:#e2e8f0;color:#334155}
+.chip.trend-down{background:#dcfce7;color:#166534}
+.chip.score{background:#0b1220;color:#fff}
+.analysis-summary{font-size:13px;color:var(--ink)}
+.analysis-grid{display:grid;gap:4px;font-size:12px;color:var(--muted)}
+.analysis-list{display:grid;gap:4px;font-size:12px;color:var(--muted)}
+.analysis-list ul{margin:0 0 0 16px;padding:0}
+.analysis-list li{margin:2px 0}
+.brief{margin-top:12px;padding:12px;border-radius:12px;background:#ffffff;border:1px solid #e2e8f0;box-shadow:0 6px 14px rgba(0,0,0,0.05)}
+.brief-title{font-size:13px;font-weight:600;color:var(--ink)}
+.brief-row{margin-top:6px;font-size:12px;color:var(--muted)}
+.brief-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-top:8px}
+.brief-col{background:#f8fafc;border-radius:10px;padding:8px}
+.brief-col ul{margin:6px 0 0 16px;padding:0;font-size:12px;color:var(--muted)}
+.brief-empty{font-size:12px;color:var(--muted)}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.filter-btn{border:1px solid #e2e8f0;background:#fff;border-radius:999px;padding:4px 10px;font-size:12px;color:var(--muted);cursor:pointer}
+.filter-btn.active{background:#0b1220;color:#fff;border-color:#0b1220}
+.rollups{margin-top:12px;padding:12px;border-radius:12px;background:#ffffff;border:1px solid #e2e8f0;box-shadow:0 6px 14px rgba(0,0,0,0.05)}
+.rollups-title{font-size:13px;font-weight:600;color:var(--ink)}
+.rollups-row{margin-top:6px;font-size:12px;color:var(--muted)}
+.rollups-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:8px}
+.rollup-col{background:#f8fafc;border-radius:10px;padding:8px}
+.rollup-chip{display:inline-block;margin:4px 6px 0 0;padding:3px 8px;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-size:11px}
+.rollups-empty{font-size:12px;color:var(--muted)}
+.archive-nav{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.archive-link{font-size:12px;color:#0b1220;border:1px solid #e2e8f0;border-radius:999px;padding:4px 10px;background:#fff;text-decoration:none}
+.archive-link.active{background:#0b1220;color:#fff;border-color:#0b1220}
+.page-note{font-size:12px;color:var(--muted);margin-top:4px}
+.legend{margin-top:12px;padding:10px 12px;border-radius:12px;background:#ffffff;border:1px solid #e2e8f0;box-shadow:0 6px 14px rgba(0,0,0,0.05)}
+.legend-title{font-size:12px;font-weight:600;color:var(--ink)}
+.legend-text{margin-top:4px;font-size:12px;color:var(--muted);line-height:1.5}
+.legend-row{margin-top:6px;display:flex;gap:6px;flex-wrap:wrap}
+.premium{margin-top:12px;padding:12px;border-radius:12px;background:#fffbeb;border:1px solid #fcd34d;box-shadow:0 6px 14px rgba(0,0,0,0.05)}
+.premium-title{font-size:13px;font-weight:600;color:#92400e}
+.premium-item{margin-top:8px;padding:10px;background:#fff;border-radius:8px;border:1px solid #fcd34d}
+.premium-topic{font-size:13px;font-weight:600;color:var(--ink)}
+.premium-reason{font-size:12px;color:var(--muted);margin-top:4px}
+.premium-btn{display:inline-block;margin-top:6px;font-size:11px;color:#fff;background:#f59e0b;padding:4px 10px;border-radius:999px;text-decoration:none}
+.premium-btn:hover{background:#d97706}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <h1>Rare Earth Sentinel</h1>
+        <a href="../cn/index.html" class="lang-switch">中文版</a>
+      </div>
+      <div class="meta">Atlas Feed · Global Critical Minerals Intelligence</div>
+      <div class="meta update">Updated: {{LAST_UPDATE}}</div>
+      <div class="page-note">{{PAGE_NOTE}}</div>
+      <div class="status">
+        <span class="badge" id="run-status">Status: Unknown</span>
+        <span class="badge warn" id="run-progress">Progress: -/-</span>
+        <span class="badge" id="run-current">Current: -</span>
+      </div>
+    </div>
+    <div class="kpis">
+      <div class="kpi">Total Intel {{TOTAL_COUNT}}</div>
+      <div class="kpi">High Risk {{HIGH_RISK_COUNT}}</div>
+      <div class="kpi">Today {{TODAY_COUNT}}</div>
+    </div>
+  </header>
+
+  <section class="legend">
+    <div class="legend-title">Scoring Guide</div>
+    <div class="legend-text">Sub-scores range 0-100; higher values indicate greater supply chain risk for Western markets. Forecast arrows show pressure direction (↑ upward / ↓ downward / → neutral), with confidence in parentheses (0-100).</div>
+    <div class="legend-row">
+      <span class="chip score">Sub-score 0-100</span>
+      <span class="chip trend-up">↑ Upward Pressure</span>
+      <span class="chip trend-flat">→ Stable</span>
+      <span class="chip trend-down">↓ Downward Pressure</span>
+    </div>
+  </section>
+
+  <section class="rollups">
+    <div class="rollups-title">Trend Summary</div>
+    {{ROLLUPS}}
+  </section>
+
+  <section class="brief">
+    <div class="brief-title">Daily Brief (Strategy / Tactics)</div>
+    {{DAILY_BRIEF}}
+  </section>
+
+  <section class="premium">
+    <div class="premium-title">🔒 Premium Tracking (Today's Top 3)</div>
+    {{PREMIUM_TRACKING}}
+  </section>
+
+  <div class="archive-nav">
+    {{ARCHIVE_NAV}}
+  </div>
+
+  <div class="filters">
+    <button class="filter-btn active" data-impact="all">All</button>
+    <button class="filter-btn" data-impact="Positive">Positive for West</button>
+    <button class="filter-btn" data-impact="Neutral">Neutral</button>
+    <button class="filter-btn" data-impact="Negative">Negative for West</button>
+  </div>
+
+  <div class="feed">
+    {{CARDS}}
+  </div>
+</div>
+<script>
+(async function(){
+  try {
+    const res = await fetch('../status.json', {cache: 'no-store'});
+    if (!res.ok) return;
+    const data = await res.json();
+    const statusEl = document.getElementById('run-status');
+    const progressEl = document.getElementById('run-progress');
+    const currentEl = document.getElementById('run-current');
+
+    const running = Boolean(data.running);
+    statusEl.textContent = running ? 'Status: Running' : 'Status: Idle';
+    statusEl.className = running ? 'badge warn' : 'badge ok';
+
+    const processed = data.processed_items ?? 0;
+    const total = data.total_items ?? 0;
+    progressEl.textContent = `Progress: ${processed}/${total}`;
+    progressEl.className = running ? 'badge warn' : 'badge';
+
+    const current = data.current || {};
+    const title = current.title ? current.title.slice(0, 40) : '-';
+    currentEl.textContent = `Current: ${title}`;
+  } catch (e) {
+    // ignore
+  }
+})();
+
+(function(){
+  const buttons = Array.from(document.querySelectorAll('.filter-btn'));
+  const rows = Array.from(document.querySelectorAll('.row'));
+  if (!buttons.length) return;
+
+  const setActive = (btn) => {
+    buttons.forEach((el) => el.classList.remove('active'));
+    btn.classList.add('active');
+  };
+
+  const applyFilter = (impact) => {
+    rows.forEach((row) => {
+      if (impact === 'all') {
+        row.style.display = '';
+        return;
+      }
+      const value = row.getAttribute('data-impact') || '';
+      row.style.display = value === impact ? '' : 'none';
+    });
+  };
+
+  buttons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const impact = btn.getAttribute('data-impact') || 'all';
+      setActive(btn);
+      applyFilter(impact);
+    });
+  });
+})();
+</script>
+</body>
+</html>
