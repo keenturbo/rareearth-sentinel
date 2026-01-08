@@ -38,8 +38,8 @@ Location guidance:
 - If unsure, set country_primary to "Unknown".
 
 China perspective output:
-- china_impact must be one of [83d, 42000c, 4940a]
-- china_risk_trend must be one of [47a3a, 42b73, 31390c]
+- china_impact must be one of [利好, 中性, 利空].
+- china_risk_trend must be one of [加强, 持平, 缓和].
 - expert_summary must be 1-2 Chinese sentences for decision makers.
 - recommendations_strategy is an array of 2-3 strategic suggestions (policy/industry chain).
 - recommendations_tactical is an array of 2-3 tactical actions (investment/M&A/export/stockpile).
