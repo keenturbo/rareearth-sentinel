@@ -17,6 +17,8 @@ CHINA_DEPENDENCY = {"None", "Low", "Medium", "High"}
 CHINA_ROLE = {"Supplier", "Processor", "Investor", "Policy", "Mentioned"}
 CHINA_IMPACT = {"利好", "中性", "利空"}
 CHINA_RISK_TREND = {"加强", "持平", "缓和"}
+WEST_IMPACT = {"Positive", "Neutral", "Negative"}
+WEST_RISK_TREND = {"Intensifying", "Stable", "Easing"}
 FORECAST_TRENDS = {"Up", "Down", "Neutral"}
 TREND_ALIASES = {
     "上涨": "Up",
@@ -215,6 +217,45 @@ def normalize_analysis(data):
         )
 
     return normalized
+
+
+def normalize_analysis_en(data):
+    if not isinstance(data, dict):
+        return None
+
+    return {
+        "summary_en": _as_str(data.get("summary_en")),
+        "impact_west": _as_choice(
+            data.get("impact_west"), WEST_IMPACT, "Neutral"
+        ),
+        "risk_trend_west": _as_choice(
+            data.get("risk_trend_west"), WEST_RISK_TREND, "Stable"
+        ),
+        "expert_summary_en": _as_str(data.get("expert_summary_en")),
+        "recommendations_strategy_en": _as_list(
+            data.get("recommendations_strategy_en")
+        ),
+        "recommendations_tactical_en": _as_list(
+            data.get("recommendations_tactical_en")
+        ),
+        "supply_risk_score_en": _clamp_int(
+            data.get("supply_risk_score"), 0, 100, 50
+        ),
+        "policy_risk_score_en": _clamp_int(
+            data.get("policy_risk_score"), 0, 100, 50
+        ),
+        "price_pressure_score_en": _clamp_int(
+            data.get("price_pressure_score"), 0, 100, 50
+        ),
+        "risk_score_en": _clamp_int(data.get("risk_score"), 0, 100, 50),
+        "risk_level_en": _clamp_int(data.get("risk_level"), 1, 5, 3),
+        "importance_score_en": _clamp_int(data.get("importance_score"), 1, 5, 3),
+        "confidence_en": _clamp_int(data.get("confidence"), 0, 100, 60),
+        "forecast_6m_en": _normalize_forecast(data.get("forecast_6m")),
+        "forecast_12m_en": _normalize_forecast(data.get("forecast_12m")),
+        "forecast_24m_en": _normalize_forecast(data.get("forecast_24m")),
+        "forecast_48m_en": _normalize_forecast(data.get("forecast_48m")),
+    }
 
 
 def is_china_primary(country):
