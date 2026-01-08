@@ -230,6 +230,7 @@ class Reporter:
         items = index_data.get("items", [])
         cards_html = self._render_cards(items, lang=lang)
         stats = index_data.get("stats", {})
+        daily_report = self._render_daily_report(items, lang=lang)
         daily_brief = self._render_daily_brief(items, lang=lang)
         archive_nav = self._render_archive_nav(
             index_data.get("archives", []),
@@ -252,6 +253,7 @@ class Reporter:
             .replace("{{HIGH_RISK_COUNT}}", str(stats.get("high_risk_count", 0)))
             .replace("{{TODAY_COUNT}}", str(stats.get("today_count", 0)))
             .replace("{{LAST_UPDATE}}", index_data.get("last_update", ""))
+            .replace("{{DAILY_REPORT}}", daily_report)
             .replace("{{DAILY_BRIEF}}", daily_brief)
             .replace("{{CARDS}}", cards_html)
             .replace("{{ARCHIVE_NAV}}", archive_nav)
@@ -607,6 +609,173 @@ class Reporter:
         return (
             f'<div class="brief-row">{counts_line}</div>'
             f'<div class="brief-grid">{strategy_html}{tactical_html}</div>'
+        )
+
+    def _render_daily_report(self, items, lang="zh"):
+        today_items = [item for item in items if self._is_today(item)]
+        if not today_items:
+            title = "每日情报综合报告" if lang == "zh" else "Daily Intelligence Report"
+            empty = "今日暂无综合报告" if lang == "zh" else "No report for today."
+            return (
+                f'<section class="daily-report">'
+                f'<div class="daily-title">{title}</div>'
+                f'<div class="daily-empty">{empty}</div>'
+                f'</section>'
+            )
+
+        if lang == "en":
+            impact_counts = {"Positive": 0, "Neutral": 0, "Negative": 0}
+            impact_labels = ("Positive", "Neutral", "Negative")
+            impact_name = {"Positive": "positive", "Neutral": "neutral", "Negative": "negative"}
+            title = "Daily Intelligence Report"
+            core_tpl = "Core view: overall leans {impact} across {sample} samples, avg risk {risk}/100."
+            theme_label = "Key Themes"
+            hotspot_label = "Risk Hotspots"
+            forecast_label = "Price Outlook"
+            premium_label = "Premium Tracking (Top 3)"
+            mineral_label = "Minerals"
+            action_label = "Actions"
+            country_label = "Countries"
+            fallback_text = "None"
+            risk_label = "Risk"
+            horizon_labels = [("forecast_6m", "6m"), ("forecast_12m", "12m"), ("forecast_24m", "24m"), ("forecast_48m", "48m")]
+        else:
+            impact_counts = {"利好": 0, "中性": 0, "利空": 0}
+            impact_labels = ("利好", "中性", "利空")
+            impact_name = {"利好": "利好", "中性": "中性", "利空": "利空"}
+            title = "每日情报综合报告"
+            core_tpl = "核心判断：整体偏{impact}，样本{sample}，综合风险均值 {risk}/100。"
+            theme_label = "关键主题"
+            hotspot_label = "风险热点"
+            forecast_label = "价格方向"
+            premium_label = "重点追踪（付费）"
+            mineral_label = "矿种"
+            action_label = "动作"
+            country_label = "国家"
+            fallback_text = "暂无"
+            risk_label = "风险"
+            horizon_labels = [("forecast_6m", "6月"), ("forecast_12m", "12月"), ("forecast_24m", "24月"), ("forecast_48m", "48月")]
+
+        sample_count = len(today_items)
+        risk_scores = []
+        for item in today_items:
+            impact = str(item.get("impact", "")).strip()
+            if impact in impact_counts:
+                impact_counts[impact] += 1
+            score = item.get("risk_score")
+            if score not in (None, ""):
+                try:
+                    risk_scores.append(float(score))
+                except (TypeError, ValueError):
+                    pass
+
+        dominant = impact_labels[1]
+        if impact_counts:
+            dominant = max(
+                impact_counts.items(),
+                key=lambda kv: (kv[1], 0 if kv[0] == impact_labels[1] else 1),
+            )[0]
+        avg_risk = round(sum(risk_scores) / len(risk_scores)) if risk_scores else 0
+        core_line = core_tpl.format(
+            impact=impact_name.get(dominant, dominant),
+            sample=sample_count,
+            risk=avg_risk,
+        )
+
+        minerals = Counter()
+        actions = Counter()
+        countries = Counter()
+        for item in today_items:
+            for mineral in item.get("minerals") or []:
+                minerals[str(mineral).strip()] += 1
+            action = str(item.get("action_type", "")).strip()
+            if action:
+                actions[action] += 1
+            country = str(item.get("country_primary", "")).strip()
+            if country:
+                countries[country] += 1
+
+        def _chips(counter, label):
+            items = [name for name, _count in counter.most_common(3) if name]
+            if not items:
+                return f'<div class="daily-line"><span class="meta">{label}</span> {fallback_text}</div>'
+            chips = "".join(
+                f'<span class="tag">{html.escape(name)}</span>' for name in items
+            )
+            return f'<div class="daily-line"><span class="meta">{label}</span> {chips}</div>'
+
+        theme_html = (
+            _chips(minerals, mineral_label)
+            + _chips(actions, action_label)
+            + _chips(countries, country_label)
+        )
+
+        def _risk_score(item):
+            try:
+                return float(item.get("risk_score") or 0)
+            except (TypeError, ValueError):
+                return 0
+
+        hotspots = sorted(today_items, key=_risk_score, reverse=True)[:3]
+        if hotspots:
+            lines = []
+            for item in hotspots:
+                title_text = html.escape(item.get("title", ""))
+                country = html.escape(item.get("country_primary", ""))
+                action = html.escape(item.get("action_type", ""))
+                score = _risk_score(item)
+                label = f"{country} · {action} · {title_text} ({risk_label} {int(score)})".strip(" ·")
+                lines.append(f"<li>{label}</li>")
+            hotspots_html = f'<ul class="daily-list">{"".join(lines)}</ul>'
+        else:
+            hotspots_html = f'<div class="meta">{fallback_text}</div>'
+
+        def _aggregate_forecast(key):
+            counts = Counter()
+            confidences = []
+            for item in today_items:
+                forecast = item.get(key) or {}
+                trend = forecast.get("price_pressure")
+                if not trend:
+                    continue
+                counts[trend] += 1
+                conf = forecast.get("confidence")
+                if isinstance(conf, (int, float)):
+                    confidences.append(conf)
+            if not counts:
+                return None
+            trend = counts.most_common(1)[0][0]
+            avg_conf = round(sum(confidences) / len(confidences)) if confidences else None
+            return {"price_pressure": trend, "confidence": avg_conf}
+
+        forecast_lines = []
+        for key, label in horizon_labels:
+            agg = _aggregate_forecast(key)
+            if agg:
+                line = self._format_forecast(label, agg)
+                if line:
+                    forecast_lines.append(line)
+        forecast_html = " · ".join(forecast_lines) if forecast_lines else fallback_text
+
+        premium_html = self._render_premium(today_items, lang=lang)
+        premium_block = (
+            f'<div class="premium">'
+            f'<div class="premium-title">{premium_label}</div>'
+            f'{premium_html}'
+            f'</div>'
+        )
+
+        return (
+            f'<section class="daily-report">'
+            f'<div class="daily-title">{title}</div>'
+            f'<div class="daily-core">{core_line}</div>'
+            f'<div class="daily-grid">'
+            f'<div class="daily-card"><div class="meta">{theme_label}</div>{theme_html}</div>'
+            f'<div class="daily-card"><div class="meta">{hotspot_label}</div>{hotspots_html}</div>'
+            f'<div class="daily-card"><div class="meta">{forecast_label}</div><div class="daily-line">{forecast_html}</div></div>'
+            f'</div>'
+            f'{premium_block}'
+            f'</section>'
         )
 
     def _render_premium(self, items, lang="zh"):
