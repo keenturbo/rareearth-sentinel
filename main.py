@@ -76,6 +76,7 @@ def run_pipeline(config):
         "fetch_fail": 0,
         "too_short": 0,
         "analyze_fail": 0,
+        "analyze_en_fail": 0,
         "saved": 0,
         "summary_fallback": 0,
     }
@@ -182,11 +183,19 @@ def run_pipeline(config):
                         context_summary, limit=config.context_max_items
                     )
 
+                    # Chinese analysis (China perspective)
                     analysis = extractor.analyze(content, context_summary=context_summary)
                     if analysis is None:
                         stats["analyze_fail"] += 1
-                        print("  - skip: analyze_fail")
+                        print("  - skip: analyze_fail (zh)")
                         continue
+
+                    # English analysis (Western perspective)
+                    analysis_en = extractor.analyze_en(content, context_summary=context_summary)
+                    if analysis_en is None:
+                        stats["analyze_en_fail"] += 1
+                        print("  - warn: analyze_en_fail (en), continuing with zh only")
+                        analysis_en = {}
 
                     normalized, credibility = normalizer.normalize_and_score(
                         item, analysis, content, content_source
@@ -203,13 +212,14 @@ def run_pipeline(config):
                         analysis_with_context=bool(context_summary),
                         normalized=normalized,
                         credibility=credibility,
+                        analysis_en=analysis_en,
                     )
                     storage.append_record(record)
                     context_builder.add_record(record)
                     normalizer.add_record(record)
                     seen_ids.add(record["id"])
                     stats["saved"] += 1
-                    print("  + saved")
+                    print("  + saved (zh + en)")
 
                     if config.analyze_delay_seconds > 0:
                         time.sleep(config.analyze_delay_seconds)
@@ -225,10 +235,7 @@ def run_pipeline(config):
         raise
 
 
-# Remaining functions (backfill, main) unchanged below
-
-
-def _needs_backfill(record, force_context=False):
+def _needs_backfill(record, force_context=False, force_en=False):
     expert_summary = str(record.get("expert_summary", "")).strip()
     if not expert_summary:
         return True
@@ -237,19 +244,29 @@ def _needs_backfill(record, force_context=False):
         context_flag = record.get("analysis_with_context")
         if not related_context or not context_flag:
             return True
+    if force_en:
+        expert_summary_en = str(record.get("expert_summary_en", "")).strip()
+        if not expert_summary_en:
+            return True
     return False
 
 
-def _merge_analysis(record, analysis):
+def _merge_analysis(record, analysis, analysis_en=None):
     for key, value in analysis.items():
         record[key] = value
+    if analysis_en:
+        for key, value in analysis_en.items():
+            record[key] = value
     return record
 
 
-def _analyze_with_retry(extractor, content, retry_attempts, retry_delay, context_summary=""):
+def _analyze_with_retry(extractor, content, retry_attempts, retry_delay, context_summary="", lang="zh"):
     attempts = max(0, int(retry_attempts))
     for attempt in range(attempts + 1):
-        analysis = extractor.analyze(content, context_summary=context_summary)
+        if lang == "en":
+            analysis = extractor.analyze_en(content, context_summary=context_summary)
+        else:
+            analysis = extractor.analyze(content, context_summary=context_summary)
         if analysis is not None:
             return analysis, attempt
         if attempt < attempts and retry_delay > 0:
@@ -257,7 +274,7 @@ def _analyze_with_retry(extractor, content, retry_attempts, retry_delay, context
     return None, attempts
 
 
-def backfill_records(config, limit=0, retry_attempts=0, use_context=False):
+def backfill_records(config, limit=0, retry_attempts=0, use_context=False, backfill_en=True):
     storage = Storage(config)
     extractor = GeminiExtractor(config)
     reporter = Reporter(config)
@@ -293,6 +310,7 @@ def backfill_records(config, limit=0, retry_attempts=0, use_context=False):
     processed = 0
     skipped = 0
     analyze_fail = 0
+    analyze_en_fail = 0
 
     with open(input_path, "r", encoding="utf-8") as src, open(
         tmp_path, "w", encoding="utf-8"
@@ -308,7 +326,7 @@ def backfill_records(config, limit=0, retry_attempts=0, use_context=False):
                 dst.write(raw + "\n")
                 continue
 
-            needs_backfill = _needs_backfill(record, force_context=use_context)
+            needs_backfill = _needs_backfill(record, force_context=use_context, force_en=backfill_en)
             needs_norm = not record.get("normalized") or not record.get("credibility")
 
             if not needs_backfill and not needs_norm:
@@ -320,64 +338,84 @@ def backfill_records(config, limit=0, retry_attempts=0, use_context=False):
                 continue
 
             analysis_updated = False
+            analysis_en_updated = False
 
-            if needs_backfill:
-                content = str(record.get("content", "")).strip()
-                if not content:
-                    skipped += 1
+            content = str(record.get("content", "")).strip()
+            if not content:
+                skipped += 1
+                dst.write(json.dumps(record, ensure_ascii=False) + "\n")
+                continue
+
+            content = clean_text(content)
+            if len(content) < config.summary_min_chars:
+                skipped += 1
+                dst.write(json.dumps(record, ensure_ascii=False) + "\n")
+                continue
+
+            title = str(record.get("title", ""))
+            summary = str(record.get("summary_zh", "")).strip()
+            if not summary:
+                summary = content[:600]
+
+            context_summary = ""
+            context_lines = []
+            if use_context and context_builder:
+                context_summary = context_builder.build_context(
+                    title, summary, exclude_id=record.get("id", "")
+                )
+                context_lines = _context_lines(
+                    context_summary, limit=config.context_max_items
+                )
+
+            # Chinese analysis
+            expert_summary_zh = str(record.get("expert_summary", "")).strip()
+            if not expert_summary_zh or use_context:
+                analysis, _attempt = _analyze_with_retry(
+                    extractor,
+                    content,
+                    retry_attempts,
+                    config.analyze_delay_seconds,
+                    context_summary=context_summary,
+                    lang="zh",
+                )
+                if analysis is None:
+                    analyze_fail += 1
+                    print(f"[backfill] analyze_fail (zh): {title[:80]}")
                 else:
-                    content = clean_text(content)
-                    if len(content) < config.summary_min_chars:
-                        skipped += 1
+                    record = _merge_analysis(record, analysis)
+                    analysis_updated = True
+                    if use_context:
+                        record["analysis_with_context"] = bool(context_summary)
+                        record["related_context"] = context_lines
+
+            # English analysis
+            if backfill_en:
+                expert_summary_en = str(record.get("expert_summary_en", "")).strip()
+                if not expert_summary_en:
+                    analysis_en, _attempt = _analyze_with_retry(
+                        extractor,
+                        content,
+                        retry_attempts,
+                        config.analyze_delay_seconds,
+                        context_summary=context_summary,
+                        lang="en",
+                    )
+                    if analysis_en is None:
+                        analyze_en_fail += 1
+                        print(f"[backfill] analyze_fail (en): {title[:80]}")
                     else:
-                        title = str(record.get("title", ""))
-                        summary = str(record.get("summary_zh", "")).strip()
-                        if not summary:
-                            summary = content[:600]
+                        record = _merge_analysis(record, {}, analysis_en)
+                        analysis_en_updated = True
 
-                        context_summary = ""
-                        context_lines = []
-                        if use_context and context_builder:
-                            context_summary = context_builder.build_context(
-                                title, summary, exclude_id=record.get("id", "")
-                            )
-                            context_lines = _context_lines(
-                                context_summary, limit=config.context_max_items
-                            )
-
-                        analysis, _attempt = _analyze_with_retry(
-                            extractor,
-                            content,
-                            retry_attempts,
-                            config.analyze_delay_seconds,
-                            context_summary=context_summary,
-                        )
-                        if analysis is None:
-                            analyze_fail += 1
-                            if retry_attempts:
-                                title = str(record.get("title", ""))
-                                print(
-                                    "[backfill] analyze_fail after {attempts} attempts: {title}".format(
-                                        attempts=retry_attempts + 1, title=title[:120]
-                                    )
-                                )
-                        else:
-                            record = _merge_analysis(record, analysis)
-                            analysis_updated = True
-                            if use_context:
-                                record["analysis_with_context"] = bool(context_summary)
-                                record["related_context"] = context_lines
-
-            if analysis_updated or needs_norm:
+            if analysis_updated or analysis_en_updated or needs_norm:
                 normalized, credibility = normalizer.normalize_and_score_from_record(
                     record
                 )
                 record["normalized"] = normalized
                 record["credibility"] = credibility
                 updated += 1
-                title = str(record.get("title", ""))
-                print(f"[backfill] updated: {title[:120]}")
-                if analysis_updated and config.analyze_delay_seconds > 0:
+                print(f"[backfill] updated (zh={analysis_updated}, en={analysis_en_updated}): {title[:80]}")
+                if (analysis_updated or analysis_en_updated) and config.analyze_delay_seconds > 0:
                     time.sleep(config.analyze_delay_seconds)
 
             dst.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -390,15 +428,15 @@ def backfill_records(config, limit=0, retry_attempts=0, use_context=False):
 
     print(
         "Backfill complete. Updated: {updated} | processed: {processed} | "
-        "skipped: {skipped} | analyze_fail: {analyze_fail}".format(
+        "skipped: {skipped} | analyze_fail_zh: {analyze_fail} | analyze_fail_en: {analyze_en_fail}".format(
             updated=updated,
             processed=processed,
             skipped=skipped,
             analyze_fail=analyze_fail,
+            analyze_en_fail=analyze_en_fail,
         )
     )
     return updated
-
 
 
 def main():
@@ -443,6 +481,11 @@ def main():
         help="Max records to backfill (0 = no limit)",
     )
     parser.add_argument(
+        "--backfill-zh-en",
+        action="store_true",
+        help="Backfill both Chinese and English analysis",
+    )
+    parser.add_argument(
         "--build-datasets",
         action="store_true",
         help="Build training datasets (extract/reason) from history",
@@ -457,11 +500,14 @@ def main():
         build_datasets(config)
         return
 
+    backfill_en = args.backfill_zh_en or True  # Default to backfill English
+
     if (
         args.backfill
         or args.backfill_missing
         or args.backfill_with_context
         or args.backfill_with_vector_context
+        or args.backfill_zh_en
     ):
         backfill_records(
             config,
@@ -469,6 +515,7 @@ def main():
             retry_attempts=args.backfill_retry,
             use_context=args.backfill_with_context
             or args.backfill_with_vector_context,
+            backfill_en=backfill_en,
         )
         return
 
@@ -483,7 +530,7 @@ def main():
     print(
         "Run complete. New records: {saved} | "
         "items: {total_items}, seen: {seen}, fetch_fail: {fetch_fail}, "
-        "too_short: {too_short}, analyze_fail: {analyze_fail}, "
+        "too_short: {too_short}, analyze_fail: {analyze_fail}, analyze_en_fail: {analyze_en_fail}, "
         "summary_fallback: {summary_fallback}".format(**stats)
     )
 
