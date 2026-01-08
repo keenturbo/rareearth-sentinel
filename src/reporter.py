@@ -4,12 +4,14 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 
+from .extractor import GeminiExtractor
 from .utils import isoformat, now_cst, is_china_primary
 
 
 class Reporter:
     def __init__(self, config):
         self.config = config
+        self._daily_extractor = None
 
     def rebuild(self, storage):
         all_records = list(storage.iter_records())
@@ -17,6 +19,11 @@ class Reporter:
         recent_records = (
             all_records[-self.config.index_limit :] if total_count else []
         )
+
+        daily_reports = {
+            "zh": self._generate_daily_report(all_records, lang="zh"),
+            "en": self._generate_daily_report(all_records, lang="en"),
+        }
 
         def build_lang(lang, subdir):
             items = [
@@ -39,13 +46,22 @@ class Reporter:
             }
             storage.write_rollups_json(rollups, subdir=subdir)
             storage.write_index_json(index_data, subdir=subdir)
-            html_content = self._build_html(index_data, lang=lang)
+            html_content = self._build_html(
+                index_data,
+                lang=lang,
+                daily_report=daily_reports.get(lang),
+            )
             storage.write_index_html(html_content, subdir=subdir)
 
         # Root defaults to Chinese
         build_lang("zh", "")
         build_lang("zh", "cn")
         build_lang("en", "en")
+
+    def _get_daily_extractor(self):
+        if self._daily_extractor is None:
+            self._daily_extractor = GeminiExtractor(self.config)
+        return self._daily_extractor
 
     def _parse_date(self, text):
         if not text:
@@ -103,6 +119,7 @@ class Reporter:
                 lang=lang,
                 archive_month=month,
                 archive_prefix="../",
+                daily_report=None,
             )
             storage.write_archive_html(month, html_content, subdir=subdir)
             archives.append({"month": month, "count": len(month_records)})
@@ -221,7 +238,14 @@ class Reporter:
             "today_count": today_count,
         }
 
-    def _build_html(self, index_data, lang="zh", archive_month="", archive_prefix=""):
+    def _build_html(
+        self,
+        index_data,
+        lang="zh",
+        archive_month="",
+        archive_prefix="",
+        daily_report=None,
+    ):
         template_name = "index_en.html" if lang == "en" else "index.html"
         template_path = os.path.join(self.config.templates_dir, template_name)
         with open(template_path, "r", encoding="utf-8") as f:
@@ -230,12 +254,13 @@ class Reporter:
         items = index_data.get("items", [])
         cards_html = self._render_cards(items, lang=lang)
         stats = index_data.get("stats", {})
-        daily_report = self._render_daily_report(items, lang=lang)
+        daily_report_html = self._render_daily_report(daily_report, lang=lang)
         daily_brief = self._render_daily_brief(items, lang=lang)
         archive_nav = self._render_archive_nav(
             index_data.get("archives", []),
             archive_month=archive_month,
             prefix=archive_prefix,
+            lang=lang,
         )
         rollups_html = self._render_rollups(index_data.get("rollups", {}), lang=lang)
         premium_html = self._render_premium(items, lang=lang)
@@ -253,7 +278,7 @@ class Reporter:
             .replace("{{HIGH_RISK_COUNT}}", str(stats.get("high_risk_count", 0)))
             .replace("{{TODAY_COUNT}}", str(stats.get("today_count", 0)))
             .replace("{{LAST_UPDATE}}", index_data.get("last_update", ""))
-            .replace("{{DAILY_REPORT}}", daily_report)
+            .replace("{{DAILY_REPORT}}", daily_report_html)
             .replace("{{DAILY_BRIEF}}", daily_brief)
             .replace("{{CARDS}}", cards_html)
             .replace("{{ARCHIVE_NAV}}", archive_nav)
@@ -611,171 +636,160 @@ class Reporter:
             f'<div class="brief-grid">{strategy_html}{tactical_html}</div>'
         )
 
-    def _render_daily_report(self, items, lang="zh"):
-        today_items = [item for item in items if self._is_today(item)]
-        if not today_items:
-            title = "每日情报综合报告" if lang == "zh" else "Daily Intelligence Report"
-            empty = "今日暂无综合报告" if lang == "zh" else "No report for today."
-            return (
-                f'<section class="daily-report">'
-                f'<div class="daily-title">{title}</div>'
-                f'<div class="daily-empty">{empty}</div>'
-                f'</section>'
-            )
+    def _daily_context_lines(self, records, lang="zh", limit=40):
+        lines = []
 
-        if lang == "en":
-            impact_counts = {"Positive": 0, "Neutral": 0, "Negative": 0}
-            impact_labels = ("Positive", "Neutral", "Negative")
-            impact_name = {"Positive": "positive", "Neutral": "neutral", "Negative": "negative"}
-            title = "Daily Intelligence Report"
-            core_tpl = "Core view: overall leans {impact} across {sample} samples, avg risk {risk}/100."
-            theme_label = "Key Themes"
-            hotspot_label = "Risk Hotspots"
-            forecast_label = "Price Outlook"
-            premium_label = "Premium Tracking (Top 3)"
-            mineral_label = "Minerals"
-            action_label = "Actions"
-            country_label = "Countries"
-            fallback_text = "None"
-            risk_label = "Risk"
-            horizon_labels = [("forecast_6m", "6m"), ("forecast_12m", "12m"), ("forecast_24m", "24m"), ("forecast_48m", "48m")]
-        else:
-            impact_counts = {"利好": 0, "中性": 0, "利空": 0}
-            impact_labels = ("利好", "中性", "利空")
-            impact_name = {"利好": "利好", "中性": "中性", "利空": "利空"}
-            title = "每日情报综合报告"
-            core_tpl = "核心判断：整体偏{impact}，样本{sample}，综合风险均值 {risk}/100。"
-            theme_label = "关键主题"
-            hotspot_label = "风险热点"
-            forecast_label = "价格方向"
-            premium_label = "重点追踪（付费）"
-            mineral_label = "矿种"
-            action_label = "动作"
-            country_label = "国家"
-            fallback_text = "暂无"
-            risk_label = "风险"
-            horizon_labels = [("forecast_6m", "6月"), ("forecast_12m", "12月"), ("forecast_24m", "24月"), ("forecast_48m", "48月")]
-
-        sample_count = len(today_items)
-        risk_scores = []
-        for item in today_items:
-            impact = str(item.get("impact", "")).strip()
-            if impact in impact_counts:
-                impact_counts[impact] += 1
-            score = item.get("risk_score")
-            if score not in (None, ""):
-                try:
-                    risk_scores.append(float(score))
-                except (TypeError, ValueError):
-                    pass
-
-        dominant = impact_labels[1]
-        if impact_counts:
-            dominant = max(
-                impact_counts.items(),
-                key=lambda kv: (kv[1], 0 if kv[0] == impact_labels[1] else 1),
-            )[0]
-        avg_risk = round(sum(risk_scores) / len(risk_scores)) if risk_scores else 0
-        core_line = core_tpl.format(
-            impact=impact_name.get(dominant, dominant),
-            sample=sample_count,
-            risk=avg_risk,
-        )
-
-        minerals = Counter()
-        actions = Counter()
-        countries = Counter()
-        for item in today_items:
-            for mineral in item.get("minerals") or []:
-                minerals[str(mineral).strip()] += 1
-            action = str(item.get("action_type", "")).strip()
-            if action:
-                actions[action] += 1
-            country = str(item.get("country_primary", "")).strip()
-            if country:
-                countries[country] += 1
-
-        def _chips(counter, label):
-            items = [name for name, _count in counter.most_common(3) if name]
-            if not items:
-                return f'<div class="daily-line"><span class="meta">{label}</span> {fallback_text}</div>'
-            chips = "".join(
-                f'<span class="tag">{html.escape(name)}</span>' for name in items
-            )
-            return f'<div class="daily-line"><span class="meta">{label}</span> {chips}</div>'
-
-        theme_html = (
-            _chips(minerals, mineral_label)
-            + _chips(actions, action_label)
-            + _chips(countries, country_label)
-        )
-
-        def _risk_score(item):
+        def _risk(record):
+            key = "risk_score_en" if lang == "en" else "risk_score"
             try:
-                return float(item.get("risk_score") or 0)
+                return float(record.get(key) or 0)
             except (TypeError, ValueError):
                 return 0
 
-        hotspots = sorted(today_items, key=_risk_score, reverse=True)[:3]
-        if hotspots:
-            lines = []
-            for item in hotspots:
-                title_text = html.escape(item.get("title", ""))
-                country = html.escape(item.get("country_primary", ""))
-                action = html.escape(item.get("action_type", ""))
-                score = _risk_score(item)
-                label = f"{country} · {action} · {title_text} ({risk_label} {int(score)})".strip(" ·")
-                lines.append(f"<li>{label}</li>")
-            hotspots_html = f'<ul class="daily-list">{"".join(lines)}</ul>'
+        today_records = [r for r in records if self._is_today(r)]
+        today_records = sorted(today_records, key=_risk, reverse=True)
+
+        for record in today_records:
+            title = str(record.get("title", "")).strip()
+            if not title:
+                continue
+            country = str(record.get("country_primary", "")).strip()
+            action = str(record.get("action_type", "")).strip()
+            impact_key = "impact_west" if lang == "en" else "china_impact"
+            impact = str(record.get(impact_key, "")).strip()
+            summary_key = "summary_en" if lang == "en" else "summary_zh"
+            summary = str(record.get(summary_key, "")).strip()
+            risk = _risk(record)
+            line = f"- {country} | {action} | {impact} | risk {int(risk)} | {title}"
+            if summary:
+                line += f" | {summary[:140]}"
+            lines.append(line)
+            if len(lines) >= limit:
+                break
+
+        return lines
+
+    def _fallback_daily_report(self, records, lang="zh"):
+        impact_counts = Counter()
+        minerals = Counter()
+        countries = Counter()
+        actions = Counter()
+        risk_scores = []
+
+        for record in records:
+            if not self._is_today(record):
+                continue
+            impact_key = "impact_west" if lang == "en" else "china_impact"
+            impact = str(record.get(impact_key, "")).strip()
+            if impact:
+                impact_counts[impact] += 1
+            for mineral in record.get("minerals") or []:
+                minerals[str(mineral).strip()] += 1
+            country = str(record.get("country_primary", "")).strip()
+            if country:
+                countries[country] += 1
+            action = str(record.get("action_type", "")).strip()
+            if action:
+                actions[action] += 1
+            key = "risk_score_en" if lang == "en" else "risk_score"
+            try:
+                score = float(record.get(key) or 0)
+            except (TypeError, ValueError):
+                score = 0
+            if score:
+                risk_scores.append(score)
+
+        dominant = impact_counts.most_common(1)[0][0] if impact_counts else "Neutral"
+        avg_risk = round(sum(risk_scores) / len(risk_scores)) if risk_scores else 0
+        top_mineral = minerals.most_common(1)[0][0] if minerals else "-"
+        top_country = countries.most_common(1)[0][0] if countries else "-"
+        top_action = actions.most_common(1)[0][0] if actions else "-"
+
+        if lang == "en":
+            headline = "Daily Intelligence Report"
+            body = (
+                f"Overall tone is {dominant.lower()} across today's signals. "
+                f"Average composite risk is {avg_risk}/100. "
+                f"Attention centers on {top_country} and {top_mineral} with actions in {top_action}."
+            )
+            bullets = [
+                f"Highest attention country: {top_country}",
+                f"Key mineral focus: {top_mineral}",
+                f"Dominant action type: {top_action}",
+            ]
         else:
-            hotspots_html = f'<div class="meta">{fallback_text}</div>'
+            headline = "每日情报综合报告"
+            body = (
+                f"今日整体偏{dominant}，综合风险均值为{avg_risk}/100。"
+                f"关注重点集中在{top_country}与{top_mineral}，主要动作类型为{top_action}。"
+            )
+            bullets = [
+                f"高关注国家：{top_country}",
+                f"关键矿种：{top_mineral}",
+                f"主要动作：{top_action}",
+            ]
 
-        def _aggregate_forecast(key):
-            counts = Counter()
-            confidences = []
-            for item in today_items:
-                forecast = item.get(key) or {}
-                trend = forecast.get("price_pressure")
-                if not trend:
-                    continue
-                counts[trend] += 1
-                conf = forecast.get("confidence")
-                if isinstance(conf, (int, float)):
-                    confidences.append(conf)
-            if not counts:
-                return None
-            trend = counts.most_common(1)[0][0]
-            avg_conf = round(sum(confidences) / len(confidences)) if confidences else None
-            return {"price_pressure": trend, "confidence": avg_conf}
+        return {
+            "headline": headline,
+            "body": body,
+            "bullets": bullets,
+        }
 
-        forecast_lines = []
-        for key, label in horizon_labels:
-            agg = _aggregate_forecast(key)
-            if agg:
-                line = self._format_forecast(label, agg)
-                if line:
-                    forecast_lines.append(line)
-        forecast_html = " · ".join(forecast_lines) if forecast_lines else fallback_text
+    def _generate_daily_report(self, records, lang="zh"):
+        today_records = [r for r in records if self._is_today(r)]
+        if not today_records:
+            return None
 
-        premium_html = self._render_premium(today_items, lang=lang)
-        premium_block = (
-            f'<div class="premium">'
-            f'<div class="premium-title">{premium_label}</div>'
-            f'{premium_html}'
-            f'</div>'
+        lines = self._daily_context_lines(records, lang=lang, limit=40)
+        if not lines:
+            return None
+
+        context_text = "\n".join(lines)
+        extractor = self._get_daily_extractor()
+        report = extractor.analyze_daily_report(context_text, lang=lang)
+        if report is None:
+            return self._fallback_daily_report(records, lang=lang)
+
+        if not report.get("headline"):
+            report["headline"] = (
+                "Daily Intelligence Report" if lang == "en" else "每日情报综合报告"
+            )
+        return report
+
+    def _render_daily_report(self, daily_report, lang="zh"):
+        title = "每日情报综合报告" if lang == "zh" else "Daily Intelligence Report"
+        if not daily_report:
+            empty = "今日暂无综合报告" if lang == "zh" else "No report for today."
+            return (
+                f'<div class="daily-title">{title}</div>'
+                f'<div class="daily-empty">{empty}</div>'
+            )
+
+        headline = html.escape(daily_report.get("headline", "").strip())
+        body = html.escape(daily_report.get("body", "").strip())
+        bullets = daily_report.get("bullets") or []
+
+        headline_html = (
+            f'<div class="daily-headline">{headline}</div>' if headline else ""
+        )
+        body_html = f'<div class="daily-body">{body}</div>' if body else ""
+
+        bullet_items = []
+        for bullet in bullets[:3]:
+            text = str(bullet).strip()
+            if text:
+                bullet_items.append(f"<li>{html.escape(text)}</li>")
+        bullets_html = (
+            f'<ul class="daily-bullets">{"".join(bullet_items)}</ul>'
+            if bullet_items
+            else ""
         )
 
         return (
-            f'<section class="daily-report">'
             f'<div class="daily-title">{title}</div>'
-            f'<div class="daily-core">{core_line}</div>'
-            f'<div class="daily-grid">'
-            f'<div class="daily-card"><div class="meta">{theme_label}</div>{theme_html}</div>'
-            f'<div class="daily-card"><div class="meta">{hotspot_label}</div>{hotspots_html}</div>'
-            f'<div class="daily-card"><div class="meta">{forecast_label}</div><div class="daily-line">{forecast_html}</div></div>'
-            f'</div>'
-            f'{premium_block}'
-            f'</section>'
+            f"{headline_html}"
+            f"{body_html}"
+            f"{bullets_html}"
         )
 
     def _render_premium(self, items, lang="zh"):
@@ -807,21 +821,38 @@ class Reporter:
             blocks.append(block)
         return "".join(blocks)
 
-    def _render_archive_nav(self, archives, archive_month="", prefix=""):
+    def _render_archive_nav(self, archives, archive_month="", prefix="", lang="zh"):
         if not archives:
             return ""
+        show_limit = 7
         links = []
-        for entry in archives:
+        hidden = 0
+
+        for idx, entry in enumerate(archives):
             month = entry.get("month")
             count = entry.get("count", 0)
             if not month:
                 continue
             active = " active" if month == archive_month else ""
+            is_extra = idx >= show_limit and not active
+            extra_class = " archive-extra" if is_extra else ""
+            if is_extra:
+                hidden += 1
             href = f"{prefix}archive/{month}.html"
             links.append(
-                f'<a class="archive-link{active}" href="{href}">{month} ({count})</a>'
+                f'<a class="archive-link{active}{extra_class}" href="{href}">{month} ({count})</a>'
             )
-        return "".join(links)
+
+        toggle_html = ""
+        if hidden > 0:
+            show_label = "展开更多" if lang == "zh" else "Show more"
+            hide_label = "收起" if lang == "zh" else "Show less"
+            toggle_html = (
+                f'<button class="archive-toggle" data-show="{show_label}" '
+                f'data-hide="{hide_label}" data-expanded="false">{show_label}</button>'
+            )
+
+        return "".join(links) + toggle_html
 
     def _render_rollups(self, rollups, lang="zh"):
         if not rollups:
