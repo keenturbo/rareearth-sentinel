@@ -1,7 +1,7 @@
 import html
 import os
 from collections import Counter, defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 
 from .extractor import GeminiExtractor
@@ -16,8 +16,11 @@ class Reporter:
     def rebuild(self, storage):
         all_records = list(storage.iter_records())
         total_count = len(all_records)
+        sorted_records = sorted(
+            all_records, key=self._record_ts, reverse=True
+        )
         recent_records = (
-            all_records[-self.config.index_limit :] if total_count else []
+            sorted_records[: self.config.index_limit] if total_count else []
         )
 
         daily_reports = {
@@ -28,7 +31,7 @@ class Reporter:
         def build_lang(lang, subdir):
             items = [
                 self._prune_record(r, lang=lang)
-                for r in reversed(recent_records)
+                for r in recent_records
             ]
             stats = self._build_stats(items, total_count, lang=lang)
             rollups = self._build_rollups(all_records, lang=lang)
@@ -80,6 +83,14 @@ class Reporter:
         collected_at = record.get("collected_at", "")
         return self._parse_date(published_at) or self._parse_date(collected_at)
 
+    def _record_ts(self, record):
+        dt = self._record_datetime(record)
+        if not dt:
+            return 0
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+
     def _month_key(self, dt):
         if not dt:
             return "unknown"
@@ -98,10 +109,12 @@ class Reporter:
         archives = []
 
         for month in months:
-            month_records = grouped[month]
+            month_records = sorted(
+                grouped[month], key=self._record_ts, reverse=True
+            )
             items = [
                 self._prune_record(r, lang=lang)
-                for r in reversed(month_records)
+                for r in month_records
             ]
             stats = self._build_stats(items, len(month_records), lang=lang)
             archive_data = {
