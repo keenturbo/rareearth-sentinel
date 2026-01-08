@@ -1,6 +1,6 @@
 import google.generativeai as genai
 
-from .utils import extract_json, normalize_analysis
+from .utils import extract_json, normalize_analysis, normalize_analysis_en
 
 
 class GeminiExtractor:
@@ -38,8 +38,8 @@ Location guidance:
 - If unsure, set country_primary to "Unknown".
 
 China perspective output:
-- china_impact must be one of [利好, 中性, 利空].
-- china_risk_trend must be one of [加强, 持平, 缓和].
+- china_impact must be one of [83d1d, 420070c, 49407a]
+- china_risk_trend must be one of [47af3a, 42bf73, 313930c]
 - expert_summary must be 1-2 Chinese sentences for decision makers.
 - recommendations_strategy is an array of 2-3 strategic suggestions (policy/industry chain).
 - recommendations_tactical is an array of 2-3 tactical actions (investment/M&A/export/stockpile).
@@ -101,3 +101,70 @@ Article:
         if data is None:
             return None
         return normalize_analysis(data)
+
+    def analyze_en(self, text, context_summary=""):
+        if not text:
+            return None
+
+        content = text[:12000]
+        context_block = ""
+        if context_summary:
+            context_block = (
+                "\nRELATED HISTORY (for context only):\n"
+                f"{context_summary}\n"
+            )
+
+        prompt = f"""
+You are a rare earths and critical minerals intelligence analyst serving Western governments, investors, and corporations.
+Your analysis must focus on supply-chain security, de-risking from China, and competitive positioning.
+Analyze the article and return ONLY a JSON object (no markdown, no commentary).
+If the content is not about rare earths or critical minerals, return null.
+
+Western perspective output:
+- impact_west must be one of [Positive, Neutral, Negative].
+- risk_trend_west must be one of [Intensifying, Stable, Easing].
+- expert_summary_en must be 1-2 English sentences for Western decision makers.
+- recommendations_strategy_en is an array of 2-3 strategic suggestions (policy/industry chain).
+- recommendations_tactical_en is an array of 2-3 tactical actions (investment/M&A/stockpile/reshoring).
+
+Scores:
+- supply_risk_score, policy_risk_score, price_pressure_score, risk_score are integers 0-100.
+- risk_level and importance_score are integers 1-5 and should align with risk_score.
+- confidence is an integer 0-100.
+
+Forecast windows:
+- forecast_6m/12m/24m/48m are objects with price_pressure (Up|Down|Neutral) and confidence (0-100).
+
+Required JSON fields:
+- summary_en
+- impact_west
+- risk_trend_west
+- expert_summary_en
+- recommendations_strategy_en
+- recommendations_tactical_en
+- supply_risk_score
+- policy_risk_score
+- price_pressure_score
+- risk_score
+- risk_level
+- importance_score
+- confidence
+- forecast_6m
+- forecast_12m
+- forecast_24m
+- forecast_48m
+
+Article:
+{content}
+{context_block}
+"""
+
+        try:
+            response = self.model.generate_content(prompt)
+        except Exception:
+            return None
+
+        data = extract_json(getattr(response, "text", ""))
+        if data is None:
+            return None
+        return normalize_analysis_en(data)
