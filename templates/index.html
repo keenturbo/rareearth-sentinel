@@ -71,6 +71,8 @@ h1{margin:0}
 .archive-nav{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
 .archive-link{font-size:12px;color:#0b1220;border:1px solid #e2e8f0;border-radius:999px;padding:4px 10px;background:#fff;text-decoration:none}
 .archive-link.active{background:#0b1220;color:#fff;border-color:#0b1220}
+.archive-link.archive-extra{display:none}
+.archive-toggle{border:1px solid #e2e8f0;background:#fff;border-radius:999px;padding:4px 10px;font-size:12px;color:var(--muted);cursor:pointer}
 .page-note{font-size:12px;color:var(--muted);margin-top:4px}
 .legend{margin-top:12px;padding:10px 12px;border-radius:12px;background:#ffffff;border:1px solid #e2e8f0;box-shadow:0 6px 14px rgba(0,0,0,0.05)}
 .legend-title{font-size:12px;font-weight:600;color:var(--ink)}
@@ -85,11 +87,10 @@ h1{margin:0}
 .premium-btn:hover{background:#d97706}
 .daily-report{margin-top:12px;padding:12px;border-radius:12px;background:#ffffff;border:1px solid #e2e8f0;box-shadow:0 6px 14px rgba(0,0,0,0.05)}
 .daily-title{font-size:13px;font-weight:600;color:var(--ink)}
-.daily-core{margin-top:6px;font-size:12px;color:var(--muted)}
-.daily-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-top:8px}
-.daily-card{background:#f8fafc;border-radius:10px;padding:8px}
-.daily-line{margin-top:4px;font-size:12px;color:var(--muted)}
-.daily-list{margin:4px 0 0 16px;padding:0;font-size:12px;color:var(--muted)}
+.daily-headline{margin-top:6px;font-size:13px;font-weight:600;color:var(--ink)}
+.daily-body{margin-top:6px;font-size:12px;color:var(--muted);line-height:1.6}
+.daily-bullets{margin:6px 0 0 16px;padding:0;font-size:12px;color:var(--muted)}
+.daily-bullets li{margin:2px 0}
 .daily-empty{font-size:12px;color:var(--muted);margin-top:6px}
 </style>
 </head>
@@ -216,6 +217,28 @@ h1{margin:0}
       setActive(btn);
       applyFilter(impact);
     });
+  });
+})();
+
+(function(){
+  const toggle = document.querySelector('.archive-toggle');
+  if (!toggle) return;
+  const extras = Array.from(document.querySelectorAll('.archive-link.archive-extra'));
+  const showLabel = toggle.getAttribute('data-show') || '展开更多';
+  const hideLabel = toggle.getAttribute('data-hide') || '收起';
+
+  const setExpanded = (expanded) => {
+    toggle.setAttribute('data-expanded', expanded ? 'true' : 'false');
+    toggle.textContent = expanded ? hideLabel : showLabel;
+    extras.forEach((link) => {
+      link.style.display = expanded ? 'inline-block' : 'none';
+    });
+  };
+
+  setExpanded(false);
+  toggle.addEventListener('click', () => {
+    const expanded = toggle.getAttribute('data-expanded') === 'true';
+    setExpanded(!expanded);
   });
 })();
 </script>
