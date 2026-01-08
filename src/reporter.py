@@ -17,23 +17,35 @@ class Reporter:
         recent_records = (
             all_records[-self.config.index_limit :] if total_count else []
         )
-        items = [self._prune_record(r) for r in reversed(recent_records)]
-        stats = self._build_stats(items, total_count)
-        rollups = self._build_rollups(all_records)
-        archives = self._build_archives(storage, all_records, rollups)
 
-        index_data = {
-            "last_update": isoformat(now_cst()),
-            "total_count": total_count,
-            "items": items,
-            "stats": stats,
-            "archives": archives,
-            "rollups": rollups,
-        }
-        storage.write_rollups_json(rollups)
-        storage.write_index_json(index_data)
-        html_content = self._build_html(index_data)
-        storage.write_index_html(html_content)
+        def build_lang(lang, subdir):
+            items = [
+                self._prune_record(r, lang=lang)
+                for r in reversed(recent_records)
+            ]
+            stats = self._build_stats(items, total_count, lang=lang)
+            rollups = self._build_rollups(all_records, lang=lang)
+            archives = self._build_archives(
+                storage, all_records, rollups, lang=lang, subdir=subdir
+            )
+
+            index_data = {
+                "last_update": isoformat(now_cst()),
+                "total_count": total_count,
+                "items": items,
+                "stats": stats,
+                "archives": archives,
+                "rollups": rollups,
+            }
+            storage.write_rollups_json(rollups, subdir=subdir)
+            storage.write_index_json(index_data, subdir=subdir)
+            html_content = self._build_html(index_data, lang=lang)
+            storage.write_index_html(html_content, subdir=subdir)
+
+        # Root defaults to Chinese
+        build_lang("zh", "")
+        build_lang("zh", "cn")
+        build_lang("en", "en")
 
     def _parse_date(self, text):
         if not text:
@@ -57,7 +69,7 @@ class Reporter:
             return "unknown"
         return dt.strftime("%Y-%m")
 
-    def _build_archives(self, storage, records, rollups):
+    def _build_archives(self, storage, records, rollups, lang="zh", subdir=""):
         grouped = defaultdict(list)
         for record in records:
             dt = self._record_datetime(record)
@@ -71,8 +83,11 @@ class Reporter:
 
         for month in months:
             month_records = grouped[month]
-            items = [self._prune_record(r) for r in reversed(month_records)]
-            stats = self._build_stats(items, len(month_records))
+            items = [
+                self._prune_record(r, lang=lang)
+                for r in reversed(month_records)
+            ]
+            stats = self._build_stats(items, len(month_records), lang=lang)
             archive_data = {
                 "last_update": isoformat(now_cst()),
                 "total_count": len(month_records),
@@ -82,18 +97,19 @@ class Reporter:
                 "rollups": rollups,
                 "archive_month": month,
             }
-            storage.write_archive_json(month, archive_data)
+            storage.write_archive_json(month, archive_data, subdir=subdir)
             html_content = self._build_html(
                 archive_data,
+                lang=lang,
                 archive_month=month,
                 archive_prefix="../",
             )
-            storage.write_archive_html(month, html_content)
+            storage.write_archive_html(month, html_content, subdir=subdir)
             archives.append({"month": month, "count": len(month_records)})
 
         return archives
 
-    def _build_rollups(self, records):
+    def _build_rollups(self, records, lang="zh"):
         now = now_cst()
         window_30 = now - timedelta(days=30)
         window_90 = now - timedelta(days=90)
@@ -109,6 +125,9 @@ class Reporter:
         count_90 = 0
         high_30 = 0
         high_90 = 0
+
+        risk_key = "risk_level_en" if lang == "en" else "risk_level"
+        impact_key = "impact_west" if lang == "en" else "china_impact"
 
         for record in records:
             minerals = record.get("minerals") or []
@@ -126,22 +145,22 @@ class Reporter:
             dt = self._record_datetime(record)
             if dt:
                 monthly_counts[self._month_key(dt)] += 1
-                if int(record.get("risk_level", 0) or 0) >= 4:
+                if int(record.get(risk_key, 0) or 0) >= 4:
                     monthly_high[self._month_key(dt)] += 1
 
                 if dt >= window_30:
                     count_30 += 1
-                    if int(record.get("risk_level", 0) or 0) >= 4:
+                    if int(record.get(risk_key, 0) or 0) >= 4:
                         high_30 += 1
-                    impact = str(record.get("china_impact", "")).strip()
+                    impact = str(record.get(impact_key, "")).strip()
                     if impact:
                         impact_counts_30[impact] += 1
 
                 if dt >= window_90:
                     count_90 += 1
-                    if int(record.get("risk_level", 0) or 0) >= 4:
+                    if int(record.get(risk_key, 0) or 0) >= 4:
                         high_90 += 1
-                    impact = str(record.get("china_impact", "")).strip()
+                    impact = str(record.get(impact_key, "")).strip()
                     if impact:
                         impact_counts_90[impact] += 1
 
@@ -183,7 +202,7 @@ class Reporter:
             "monthly": monthly,
         }
 
-    def _build_stats(self, items, total_count):
+    def _build_stats(self, items, total_count, lang="zh"):
         high_risk = sum(1 for i in items if int(i.get("risk_level", 0)) >= 4)
         today_count = 0
         today = now_cst().date()
@@ -202,25 +221,31 @@ class Reporter:
             "today_count": today_count,
         }
 
-    def _build_html(self, index_data, archive_month="", archive_prefix=""):
-        template_path = os.path.join(self.config.templates_dir, "index.html")
+    def _build_html(self, index_data, lang="zh", archive_month="", archive_prefix=""):
+        template_name = "index_en.html" if lang == "en" else "index.html"
+        template_path = os.path.join(self.config.templates_dir, template_name)
         with open(template_path, "r", encoding="utf-8") as f:
             template = f.read()
 
         items = index_data.get("items", [])
-        cards_html = self._render_cards(items)
+        cards_html = self._render_cards(items, lang=lang)
         stats = index_data.get("stats", {})
-        daily_brief = self._render_daily_brief(items)
+        daily_brief = self._render_daily_brief(items, lang=lang)
         archive_nav = self._render_archive_nav(
             index_data.get("archives", []),
             archive_month=archive_month,
             prefix=archive_prefix,
         )
-        rollups_html = self._render_rollups(index_data.get("rollups", {}))
+        rollups_html = self._render_rollups(index_data.get("rollups", {}), lang=lang)
+        premium_html = self._render_premium(items, lang=lang)
 
         page_note = ""
         if archive_month:
-            page_note = f"归档月份：{archive_month}"
+            page_note = (
+                f"归档月份：{archive_month}"
+                if lang == "zh"
+                else f"Archive: {archive_month}"
+            )
 
         html_out = (
             template.replace("{{TOTAL_COUNT}}", str(stats.get("total_count", 0)))
@@ -232,10 +257,11 @@ class Reporter:
             .replace("{{ARCHIVE_NAV}}", archive_nav)
             .replace("{{ROLLUPS}}", rollups_html)
             .replace("{{PAGE_NOTE}}", page_note)
+            .replace("{{PREMIUM_TRACKING}}", premium_html)
         )
         return html_out
 
-    def _render_cards(self, items):
+    def _render_cards(self, items, lang="zh"):
         if not items:
             return (
                 '<div class="row">'
@@ -244,18 +270,21 @@ class Reporter:
                 "</div>"
             )
 
+        summary_label = "摘要" if lang == "zh" else "Summary"
+        risk_label = "风险" if lang == "zh" else "Risk"
+
         rows = []
         for item in items:
             title = html.escape(item.get("title", ""))
-            summary = html.escape(item.get("summary_zh", ""))
+            summary = html.escape(item.get("summary", ""))
             country = html.escape(item.get("country_primary", ""))
             action = html.escape(item.get("action_type", "Other"))
             risk_level = int(item.get("risk_level", 0) or 0)
             published = html.escape(item.get("published_at", ""))
             collected = html.escape(item.get("collected_at", ""))
-            impact = html.escape(item.get("china_impact") or "未知")
+            impact = html.escape(item.get("impact") or ("中性" if lang == "zh" else "Neutral"))
             date_label = published or collected
-            meta_line = f"{country} · {action} · 风险 {risk_level}"
+            meta_line = f"{country} · {action} · {risk_label} {risk_level}"
             if date_label:
                 meta_line = f"{meta_line} · {date_label[:16]}"
 
@@ -279,7 +308,7 @@ class Reporter:
                 f'<span class="tag">{html.escape(str(tag))}</span>' for tag in tags
             )
 
-            analysis_html = self._render_expert(item)
+            analysis_html = self._render_expert(item, lang=lang)
             context_html = self._render_related_context(item)
 
             rows.append(
@@ -287,7 +316,7 @@ class Reporter:
 <div class="{row_class}" data-impact="{impact}">
   <div class="meta">{meta_line}</div>
   <div class="title"><a href="{url}" target="_blank">{title}</a></div>
-  <div class="meta">摘要：{summary}</div>
+  <div class="meta">{summary_label}：{summary}</div>
   {analysis_html}
   {context_html}
   <div class="tags">{tags_html}</div>
@@ -297,6 +326,7 @@ class Reporter:
                     meta_line=meta_line,
                     title=title,
                     url=html.escape(item.get("url", "")),
+                    summary_label=summary_label,
                     summary=summary or "-",
                     analysis_html=analysis_html,
                     context_html=context_html,
@@ -339,9 +369,9 @@ class Reporter:
             f"<ul>{list_html}</ul></div>"
         )
 
-    def _render_expert(self, item):
-        china_impact = str(item.get("china_impact", "")).strip()
-        china_risk_trend = str(item.get("china_risk_trend", "")).strip()
+    def _render_expert(self, item, lang="zh"):
+        impact = str(item.get("impact", "")).strip()
+        risk_trend = str(item.get("risk_trend", "")).strip()
         expert_summary = html.escape(item.get("expert_summary", ""))
 
         supply = item.get("supply_risk_score")
@@ -349,32 +379,55 @@ class Reporter:
         price = item.get("price_pressure_score")
         risk_score = item.get("risk_score")
 
+        labels = {
+            "summary": "专家结论" if lang == "zh" else "Expert Insight",
+            "impact": "对中国" if lang == "zh" else "Impact",
+            "risk": "风险" if lang == "zh" else "Risk",
+            "subscores": "分项" if lang == "zh" else "Subscores",
+            "forecast": "预测" if lang == "zh" else "Forecast",
+            "strategy": "战略建议" if lang == "zh" else "Strategy",
+            "tactical": "操作建议" if lang == "zh" else "Tactics",
+            "score": "综合风险" if lang == "zh" else "Overall Risk",
+        }
+
+        if lang == "en":
+            impact_class = self._chip_class(
+                impact,
+                {"Positive": "good", "Neutral": "neutral", "Negative": "bad"},
+                "neutral",
+            )
+            trend_class = self._chip_class(
+                risk_trend,
+                {"Intensifying": "trend-up", "Stable": "trend-flat", "Easing": "trend-down"},
+                "trend-flat",
+            )
+        else:
+            impact_class = self._chip_class(
+                impact,
+                {"利好": "good", "中性": "neutral", "利空": "bad"},
+                "neutral",
+            )
+            trend_class = self._chip_class(
+                risk_trend,
+                {"加强": "trend-up", "持平": "trend-flat", "缓和": "trend-down"},
+                "trend-flat",
+            )
+
         forecast_items = [
-            self._format_forecast("6月", item.get("forecast_6m")),
-            self._format_forecast("12月", item.get("forecast_12m")),
-            self._format_forecast("24月", item.get("forecast_24m")),
-            self._format_forecast("48月", item.get("forecast_48m")),
+            self._format_forecast("6月" if lang == "zh" else "6m", item.get("forecast_6m")),
+            self._format_forecast("12月" if lang == "zh" else "12m", item.get("forecast_12m")),
+            self._format_forecast("24月" if lang == "zh" else "24m", item.get("forecast_24m")),
+            self._format_forecast("48月" if lang == "zh" else "48m", item.get("forecast_48m")),
         ]
         forecast_line = " · ".join([f for f in forecast_items if f])
 
-        strategy_html = self._render_list(item.get("recommendations_strategy", []), "战略建议")
-        tactical_html = self._render_list(item.get("recommendations_tactical", []), "操作建议")
-
-        impact_class = self._chip_class(
-            china_impact,
-            {"利好": "good", "中性": "neutral", "利空": "bad"},
-            "neutral",
-        )
-        trend_class = self._chip_class(
-            china_risk_trend,
-            {"加强": "trend-up", "持平": "trend-flat", "缓和": "trend-down"},
-            "trend-flat",
-        )
+        strategy_html = self._render_list(item.get("recommendations_strategy", []), labels["strategy"])
+        tactical_html = self._render_list(item.get("recommendations_tactical", []), labels["tactical"])
 
         has_any = any(
             [
-                china_impact,
-                china_risk_trend,
+                impact,
+                risk_trend,
                 expert_summary,
                 supply is not None,
                 policy is not None,
@@ -390,39 +443,44 @@ class Reporter:
 
         score_line = ""
         if supply is not None or policy is not None or price is not None:
-            score_line = (
-                f"供应链 {supply}/100 · 政策 {policy}/100 · 价格 {price}/100"
-            )
+            if lang == "en":
+                score_line = (
+                    f"Supply {supply}/100 · Policy {policy}/100 · Price {price}/100"
+                )
+            else:
+                score_line = (
+                    f"供应链 {supply}/100 · 政策 {policy}/100 · 价格 {price}/100"
+                )
 
         score_badge = ""
         if risk_score is not None and risk_score != "":
-            score_badge = f"综合风险 {risk_score}/100"
+            score_badge = f"{labels['score']} {risk_score}/100"
 
         head_parts = []
-        if china_impact:
+        if impact:
             head_parts.append(
-                f'<span class="chip {impact_class}">对中国：{html.escape(china_impact)}</span>'
+                f'<span class="chip {impact_class}">{labels["impact"]}：{html.escape(impact)}</span>'
             )
-        if china_risk_trend:
+        if risk_trend:
             head_parts.append(
-                f'<span class="chip {trend_class}">风险：{html.escape(china_risk_trend)}</span>'
+                f'<span class="chip {trend_class}">{labels["risk"]}：{html.escape(risk_trend)}</span>'
             )
         if score_badge:
             head_parts.append(f'<span class="chip score">{score_badge}</span>')
 
         head_html = "".join(head_parts)
         summary_html = (
-            f'<div class="analysis-summary">专家结论：{expert_summary}</div>'
+            f'<div class="analysis-summary">{labels["summary"]}：{expert_summary}</div>'
             if expert_summary
             else ""
         )
 
         detail_blocks = []
         if score_line:
-            detail_blocks.append(f'<div class="analysis-grid">分项：{score_line}</div>')
+            detail_blocks.append(f'<div class="analysis-grid">{labels["subscores"]}：{score_line}</div>')
         if forecast_line:
             detail_blocks.append(
-                f'<div class="analysis-grid">预测：{forecast_line}</div>'
+                f'<div class="analysis-grid">{labels["forecast"]}：{forecast_line}</div>'
             )
         if strategy_html:
             detail_blocks.append(strategy_html)
@@ -496,19 +554,32 @@ class Reporter:
             return False
         return dt.date() == now_cst().date()
 
-    def _render_daily_brief(self, items):
+    def _render_daily_brief(self, items, lang="zh"):
         strategy = []
         tactical = []
         seen_strategy = set()
         seen_tactical = set()
-        impact_counts = {"利好": 0, "中性": 0, "利空": 0}
+
+        if lang == "en":
+            impact_counts = {"Positive": 0, "Neutral": 0, "Negative": 0}
+            impact_labels = ("Positive", "Neutral", "Negative")
+            counts_tpl = "Samples {sample} · Positive {pos} · Neutral {neu} · Negative {neg}"
+            strategy_label = "Strategy Recommendations"
+            tactical_label = "Tactical Recommendations"
+        else:
+            impact_counts = {"利好": 0, "中性": 0, "利空": 0}
+            impact_labels = ("利好", "中性", "利空")
+            counts_tpl = "样本 {sample} · 利好 {pos} · 中性 {neu} · 利空 {neg}"
+            strategy_label = "战略建议"
+            tactical_label = "操作建议"
+
         sample_count = 0
 
         for item in items:
             if not self._is_today(item):
                 continue
             sample_count += 1
-            impact = str(item.get("china_impact", "")).strip()
+            impact = str(item.get("impact", "")).strip()
             if impact in impact_counts:
                 impact_counts[impact] += 1
 
@@ -518,19 +589,54 @@ class Reporter:
                 self._append_unique(tactical, seen_tactical, rec, 5)
 
         if sample_count == 0:
-            return '<div class="brief-empty">今日暂无摘要</div>'
+            return (
+                '<div class="brief-empty">今日暂无摘要</div>'
+                if lang == "zh"
+                else '<div class="brief-empty">No brief for today.</div>'
+            )
 
-        counts_line = (
-            f"样本 {sample_count} · 利好 {impact_counts['利好']} · "
-            f"中性 {impact_counts['中性']} · 利空 {impact_counts['利空']}"
+        counts_line = counts_tpl.format(
+            sample=sample_count,
+            pos=impact_counts[impact_labels[0]],
+            neu=impact_counts[impact_labels[1]],
+            neg=impact_counts[impact_labels[2]],
         )
-        strategy_html = self._render_brief_list(strategy, "战略建议")
-        tactical_html = self._render_brief_list(tactical, "操作建议")
+        strategy_html = self._render_brief_list(strategy, strategy_label)
+        tactical_html = self._render_brief_list(tactical, tactical_label)
 
         return (
             f'<div class="brief-row">{counts_line}</div>'
             f'<div class="brief-grid">{strategy_html}{tactical_html}</div>'
         )
+
+    def _render_premium(self, items, lang="zh"):
+        today_items = [item for item in items if self._is_today(item)]
+        if not today_items:
+            return (
+                '<div class="meta">暂无重点追踪</div>'
+                if lang == "zh"
+                else '<div class="meta">No premium leads today.</div>'
+            )
+
+        def score(item):
+            return int(item.get("risk_score", 0) or 0)
+
+        top_items = sorted(today_items, key=score, reverse=True)[:3]
+        blocks = []
+        for item in top_items:
+            title = html.escape(item.get("title", ""))
+            reason = html.escape(item.get("expert_summary", "") or item.get("summary", ""))
+            reason_label = "价值" if lang == "zh" else "Why it matters"
+            btn_label = "解锁深度报告" if lang == "zh" else "Unlock Deep Report"
+            block = (
+                '<div class="premium-item">'
+                f'<div class="premium-topic">{title}</div>'
+                f'<div class="premium-reason">{reason_label}：{reason}</div>'
+                f'<a class="premium-btn" href="mailto:sentinel@dataspices.com">{btn_label}</a>'
+                '</div>'
+            )
+            blocks.append(block)
+        return "".join(blocks)
 
     def _render_archive_nav(self, archives, archive_month="", prefix=""):
         if not archives:
@@ -548,7 +654,7 @@ class Reporter:
             )
         return "".join(links)
 
-    def _render_rollups(self, rollups):
+    def _render_rollups(self, rollups, lang="zh"):
         if not rollups:
             return '<div class="rollups-empty">暂无汇总</div>'
 
@@ -570,56 +676,102 @@ class Reporter:
         top_countries = _top_chips(rollups.get("top_countries", []))
         top_actions = _top_chips(rollups.get("top_actions", []))
 
-        summary_line = (
-            f"近30天 {window_30.get('count', 0)} 条 · 高风险 {window_30.get('high_risk', 0)}"
-            f" ｜ 近90天 {window_90.get('count', 0)} 条 · 高风险 {window_90.get('high_risk', 0)}"
-        )
-        fallback = '<div class="meta">暂无</div>'
+        if lang == "en":
+            summary_line = (
+                f"Last 30d {window_30.get('count', 0)} · High Risk {window_30.get('high_risk', 0)}"
+                f" ｜ Last 90d {window_90.get('count', 0)} · High Risk {window_90.get('high_risk', 0)}"
+            )
+            mineral_label = "Minerals"
+            country_label = "Countries"
+            action_label = "Actions"
+            fallback = '<div class="meta">None</div>'
+        else:
+            summary_line = (
+                f"近30天 {window_30.get('count', 0)} 条 · 高风险 {window_30.get('high_risk', 0)}"
+                f" ｜ 近90天 {window_90.get('count', 0)} 条 · 高风险 {window_90.get('high_risk', 0)}"
+            )
+            mineral_label = "矿种聚合"
+            country_label = "国家聚合"
+            action_label = "动作聚合"
+            fallback = '<div class="meta">暂无</div>'
 
         return (
             f'<div class="rollups-row">{summary_line}</div>'
             f'<div class="rollups-grid">'
-            f'<div class="rollup-col"><div class="meta">矿种聚合</div>{top_minerals or fallback}</div>'
-            f'<div class="rollup-col"><div class="meta">国家聚合</div>{top_countries or fallback}</div>'
-            f'<div class="rollup-col"><div class="meta">动作聚合</div>{top_actions or fallback}</div>'
+            f'<div class="rollup-col"><div class="meta">{mineral_label}</div>{top_minerals or fallback}</div>'
+            f'<div class="rollup-col"><div class="meta">{country_label}</div>{top_countries or fallback}</div>'
+            f'<div class="rollup-col"><div class="meta">{action_label}</div>{top_actions or fallback}</div>'
             f'</div>'
         )
 
-    def _prune_record(self, record):
-        fields = [
-            "id",
-            "title",
-            "url",
-            "source_type",
-            "published_at",
-            "collected_at",
-            "language",
-            "summary_zh",
-            "country_primary",
-            "event_location",
-            "minerals",
-            "entities",
-            "action_type",
-            "risk_level",
-            "importance_score",
-            "china_involved",
-            "china_dependency",
-            "china_role",
-            "confidence",
-            "china_impact",
-            "china_risk_trend",
-            "expert_summary",
-            "recommendations_strategy",
-            "recommendations_tactical",
-            "supply_risk_score",
-            "policy_risk_score",
-            "price_pressure_score",
-            "risk_score",
-            "forecast_6m",
-            "forecast_12m",
-            "forecast_24m",
-            "forecast_48m",
-            "related_context",
-            "analysis_with_context",
-        ]
-        return {key: record.get(key, "") for key in fields}
+    def _prune_record(self, record, lang="zh"):
+        if lang == "en":
+            summary = record.get("summary_en") or record.get("summary_zh", "")
+            impact = record.get("impact_west", "Neutral")
+            risk_trend = record.get("risk_trend_west", "Stable")
+            expert_summary = record.get("expert_summary_en") or ""
+            rec_strategy = record.get("recommendations_strategy_en", [])
+            rec_tactical = record.get("recommendations_tactical_en", [])
+            supply = record.get("supply_risk_score_en", record.get("supply_risk_score"))
+            policy = record.get("policy_risk_score_en", record.get("policy_risk_score"))
+            price = record.get("price_pressure_score_en", record.get("price_pressure_score"))
+            risk_score = record.get("risk_score_en", record.get("risk_score"))
+            risk_level = record.get("risk_level_en", record.get("risk_level"))
+            forecast_6m = record.get("forecast_6m_en") or record.get("forecast_6m", {})
+            forecast_12m = record.get("forecast_12m_en") or record.get("forecast_12m", {})
+            forecast_24m = record.get("forecast_24m_en") or record.get("forecast_24m", {})
+            forecast_48m = record.get("forecast_48m_en") or record.get("forecast_48m", {})
+        else:
+            summary = record.get("summary_zh", "")
+            impact = record.get("china_impact", "中性")
+            risk_trend = record.get("china_risk_trend", "持平")
+            expert_summary = record.get("expert_summary", "")
+            rec_strategy = record.get("recommendations_strategy", [])
+            rec_tactical = record.get("recommendations_tactical", [])
+            supply = record.get("supply_risk_score")
+            policy = record.get("policy_risk_score")
+            price = record.get("price_pressure_score")
+            risk_score = record.get("risk_score")
+            risk_level = record.get("risk_level")
+            forecast_6m = record.get("forecast_6m", {})
+            forecast_12m = record.get("forecast_12m", {})
+            forecast_24m = record.get("forecast_24m", {})
+            forecast_48m = record.get("forecast_48m", {})
+
+        fields = {
+            "id": record.get("id"),
+            "title": record.get("title", ""),
+            "url": record.get("url", ""),
+            "source_type": record.get("source_type", ""),
+            "published_at": record.get("published_at", ""),
+            "collected_at": record.get("collected_at", ""),
+            "language": record.get("language", ""),
+            "summary": summary,
+            "country_primary": record.get("country_primary", ""),
+            "event_location": record.get("event_location", ""),
+            "minerals": record.get("minerals", []),
+            "entities": record.get("entities", []),
+            "action_type": record.get("action_type", "Other"),
+            "risk_level": risk_level or 0,
+            "importance_score": record.get("importance_score", 0),
+            "china_involved": record.get("china_involved", False),
+            "china_dependency": record.get("china_dependency", "None"),
+            "china_role": record.get("china_role", "Mentioned"),
+            "confidence": record.get("confidence", 60),
+            "impact": impact,
+            "risk_trend": risk_trend,
+            "expert_summary": expert_summary,
+            "recommendations_strategy": rec_strategy,
+            "recommendations_tactical": rec_tactical,
+            "supply_risk_score": supply,
+            "policy_risk_score": policy,
+            "price_pressure_score": price,
+            "risk_score": risk_score,
+            "forecast_6m": forecast_6m,
+            "forecast_12m": forecast_12m,
+            "forecast_24m": forecast_24m,
+            "forecast_48m": forecast_48m,
+            "related_context": record.get("related_context", []),
+            "analysis_with_context": record.get("analysis_with_context"),
+        }
+        return fields
