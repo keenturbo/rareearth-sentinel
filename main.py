@@ -15,7 +15,7 @@ from src.embeddings import EmbeddingStore
 from src.normalizer import Normalizer
 from src.utils import clean_text, isoformat, now_cst
 from src.datasets import build_datasets
-from src.premium import generate_daily_briefs
+from src.premium import generate_daily_briefs, backfill_daily_briefs
 
 
 def _context_lines(context_summary, limit=0):
