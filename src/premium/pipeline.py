@@ -232,6 +232,36 @@ def _merge_index(index_path, entries):
         json.dump(merged_list, f, ensure_ascii=False, indent=2)
 
 
+def _merge_global_index(base_dir, entries):
+    if not entries:
+        return
+    index_path = os.path.join(base_dir, "reports_index.jsonl")
+    merged = {}
+    if os.path.exists(index_path):
+        try:
+            with open(index_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(entry, dict) and entry.get("report_id"):
+                        merged[entry["report_id"]] = entry
+        except OSError:
+            merged = {}
+    for entry in entries:
+        if isinstance(entry, dict) and entry.get("report_id"):
+            merged[entry["report_id"]] = entry
+    merged_list = list(merged.values())
+    merged_list.sort(key=lambda e: e.get("created_at", ""), reverse=True)
+    with open(index_path, "w", encoding="utf-8") as f:
+        for entry in merged_list:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
 def generate_daily_briefs(config, records, limit=None):
     if not config.premium_enabled:
         return []
@@ -303,6 +333,7 @@ def generate_daily_briefs(config, records, limit=None):
     if index_entries:
         index_path = os.path.join(output_dir, "index.json")
         _merge_index(index_path, index_entries)
+        _merge_global_index(config.premium_dir, index_entries)
 
     return index_entries
 
@@ -371,6 +402,7 @@ def backfill_daily_briefs(config, records, limit=None, backfill_missing=False):
     if index_entries:
         index_path = os.path.join(output_dir, "index.json")
         _merge_index(index_path, index_entries)
+        _merge_global_index(config.premium_dir, index_entries)
 
     return index_entries
 
@@ -441,5 +473,9 @@ def backfill_briefs_by_date(config, records, limit=None, backfill_missing=False)
     for date_key, entries in entries_by_date.items():
         index_path = os.path.join(config.premium_dir, date_key, "index.json")
         _merge_index(index_path, entries)
+
+    if entries_by_date:
+        all_entries = [entry for entries in entries_by_date.values() for entry in entries]
+        _merge_global_index(config.premium_dir, all_entries)
 
     return [entry for entries in entries_by_date.values() for entry in entries]
