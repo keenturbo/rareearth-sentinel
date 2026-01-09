@@ -1,11 +1,11 @@
-__pycache__/
-*.pyc
-.env
-.venv/
-venv/
-data/
-static/index.json
-static/index.html
-static/archive/
-static/rollups.json
-.DS_Store
+@@
+ .env
+ .venv/
+ venv/
+ data/
++data/premium/
+ static/index.json
+ static/index.html
+ static/archive/
+ static/rollups.json
+ .DS_Store
