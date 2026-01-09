@@ -1,0 +1,99 @@
+- id: mofcom
+  name: MOFCOM
+  mode: site_search
+  domain: mofcom.gov.cn
+  query_terms: '稀土 OR "rare earth" OR "critical minerals" OR 出口管制 OR 关键矿产'
+  news_lang: zh-CN
+  news_region: CN
+  news_edition: CN:zh-Hans
+  max_items: 6
+
+- id: customs_cn
+  name: China Customs
+  mode: site_search
+  domain: customs.gov.cn
+  query_terms: '稀土 OR "rare earth" OR 出口管制 OR 关键矿产'
+  news_lang: zh-CN
+  news_region: CN
+  news_edition: CN:zh-Hans
+  max_items: 6
+
+- id: usgs
+  name: USGS
+  mode: site_search
+  domain: usgs.gov
+  query_terms: '"rare earth" OR "critical minerals" OR "rare earths" OR "strategic minerals"'
+  news_lang: en-US
+  news_region: US
+  news_edition: US:en
+  max_items: 6
+
+- id: energy_doe
+  name: US DOE
+  mode: site_search
+  domain: energy.gov
+  query_terms: '"rare earth" OR "critical minerals" OR "supply chain"'
+  news_lang: en-US
+  news_region: US
+  news_edition: US:en
+  max_items: 6
+
+- id: defense_dod
+  name: US DoD
+  mode: site_search
+  domain: defense.gov
+  query_terms: '"rare earth" OR "critical minerals" OR "defense production"'
+  news_lang: en-US
+  news_region: US
+  news_edition: US:en
+  max_items: 6
+
+- id: bis_doc
+  name: US BIS
+  mode: site_search
+  domain: bis.doc.gov
+  query_terms: '"export control" OR "critical minerals" OR "rare earth"'
+  news_lang: en-US
+  news_region: US
+  news_edition: US:en
+  max_items: 6
+
+- id: ec_eu
+  name: European Commission
+  mode: site_search
+  domain: ec.europa.eu
+  query_terms: '"critical raw materials" OR "rare earth" OR "supply chain"'
+  news_lang: en-GB
+  news_region: GB
+  news_edition: GB:en
+  max_items: 6
+
+- id: meti_jp
+  name: METI Japan
+  mode: site_search
+  domain: meti.go.jp
+  query_terms: '"rare earth" OR "critical minerals" OR "supply chain"'
+  news_lang: en-US
+  news_region: US
+  news_edition: US:en
+  max_items: 6
+
+- id: jogmec_jp
+  name: JOGMEC
+  mode: site_search
+  domain: jogmec.go.jp
+  query_terms: '"rare earth" OR "critical minerals" OR "resource security"'
+  news_lang: en-US
+  news_region: US
+  news_edition: US:en
+  max_items: 6
+
+- id: nrcan_ca
+  name: Natural Resources Canada
+  mode: site_search
+  domain: nrcan.gc.ca
+  query_terms: '"critical minerals" OR "rare earth" OR "supply chain"'
+  news_lang: en-CA
+  news_region: CA
+  news_edition: CA:en
+  max_items: 6

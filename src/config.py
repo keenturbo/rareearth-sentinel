@@ -59,6 +59,8 @@ class Config:
     min_content_chars: int
     summary_min_chars: int
     index_limit: int
+    official_sources_file: str
+    official_max_items: int
     context_window_days: int
     context_max_items: int
     context_mode: str
@@ -98,6 +100,10 @@ class Config:
             min_content_chars=_get_int("MIN_CONTENT_CHARS", 300),
             summary_min_chars=_get_int("SUMMARY_MIN_CHARS", 120),
             index_limit=_get_int("INDEX_LIMIT", 200),
+            official_sources_file=_get_env(
+                "OFFICIAL_SOURCES_FILE", "config/external_sources.yml"
+            ),
+            official_max_items=_get_int("OFFICIAL_MAX_ITEMS", 6),
             context_window_days=_get_int("CONTEXT_WINDOW_DAYS", 365),
             context_max_items=_get_int("CONTEXT_MAX_ITEMS", 6),
             context_mode=_get_env("CONTEXT_MODE", "vector"),
