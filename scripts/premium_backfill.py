@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 import argparse
+import os
+import subprocess
+import sys
+
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
 
 from src.config import Config
 from src.storage import Storage
@@ -26,6 +33,19 @@ def main():
         default=0,
         help="Limit number of records to backfill",
     )
+    parser.add_argument(
+        "--rebuild",
+        dest="rebuild",
+        action="store_true",
+        help="Rebuild static pages after backfill",
+    )
+    parser.add_argument(
+        "--no-rebuild",
+        dest="rebuild",
+        action="store_false",
+        help="Skip static page rebuild",
+    )
+    parser.set_defaults(rebuild=True)
     args = parser.parse_args()
 
     if not args.backfill_premium and not args.backfill_premium_missing:
@@ -42,6 +62,12 @@ def main():
         limit=limit,
         backfill_missing=args.backfill_premium_missing,
     )
+
+    if args.rebuild:
+        subprocess.run(
+            [sys.executable, os.path.join(ROOT_DIR, "main.py"), "--rebuild"],
+            check=False,
+        )
 
 
 if __name__ == "__main__":
