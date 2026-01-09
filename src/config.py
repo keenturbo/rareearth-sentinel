@@ -33,6 +33,13 @@ def _get_float(key, default):
         return default
 
 
+def _get_bool(key, default=False):
+    value = _get_env(key)
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 def _get_list(key, default):
     value = _get_env(key)
     if value is None:
@@ -78,6 +85,12 @@ class Config:
     dataset_split_train: float
     dataset_split_valid: float
     dataset_random_seed: int
+    premium_enabled: bool
+    premium_dir: str
+    premium_top_n: int
+    premium_min_credibility: int
+    premium_min_importance: int
+    premium_min_quality: int
 
     @classmethod
     def from_env(cls):
@@ -127,6 +140,12 @@ class Config:
             dataset_split_train=_get_float("DATASET_SPLIT_TRAIN", 0.8),
             dataset_split_valid=_get_float("DATASET_SPLIT_VALID", 0.1),
             dataset_random_seed=_get_int("DATASET_RANDOM_SEED", 42),
+            premium_enabled=_get_bool("PREMIUM_ENABLED", True),
+            premium_dir=_get_env("PREMIUM_DIR", "data/premium"),
+            premium_top_n=_get_int("PREMIUM_TOP_N", 3),
+            premium_min_credibility=_get_int("PREMIUM_MIN_CREDIBILITY", 60),
+            premium_min_importance=_get_int("PREMIUM_MIN_IMPORTANCE", 3),
+            premium_min_quality=_get_int("PREMIUM_MIN_QUALITY", 60),
         )
 
 
