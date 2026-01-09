@@ -30,6 +30,10 @@ class Storage:
         return os.path.join(self.config.data_dir, "intel.jsonl")
 
     @property
+    def premium_dir(self):
+        return self.config.premium_dir
+
+    @property
     def index_json_path(self):
         return os.path.join(self.config.static_dir, "index.json")
 
