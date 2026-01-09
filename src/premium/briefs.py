@@ -1,6 +1,7 @@
 import json
 import math
 from datetime import datetime
+from urllib.parse import urlparse
 
 import google.generativeai as genai
 
@@ -31,6 +32,12 @@ class PremiumBriefGenerator:
         minerals = ", ".join(record.get("minerals") or [])
         credibility = record.get("credibility", {}) or {}
         credibility_score = credibility.get("score", 0)
+        source_type = str(record.get("source_type", "")).strip()
+        url = str(record.get("url", "")).strip()
+        domain = ""
+        if url:
+            domain = urlparse(url).netloc
+        official_id = str(record.get("official_source_id", "")).strip()
 
         meta_block = (
             f"Title: {title}\n"
@@ -38,6 +45,9 @@ class PremiumBriefGenerator:
             f"Action: {action}\n"
             f"Minerals: {minerals}\n"
             f"CredibilityScore: {credibility_score}\n"
+            f"SourceType: {source_type}\n"
+            f"Domain: {domain}\n"
+            f"OfficialSource: {official_id}\n"
         )
 
         if lang == "en":
@@ -47,9 +57,11 @@ You are a rare earth intelligence verification analyst. Generate a paid brief (U
 Return ONLY JSON with fields:
 - conclusion (1 sentence)
 - fact_checks (array of 2-3 short items)
+- fact_sources (array of 2-4 sources or domains used in fact checks)
 - key_numbers (array of 2-4 items)
 - impact_score (1-10 integer)
 - tracking_nodes (array of 3 time-bound items)
+- confidence_notes (array of 1-2 items explaining evidence limits)
 - value_proposition (1 sentence explaining why this matters)
 
 Constraints:
@@ -71,9 +83,11 @@ Article:
 只输出JSON，包含字段：
 - conclusion（一句话结论）
 - fact_checks（2-3条核查要点）
+- fact_sources（2-4条核查来源或域名）
 - key_numbers（2-4条关键数字）
 - impact_score（1-10分）
 - tracking_nodes（3条需追踪节点）
+- confidence_notes（1-2条证据局限说明）
 - value_proposition（一句话说明为什么值得跟踪）
 
 要求：简洁、可执行，不要猜测，缺失数据写“未知”。
@@ -126,9 +140,11 @@ def normalize_brief(data, lang="zh"):
     normalized = {
         "conclusion": _as_str(data.get("conclusion")),
         "fact_checks": _as_list(data.get("fact_checks"), limit=3),
+        "fact_sources": _as_list(data.get("fact_sources"), limit=4),
         "key_numbers": _as_list(data.get("key_numbers"), limit=4),
         "impact_score": _score(data.get("impact_score")),
         "tracking_nodes": _as_list(data.get("tracking_nodes"), limit=3),
+        "confidence_notes": _as_list(data.get("confidence_notes"), limit=2),
         "value_proposition": _as_str(data.get("value_proposition")),
     }
 
@@ -146,13 +162,17 @@ def brief_quality_score(brief):
         return 0
     score = 0
     if len(str(brief.get("conclusion", ""))) >= 15:
-        score += 20
+        score += 15
     if len(brief.get("fact_checks", [])) >= 2:
         score += 20
+    if len(brief.get("fact_sources", [])) >= 2:
+        score += 10
     if len(brief.get("key_numbers", [])) >= 2:
-        score += 20
+        score += 15
     if len(brief.get("tracking_nodes", [])) >= 2:
-        score += 20
+        score += 15
+    if len(brief.get("confidence_notes", [])) >= 1:
+        score += 10
     if len(str(brief.get("value_proposition", ""))) >= 12:
-        score += 20
+        score += 15
     return score
