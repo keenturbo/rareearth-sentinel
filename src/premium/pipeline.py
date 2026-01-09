@@ -105,7 +105,7 @@ def _score_for_top(record):
         importance = 0
     credibility = record.get("credibility", {}) or {}
     credibility_score = credibility.get("score", 0)
-    return 0.4 * risk + 0.3 * importance * 20 + 0.2 * credibility_score + 0.1 * (5 if str(record.get("source_type","")).startswith("official") else 0)
+    return 0.4 * risk + 0.3 * importance * 20 + 0.2 * credibility_score + 0.1 * (5 if str(record.get("source_type","" )).startswith("official") else 0)
 
 
 def generate_daily_briefs(config, records, limit=None):
@@ -150,12 +150,16 @@ def generate_daily_briefs(config, records, limit=None):
             "source_title": record.get("title", ""),
             "created_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
         }
+        entry_has_any = False
 
         for lang in ("zh", "en"):
             brief = generator.generate(record, lang=lang)
             if brief is None:
                 continue
             quality = brief_quality_score(brief)
+            if quality < config.premium_min_quality:
+                continue
+            entry_has_any = True
             entry[f"quality_{lang}"] = quality
             entry[f"preview_{lang}"] = _report_preview(brief, lang=lang)
 
@@ -167,7 +171,8 @@ def generate_daily_briefs(config, records, limit=None):
             with open(md_path, "w", encoding="utf-8") as f:
                 f.write(_brief_to_markdown(brief, lang=lang))
 
-        index_entries.append(entry)
+        if entry_has_any:
+            index_entries.append(entry)
 
     if index_entries:
         index_path = os.path.join(output_dir, "index.json")
