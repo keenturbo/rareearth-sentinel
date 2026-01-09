@@ -58,6 +58,10 @@ def _brief_to_markdown(brief, lang="zh"):
         lines.append("\n## Fact Checks")
         for item in brief.get("fact_checks", []):
             lines.append(f"- {item}")
+        if brief.get("fact_sources"):
+            lines.append("\n## Fact Sources")
+            for item in brief.get("fact_sources", []):
+                lines.append(f"- {item}")
         lines.append("\n## Key Numbers")
         for item in brief.get("key_numbers", []):
             lines.append(f"- {item}")
@@ -66,6 +70,10 @@ def _brief_to_markdown(brief, lang="zh"):
         lines.append("\n## Tracking Nodes")
         for item in brief.get("tracking_nodes", []):
             lines.append(f"- {item}")
+        if brief.get("confidence_notes"):
+            lines.append("\n## Evidence Notes")
+            for item in brief.get("confidence_notes", []):
+                lines.append(f"- {item}")
         lines.append("\n## Why It Matters")
         lines.append(brief.get("value_proposition", ""))
     else:
@@ -74,6 +82,10 @@ def _brief_to_markdown(brief, lang="zh"):
         lines.append("\n## 事实核查")
         for item in brief.get("fact_checks", []):
             lines.append(f"- {item}")
+        if brief.get("fact_sources"):
+            lines.append("\n## 核查来源")
+            for item in brief.get("fact_sources", []):
+                lines.append(f"- {item}")
         lines.append("\n## 关键数字")
         for item in brief.get("key_numbers", []):
             lines.append(f"- {item}")
@@ -82,6 +94,10 @@ def _brief_to_markdown(brief, lang="zh"):
         lines.append("\n## 追踪节点")
         for item in brief.get("tracking_nodes", []):
             lines.append(f"- {item}")
+        if brief.get("confidence_notes"):
+            lines.append("\n## 证据说明")
+            for item in brief.get("confidence_notes", []):
+                lines.append(f"- {item}")
         lines.append("\n## 价值说明")
         lines.append(brief.get("value_proposition", ""))
     return "\n".join(lines).strip()
@@ -105,7 +121,18 @@ def _score_for_top(record):
         importance = 0
     credibility = record.get("credibility", {}) or {}
     credibility_score = credibility.get("score", 0)
-    return 0.4 * risk + 0.3 * importance * 20 + 0.2 * credibility_score + 0.1 * (5 if str(record.get("source_type","" )).startswith("official") else 0)
+    source_type = str(record.get("source_type", ""))
+    official_bonus = 5 if source_type.startswith("official") else 0
+    return 0.4 * risk + 0.3 * importance * 20 + 0.2 * credibility_score + 0.1 * official_bonus
+
+
+def _infer_official_source(record):
+    source_type = str(record.get("source_type", "")).strip().lower()
+    if source_type.startswith("official:"):
+        return source_type.split(":", 1)[1]
+    if source_type.startswith("official"):
+        return source_type
+    return ""
 
 
 def generate_daily_briefs(config, records, limit=None):
@@ -148,6 +175,7 @@ def generate_daily_briefs(config, records, limit=None):
             "price": 9,
             "date": date_key,
             "source_title": record.get("title", ""),
+            "official_source_id": _infer_official_source(record),
             "created_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
         }
         entry_has_any = False
@@ -172,6 +200,73 @@ def generate_daily_briefs(config, records, limit=None):
                 f.write(_brief_to_markdown(brief, lang=lang))
 
         if entry_has_any:
+            index_entries.append(entry)
+
+    if index_entries:
+        index_path = os.path.join(output_dir, "index.json")
+        with open(index_path, "w", encoding="utf-8") as f:
+            json.dump(index_entries, f, ensure_ascii=False, indent=2)
+
+    return index_entries
+
+
+def _should_backfill(record, backfill_missing=False):
+    if backfill_missing:
+        return bool(record.get("content")) and not record.get("premium_brief")
+    return bool(record.get("content"))
+
+
+def backfill_daily_briefs(config, records, limit=None, backfill_missing=False):
+    if not config.premium_enabled:
+        return []
+
+    eligible = [r for r in records if _should_generate(r, config) and _should_backfill(r, backfill_missing)]
+    if not eligible:
+        return []
+
+    eligible = sorted(eligible, key=_score_for_top, reverse=True)
+    if limit:
+        eligible = eligible[:limit]
+
+    generator = PremiumBriefGenerator(config)
+    output_dir, date_key = _today_dir(config.premium_dir)
+    index_entries = []
+
+    for record in eligible:
+        report_id = _build_report_id(record)
+        entry = {
+            "report_id": report_id,
+            "event_id": record.get("id"),
+            "tier": "brief",
+            "price": 9,
+            "date": date_key,
+            "source_title": record.get("title", ""),
+            "official_source_id": _infer_official_source(record),
+            "created_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        }
+        entry_has_any = False
+
+        for lang in ("zh", "en"):
+            brief = generator.generate(record, lang=lang)
+            if brief is None:
+                continue
+            quality = brief_quality_score(brief)
+            if quality < config.premium_min_quality:
+                continue
+            entry_has_any = True
+            entry[f"quality_{lang}"] = quality
+            entry[f"preview_{lang}"] = _report_preview(brief, lang=lang)
+
+            report_path = os.path.join(output_dir, _brief_filename(report_id, lang))
+            with open(report_path, "w", encoding="utf-8") as f:
+                json.dump(brief, f, ensure_ascii=False, indent=2)
+
+            md_path = os.path.join(output_dir, _brief_md_filename(report_id, lang))
+            with open(md_path, "w", encoding="utf-8") as f:
+                f.write(_brief_to_markdown(brief, lang=lang))
+
+        if entry_has_any:
+            record["premium_brief"] = True
             index_entries.append(entry)
 
     if index_entries:
