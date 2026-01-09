@@ -303,7 +303,10 @@ class Normalizer:
 
     def score_record(self, record, normalized):
         source_type = str(record.get("source_type", "")).strip().lower()
-        source_weight = SOURCE_WEIGHTS.get(source_type, 50)
+        source_key = source_type.split(":", 1)[0] if source_type else ""
+        if source_key.startswith("official"):
+            source_key = "official"
+        source_weight = SOURCE_WEIGHTS.get(source_key, 50)
         content_source = record.get("content_source", "fulltext")
         content_quality = _score_content_quality(
             record.get("content", ""), content_source
