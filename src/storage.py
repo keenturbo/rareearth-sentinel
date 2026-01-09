@@ -104,12 +104,17 @@ class Storage:
     ):
         now = now_cst()
         analysis_en = analysis_en or {}
+        source_type = item.get("source_type", "")
+        official_source_id = ""
+        if isinstance(source_type, str) and source_type.startswith("official:"):
+            official_source_id = source_type.split(":", 1)[1]
         record = {
             "id": hash_url(item.get("url", "")),
             "title": item.get("title", ""),
             "url": item.get("url", ""),
             "resolved_url": resolved_url or item.get("url", ""),
-            "source_type": item.get("source_type", ""),
+            "source_type": source_type,
+            "official_source_id": official_source_id,
             "published_at": item.get("published_at", ""),
             "collected_at": isoformat(now),
             "language": item.get("language", ""),
