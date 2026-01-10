@@ -13,7 +13,7 @@ from src.reporter import Reporter
 from src.context import ContextBuilder, VectorContextBuilder
 from src.embeddings import EmbeddingStore
 from src.normalizer import Normalizer
-from src.utils import clean_text, isoformat, now_cst
+from src.utils import clean_text, isoformat, now_cst, is_homepage_url
 from src.datasets import build_datasets
 from src.premium import generate_daily_briefs, backfill_daily_briefs
 
@@ -142,6 +142,12 @@ def run_pipeline(config):
                     fetch_status = fetch_result.get("status")
                     resolved_url = fetch_result.get("resolved_url")
                     content_source = "fulltext"
+
+                    source_type = str(item.get("source_type") or "")
+                    if source_type.startswith("official:") and is_homepage_url(resolved_url):
+                        stats["fetch_fail"] += 1
+                        print("  - skip: official_homepage")
+                        continue
 
                     summary = (item.get("summary") or "").strip()
                     fallback_text = f"{title}\n\n{summary}".strip()
