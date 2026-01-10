@@ -4,13 +4,14 @@ import feedparser
 import yaml
 
 from .base import Source
+from ..utils import is_homepage_url
 
 RSS_URL_TEMPLATE = (
     "https://news.google.com/rss/search?q={query}&hl={lang}&gl={region}&ceid={edition}"
 )
 DEFAULT_QUERY_TERMS = (
     '"rare earth" OR "rare earths" OR "critical minerals" OR "strategic minerals" '
-    "OR \u7a00\u571f OR \u5173\u952e\u77ff\u4ea7 OR \u51fa\u53e3\u7ba1\u5236"
+    "OR 稀土 OR 关键矿产 OR 出口管制"
 )
 
 
@@ -76,10 +77,13 @@ class OfficialSource(Source):
 
     def _build_item(self, entry, feed_entry):
         source_id = entry.get("id", "official")
+        link = feed_entry.get("link", "") or ""
+        if is_homepage_url(link):
+            return None
         return {
             "source_type": f"official:{source_id}",
             "title": feed_entry.get("title", ""),
-            "url": feed_entry.get("link", ""),
+            "url": link,
             "summary": feed_entry.get("summary")
             or feed_entry.get("description")
             or "",
@@ -97,7 +101,9 @@ class OfficialSource(Source):
         items = []
         limit = self._entry_max(entry)
         for feed_entry in feed.entries[:limit]:
-            items.append(self._build_item(entry, feed_entry))
+            item = self._build_item(entry, feed_entry)
+            if item:
+                items.append(item)
         return items
 
     def _fetch_site_search(self, entry):
@@ -116,7 +122,9 @@ class OfficialSource(Source):
         items = []
         limit = self._entry_max(entry)
         for feed_entry in feed.entries[:limit]:
-            items.append(self._build_item(entry, feed_entry))
+            item = self._build_item(entry, feed_entry)
+            if item:
+                items.append(item)
         return items
 
     def _fetch_html(self, entry):
