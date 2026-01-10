@@ -1,6 +1,7 @@
 import html
 import json
 import os
+import re
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -23,6 +24,7 @@ class Reporter:
         recent_records = (
             sorted_records[: self.config.index_limit] if total_count else []
         )
+        record_map = {r.get("id"): r for r in all_records if r.get("id")}
 
         daily_reports = {
             "zh": self._generate_daily_report(all_records, lang="zh"),
@@ -68,6 +70,10 @@ class Reporter:
         # Always build premium archive pages (shows empty state if no data)
         self.build_premium_archive(storage, lang="zh", subdir="cn")
         self.build_premium_archive(storage, lang="en", subdir="en")
+
+        # Build admin pages for premium reports
+        self.build_premium_admin_pages(storage, record_map, lang="zh", subdir="cn")
+        self.build_premium_admin_pages(storage, record_map, lang="en", subdir="en")
 
     def _load_premium_briefs(self, storage):
         data = {"zh": [], "en": []}
@@ -430,6 +436,216 @@ class Reporter:
         os.makedirs(premium_dir, exist_ok=True)
         with open(os.path.join(premium_dir, "index.html"), "w", encoding="utf-8") as f:
             f.write(html_out)
+
+    def build_premium_admin_pages(self, storage, record_map, lang="zh", subdir="cn"):
+        base_dir = storage.premium_dir
+        index_path = os.path.join(base_dir, "reports_index.jsonl")
+        entries = []
+        if os.path.exists(index_path):
+            with open(index_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(entry, dict):
+                        entries.append(entry)
+
+        entries.sort(key=lambda e: e.get("created_at", ""), reverse=True)
+        display_entries = entries[:300]
+        list_html = self._render_admin_list(display_entries, record_map, lang, subdir)
+
+        template_name = "admin_premium_en.html" if lang == "en" else "admin_premium.html"
+        template_path = os.path.join(self.config.templates_dir, template_name)
+        with open(template_path, "r", encoding="utf-8") as f:
+            template = f.read()
+
+        html_out = (
+            template.replace("{{TOTAL_COUNT}}", str(len(entries)))
+            .replace("{{LAST_UPDATE}}", isoformat(now_cst()))
+            .replace("{{PREMIUM_LIST}}", list_html)
+        )
+
+        admin_root = os.path.join(storage._subdir_base(subdir), "admin", "premium")
+        os.makedirs(admin_root, exist_ok=True)
+        with open(os.path.join(admin_root, "index.html"), "w", encoding="utf-8") as f:
+            f.write(html_out)
+
+        for entry in display_entries:
+            report_id = entry.get("report_id")
+            if not report_id:
+                continue
+            detail_html = self._render_admin_detail(entry, record_map, base_dir, lang, subdir)
+            if not detail_html:
+                continue
+            detail_path = os.path.join(admin_root, f"{report_id}.html")
+            with open(detail_path, "w", encoding="utf-8") as f:
+                f.write(detail_html)
+
+    def _md_inline(self, text):
+        safe = html.escape(text)
+        safe = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", safe)
+        safe = re.sub(r"`([^`]+)`", r"<code>\1</code>", safe)
+        return safe
+
+    def _markdown_to_html(self, text):
+        if not text:
+            return ""
+        lines = text.splitlines()
+        html_lines = []
+        in_list = False
+
+        for raw in lines:
+            line = raw.rstrip()
+            if not line.strip():
+                if in_list:
+                    html_lines.append("</ul>")
+                    in_list = False
+                continue
+            if line.startswith("### "):
+                if in_list:
+                    html_lines.append("</ul>")
+                    in_list = False
+                html_lines.append(f"<h3>{self._md_inline(line[4:])}</h3>")
+                continue
+            if line.startswith("## "):
+                if in_list:
+                    html_lines.append("</ul>")
+                    in_list = False
+                html_lines.append(f"<h2>{self._md_inline(line[3:])}</h2>")
+                continue
+            if line.startswith("# "):
+                if in_list:
+                    html_lines.append("</ul>")
+                    in_list = False
+                html_lines.append(f"<h1>{self._md_inline(line[2:])}</h1>")
+                continue
+            if line.startswith("- "):
+                if not in_list:
+                    html_lines.append("<ul>")
+                    in_list = True
+                html_lines.append(f"<li>{self._md_inline(line[2:])}</li>")
+                continue
+            if in_list:
+                html_lines.append("</ul>")
+                in_list = False
+            html_lines.append(f"<p>{self._md_inline(line)}</p>")
+
+        if in_list:
+            html_lines.append("</ul>")
+        return "\n".join(html_lines)
+
+    def _load_brief_text(self, base_dir, date_key, report_id, lang):
+        if not date_key or not report_id:
+            return ""
+        path = os.path.join(base_dir, date_key, f"brief_{report_id}_{lang}.md")
+        if not os.path.exists(path):
+            return ""
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return f.read()
+        except OSError:
+            return ""
+
+    def _load_brief_json(self, base_dir, date_key, report_id, lang):
+        if not date_key or not report_id:
+            return {}
+        path = os.path.join(base_dir, date_key, f"brief_{report_id}_{lang}.json")
+        if not os.path.exists(path):
+            return {}
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    def _render_admin_list(self, entries, record_map, lang, subdir):
+        if not entries:
+            empty = "暂无报告" if lang == "zh" else "No reports."
+            return f'<div class="empty">{empty}</div>'
+        blocks = []
+        prefix = f"/{subdir}" if subdir else ""
+
+        for entry in entries:
+            report_id = entry.get("report_id", "")
+            preview = entry.get("preview_zh") if lang == "zh" else entry.get("preview_en")
+            title = entry.get("source_title", "")
+            value = ""
+            preview_text = ""
+            if isinstance(preview, dict):
+                title = preview.get("title") or title
+                value = preview.get("value", "")
+                preview_text = preview.get("preview", "")
+            price = entry.get("price", 9)
+            created_at = entry.get("created_at", "")
+            link = f"{prefix}/admin/premium/{report_id}.html"
+            meta = f"{created_at} · {report_id} · ${price}"
+
+            blocks.append(
+                '<div class="card">'
+                f'<div class="card-title"><a href="{html.escape(link)}">{html.escape(title)}</a></div>'
+                f'<div class="card-meta">{html.escape(meta)}</div>'
+                f'<div class="card-value">{html.escape(value)}</div>'
+                f'<div class="card-preview">{html.escape(preview_text)}</div>'
+                '</div>'
+            )
+        return "".join(blocks)
+
+    def _render_admin_detail(self, entry, record_map, base_dir, lang, subdir):
+        report_id = entry.get("report_id", "")
+        if not report_id:
+            return ""
+        date_key = entry.get("date", "")
+        brief_md = self._load_brief_text(base_dir, date_key, report_id, lang)
+        brief_json = self._load_brief_json(base_dir, date_key, report_id, lang)
+        body_html = (
+            self._markdown_to_html(brief_md)
+            if brief_md
+            else '<div class="empty">Report content missing.</div>'
+        )
+
+        record = record_map.get(entry.get("event_id", ""), {}) or {}
+        source_url = record.get("url", "")
+        credibility = ""
+        cred = record.get("credibility", {}) or {}
+        if cred:
+            credibility = str(cred.get("score", ""))
+        impact_score = ""
+        if isinstance(brief_json, dict):
+            impact_score = str(brief_json.get("impact_score", ""))
+
+        title = entry.get("source_title", "")
+        if isinstance(brief_json, dict):
+            title = brief_json.get("conclusion") or title
+        created_at = entry.get("created_at", "") or entry.get("date", "")
+        price = entry.get("price", 9)
+        prefix = f"/{subdir}" if subdir else ""
+        back_link = f"{prefix}/admin/premium/"
+
+        url_html = "-"
+        if source_url:
+            url_html = f'<a href="{html.escape(source_url)}" target="_blank">{html.escape(source_url)}</a>'
+
+        template_name = "admin_premium_detail_en.html" if lang == "en" else "admin_premium_detail.html"
+        template_path = os.path.join(self.config.templates_dir, template_name)
+        with open(template_path, "r", encoding="utf-8") as f:
+            template = f.read()
+
+        html_out = (
+            template.replace("{{REPORT_TITLE}}", html.escape(title))
+            .replace("{{REPORT_ID}}", html.escape(report_id))
+            .replace("{{REPORT_DATE}}", html.escape(created_at))
+            .replace("{{REPORT_PRICE}}", html.escape(str(price)))
+            .replace("{{REPORT_URL}}", url_html)
+            .replace("{{REPORT_CREDIBILITY}}", html.escape(credibility or "-"))
+            .replace("{{REPORT_IMPACT}}", html.escape(impact_score or "-"))
+            .replace("{{REPORT_BODY}}", body_html)
+            .replace("{{BACK_LINK}}", html.escape(back_link))
+        )
+        return html_out
 
     def _render_cards(self, items, lang="zh"):
         if not items:
