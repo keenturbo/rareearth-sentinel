@@ -695,7 +695,7 @@ class Reporter:
             )
 
             analysis_html = self._render_expert(item, lang=lang)
-            context_html = self._render_related_context(item)
+            context_html = self._render_related_context(item, lang=lang)
 
             rows.append(
                 """
@@ -883,7 +883,7 @@ class Reporter:
             "</div>"
         )
 
-    def _render_related_context(self, item):
+    def _render_related_context(self, item, lang="zh"):
         context_lines = item.get("related_context") or []
         if not context_lines:
             return ""
@@ -892,6 +892,20 @@ class Reporter:
             text = str(line).strip()
             if not text:
                 continue
+            if text.startswith("- "):
+                text = text[2:].strip()
+            if lang == "en":
+                parts = [p.strip() for p in text.split("|")]
+                cleaned = []
+                for part in parts:
+                    if not part:
+                        continue
+                    if part.startswith("风险") or part.startswith("对中国"):
+                        continue
+                    cleaned.append(part)
+                text = " | ".join(cleaned)
+                if not text:
+                    continue
             safe_lines.append(html.escape(text))
             if len(safe_lines) >= 6:
                 break
