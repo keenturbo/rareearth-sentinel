@@ -4,40 +4,42 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Rare Earth Sentinel</title>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
 <style>
-:root{--ink:#0b1220;--muted:#536170;--bg:#f7f9fc;--card:#ffffff;--accent:#1d4ed8;--warn:#f59e0b;--risk:#ef4444;--soft:#eef2ff}
+:root{--ink:#111827;--muted:#6b7280;--bg:#f8f6f2;--card:#ffffff;--accent:#1e3a8a;--warn:#b45309;--risk:#b91c1c;--soft:#f3f4f6}
 *{box-sizing:border-box}
-body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans",sans-serif;background:linear-gradient(180deg,#f7f9fc,#e9eef5);color:var(--ink)}
-.container{max-width:1180px;margin:0 auto;padding:22px}
-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
-header h1{margin:0;font-size:22px}
+body{margin:0;font-family:"Source Sans 3",Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.55}
+.container{max-width:1100px;margin:0 auto;padding:24px}
+header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;gap:16px}
+header h1{margin:0;font-size:24px;font-family:"Source Serif 4",serif;letter-spacing:.3px}
 header .sub{font-size:12px;color:var(--muted)}
 .nav a{margin-left:12px;font-size:12px;color:var(--muted);text-decoration:none}
 .nav a:hover{color:var(--ink)}
+.nav .gear{font-size:16px;line-height:1}
 .kpis{display:flex;gap:10px;flex-wrap:wrap}
-.kpi{background:#fff;border-radius:10px;padding:8px 12px;box-shadow:0 6px 14px rgba(0,0,0,0.05);font-size:12px}
-.section{background:#fff;border-radius:12px;padding:14px;box-shadow:0 6px 14px rgba(0,0,0,0.05);margin-bottom:12px}
-.section-title{font-weight:600;margin-bottom:8px}
+.kpi{background:#fff;border-radius:10px;padding:8px 12px;border:1px solid #e5e7eb;font-size:12px}
+.section{background:#fff;border-radius:10px;padding:14px;border:1px solid #e5e7eb;margin-bottom:12px}
+.section-title{font-weight:600;margin-bottom:8px;font-family:"Source Serif 4",serif}
 .legend{font-size:12px;color:var(--muted)}
 .status-row{font-size:12px;color:var(--ink)}
 .status-sub{font-size:12px;color:var(--muted);margin-top:4px}
-.daily-title{font-weight:600;margin-bottom:6px}
-.daily-headline{font-weight:600;margin-bottom:6px}
+.daily-title{font-weight:600;margin-bottom:6px;font-family:"Source Serif 4",serif}
+.daily-headline{font-weight:600;margin-bottom:6px;font-family:"Source Serif 4",serif}
 .daily-body{font-size:13px;color:var(--ink)}
 .daily-bullets{margin:8px 0 0 18px;font-size:12px;color:var(--muted)}
 .rollups-row{font-size:12px;color:var(--muted);margin-bottom:8px}
 .rollups-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}
-.rollup-col{background:#f8fafc;border-radius:8px;padding:10px}
-.rollup-chip{display:inline-block;margin:3px 6px 0 0;padding:3px 8px;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-size:11px}
+.rollup-col{background:var(--soft);border-radius:8px;padding:10px;border:1px solid #e5e7eb}
+.rollup-chip{display:inline-block;margin:3px 6px 0 0;padding:3px 8px;border-radius:999px;background:#eef2ff;color:#1e3a8a;font-size:11px}
 .brief-row{font-size:12px;color:var(--muted);margin-bottom:8px}
 .brief-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px}
-.brief-col{background:#f8fafc;border-radius:8px;padding:10px}
-.premium-item{border-top:1px solid #eef2f7;padding-top:10px;margin-top:10px}
-.premium-topic{font-weight:600;margin-bottom:4px}
+.brief-col{background:var(--soft);border-radius:8px;padding:10px;border:1px solid #e5e7eb}
+.premium-item{border-top:1px solid #e5e7eb;padding-top:10px;margin-top:10px}
+.premium-topic{font-weight:600;margin-bottom:4px;font-family:"Source Serif 4",serif}
 .premium-reason{font-size:12px;color:var(--muted)}
 .premium-preview{font-size:11px;color:var(--muted);margin-top:4px}
-.premium-btn{display:inline-block;margin-top:6px;font-size:11px;color:#fff;background:#f59e0b;padding:4px 10px;border-radius:999px;text-decoration:none}
-.premium-btn:hover{background:#d97706}
+.premium-btn{display:inline-block;margin-top:6px;font-size:11px;color:#fff;background:var(--warn);padding:4px 10px;border-radius:999px;text-decoration:none}
+.premium-btn:hover{background:#92400e}
 .archive{margin:8px 0}
 .archive-link{display:inline-block;margin:4px 8px 0 0;font-size:12px;color:var(--muted);text-decoration:none}
 .archive-link.active{color:#111}
@@ -47,14 +49,14 @@ header .sub{font-size:12px;color:var(--muted)}
 .filter-btn{border:1px solid #e5e7eb;background:#fff;padding:5px 10px;border-radius:999px;font-size:12px;cursor:pointer;color:var(--muted)}
 .filter-btn.active{border-color:var(--accent);color:var(--accent)}
 .feed{display:grid;gap:10px}
-.row{background:var(--card);border-radius:10px;padding:12px;border-left:6px solid var(--accent)}
+.row{background:var(--card);border-radius:10px;padding:12px;border-left:4px solid var(--accent);border:1px solid #e5e7eb}
 .row.risk{border-left-color:var(--risk)}
 .row.warn{border-left-color:var(--warn)}
 .meta{font-size:12px;color:var(--muted)}
-.title{font-weight:600;margin:4px 0}
+.title{font-weight:600;margin:4px 0;font-family:"Source Serif 4",serif}
 .tags{margin-top:6px;display:flex;gap:6px;flex-wrap:wrap}
-.tag{font-size:11px;background:#eff6ff;color:#1d4ed8;padding:3px 8px;border-radius:999px}
-.analysis{margin-top:8px;padding:8px;background:#f8fafc;border-radius:8px}
+.tag{font-size:11px;background:#eef2ff;color:#1e3a8a;padding:3px 8px;border-radius:999px}
+.analysis{margin-top:8px;padding:8px;background:var(--soft);border-radius:8px;border:1px solid #e5e7eb}
 .analysis-head{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
 .chip{font-size:11px;background:#eef2ff;color:#1e3a8a;padding:3px 8px;border-radius:999px}
 .chip.good{background:#dcfce7;color:#166534}
@@ -87,6 +89,7 @@ header .sub{font-size:12px;color:var(--muted)}
     <div class="nav">
       <a href="/cn/">中文</a>
       <a href="/en/premium/">Premium Archive</a>
+      <a class="gear" href="/en/admin/premium/" aria-label="Admin">⚙️</a>
     </div>
   </header>
 
