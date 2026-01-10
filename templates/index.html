@@ -19,6 +19,8 @@ header .sub{font-size:12px;color:var(--muted)}
 .section{background:#fff;border-radius:12px;padding:14px;box-shadow:0 6px 14px rgba(0,0,0,0.05);margin-bottom:12px}
 .section-title{font-weight:600;margin-bottom:8px}
 .legend{font-size:12px;color:var(--muted)}
+.status-row{font-size:12px;color:var(--ink)}
+.status-sub{font-size:12px;color:var(--muted);margin-top:4px}
 .daily-title{font-weight:600;margin-bottom:6px}
 .daily-headline{font-weight:600;margin-bottom:6px}
 .daily-body{font-size:13px;color:var(--ink)}
@@ -93,6 +95,12 @@ header .sub{font-size:12px;color:var(--muted)}
     <div class="legend">分项 0-100；预测箭头 ↑ 上行压力、↓ 下行压力、→ 持平；括号为置信度。</div>
   </section>
 
+  <section class="section" id="status-section">
+    <div class="section-title">运行状态</div>
+    <div class="status-row" id="status-line">加载中...</div>
+    <div class="status-sub" id="status-detail"></div>
+  </section>
+
   <section class="section">
     {{DAILY_REPORT}}
   </section>
@@ -154,6 +162,25 @@ header .sub{font-size:12px;color:var(--muted)}
       extras.forEach(function(el){ el.style.display = expanded ? 'none' : 'inline-block'; });
       toggle.textContent = expanded ? toggle.getAttribute('data-show') : toggle.getAttribute('data-hide');
       toggle.setAttribute('data-expanded', expanded ? 'false' : 'true');
+    });
+  }
+
+  var statusLine = document.getElementById('status-line');
+  var statusDetail = document.getElementById('status-detail');
+  if(statusLine && statusDetail){
+    fetch('/status.json').then(function(resp){
+      return resp.json();
+    }).then(function(data){
+      var running = data.running ? '运行中' : '空闲';
+      var processed = data.processed_items || 0;
+      var total = data.total_items || 0;
+      var current = (data.current && data.current.title) ? data.current.title : '';
+      var progress = total ? (processed + '/' + total) : '-';
+      statusLine.textContent = '状态：' + running + ' · 进度：' + progress;
+      statusDetail.textContent = current ? ('当前：' + current) : '当前：-';
+    }).catch(function(){
+      statusLine.textContent = '状态：暂无';
+      statusDetail.textContent = '当前：-';
     });
   }
 })();
