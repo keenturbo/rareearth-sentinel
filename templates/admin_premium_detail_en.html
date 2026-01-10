@@ -16,6 +16,9 @@ header .sub{font-size:12px;color:var(--muted)}
 .meta-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-bottom:10px}
 .meta-item{background:#f8fafc;border-radius:8px;padding:10px;font-size:12px;color:var(--muted)}
 .meta-item span{color:#111;font-weight:600}
+.meta-row{display:flex;gap:6px;align-items:center}
+.meta-url{min-width:0;flex:1}
+.meta-url a{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--accent)}
 .report-body h1{font-size:18px}
 .report-body h2{font-size:16px;margin-top:12px}
 .report-body h3{font-size:14px;margin-top:10px}
@@ -40,7 +43,9 @@ header .sub{font-size:12px;color:var(--muted)}
       <div class="meta-item">Price: <span>${{REPORT_PRICE}}</span></div>
       <div class="meta-item">Credibility: <span>{{REPORT_CREDIBILITY}}</span></div>
       <div class="meta-item">Impact Score: <span>{{REPORT_IMPACT}}</span></div>
-      <div class="meta-item">Source: <span>{{REPORT_URL}}</span></div>
+      <div class="meta-item">
+        <div class="meta-row"><span class="meta-label">Source:</span><span class="meta-url">{{REPORT_URL}}</span></div>
+      </div>
     </div>
     <div class="report-body">
       {{REPORT_BODY}}
