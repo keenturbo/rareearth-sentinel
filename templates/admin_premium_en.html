@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Rare Earth Sentinel · Admin</title>
+<style>
+:root{--ink:#0b1220;--muted:#536170;--bg:#f7f9fc;--card:#ffffff;--accent:#1d4ed8}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans",sans-serif;background:linear-gradient(180deg,#f7f9fc,#e9eef5);color:var(--ink)}
+.container{max-width:1100px;margin:0 auto;padding:22px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+header h1{margin:0;font-size:20px}
+header .sub{font-size:12px;color:var(--muted)}
+.section{background:#fff;border-radius:12px;padding:14px;box-shadow:0 6px 14px rgba(0,0,0,0.05)}
+.card{border-top:1px solid #eef2f7;padding-top:10px;margin-top:10px}
+.card-title{font-weight:600;margin-bottom:4px}
+.card-title a{text-decoration:none;color:var(--ink)}
+.card-title a:hover{color:var(--accent)}
+.card-meta{font-size:12px;color:var(--muted)}
+.card-value{font-size:12px;color:#111;margin-top:4px}
+.card-preview{font-size:12px;color:var(--muted);margin-top:4px}
+.empty{font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>Admin · Premium Reports</h1>
+      <div class="sub">Total {{TOTAL_COUNT}} · Updated {{LAST_UPDATE}}</div>
+    </div>
+    <div class="sub"><a href="/en/">Back to English</a></div>
+  </header>
+
+  <section class="section">
+    {{PREMIUM_LIST}}
+  </section>
+</div>
+</body>
+</html>
