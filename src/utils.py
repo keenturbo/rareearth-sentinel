@@ -2,6 +2,7 @@ import hashlib
 import json
 import re
 from datetime import datetime
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 ACTION_TYPES = {
@@ -82,6 +83,23 @@ def isoformat(dt):
 
 def hash_url(url):
     return hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
+
+
+def is_homepage_url(url):
+    if not url:
+        return False
+    try:
+        parsed = urlparse(str(url))
+    except Exception:
+        return False
+    if not parsed.netloc:
+        return False
+    path = (parsed.path or "").strip().lower()
+    if path in ("", "/"):
+        return True
+    if path in ("/index.html", "/index.htm", "/default.aspx"):
+        return True
+    return False
 
 
 def extract_json(text):
