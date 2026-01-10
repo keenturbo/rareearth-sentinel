@@ -3,6 +3,7 @@ import json
 import os
 import time
 from dataclasses import replace
+from urllib.parse import urlparse
 
 from src.config import Config
 from src.sources.registry import get_sources
@@ -144,10 +145,12 @@ def run_pipeline(config):
                     content_source = "fulltext"
 
                     source_type = str(item.get("source_type") or "")
-                    if source_type.startswith("official:") and is_homepage_url(resolved_url):
-                        stats["fetch_fail"] += 1
-                        print("  - skip: official_homepage")
-                        continue
+                    if source_type.startswith("official:"):
+                        resolved_host = urlparse(resolved_url or "").netloc
+                        if is_homepage_url(resolved_url) or resolved_host == "news.google.com":
+                            stats["fetch_fail"] += 1
+                            print("  - skip: official_homepage")
+                            continue
 
                     summary = (item.get("summary") or "").strip()
                     fallback_text = f"{title}\n\n{summary}".strip()
