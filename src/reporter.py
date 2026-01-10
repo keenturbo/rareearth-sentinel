@@ -65,9 +65,9 @@ class Reporter:
         build_lang("zh", "cn")
         build_lang("en", "en")
 
-        if self.config.premium_enabled:
-            self.build_premium_archive(storage, lang="zh", subdir="cn")
-            self.build_premium_archive(storage, lang="en", subdir="en")
+        # Always build premium archive pages (shows empty state if no data)
+        self.build_premium_archive(storage, lang="zh", subdir="cn")
+        self.build_premium_archive(storage, lang="en", subdir="en")
 
     def _load_premium_briefs(self, storage):
         data = {"zh": [], "en": []}
