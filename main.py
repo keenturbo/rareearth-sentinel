@@ -239,4 +239,40 @@ def run_pipeline(config):
         raise
 
 
-# ... (rest of file unchanged)
+def _run_rebuild(config):
+    storage = Storage(config)
+    reporter = Reporter(config)
+    reporter.rebuild(storage)
+
+
+def _run_build_datasets(config):
+    storage = Storage(config)
+    records = list(storage.iter_records())
+    build_datasets(config, records)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="RareEarth Sentinel")
+    parser.add_argument("--rebuild", action="store_true", help="Rebuild static pages")
+    parser.add_argument(
+        "--build-datasets",
+        action="store_true",
+        help="Generate training datasets from stored records",
+    )
+    args = parser.parse_args()
+
+    config = Config.from_env()
+
+    if args.rebuild:
+        _run_rebuild(config)
+        return
+
+    if args.build_datasets:
+        _run_build_datasets(config)
+        return
+
+    run_pipeline(config)
+
+
+if __name__ == "__main__":
+    main()
