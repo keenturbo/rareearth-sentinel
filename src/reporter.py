@@ -912,10 +912,11 @@ class Reporter:
         if not safe_lines:
             return ""
 
+        label = "关联脉络" if lang == "zh" else "Related Context"
         list_html = "".join(f"<li>{line}</li>" for line in safe_lines)
         return (
             '<div class="analysis related">'
-            '<div class="analysis-head"><span class="chip">关联脉络</span></div>'
+            f'<div class="analysis-head"><span class="chip">{label}</span></div>'
             f'<div class="analysis-list"><ul>{list_html}</ul></div>'
             "</div>"
         )
