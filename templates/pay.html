@@ -38,7 +38,7 @@ header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
 </style>
 </head>
 <body>
-<div class="container" data-report-id="{{REPORT_ID}}">
+<div class="container" data-report-id="{{REPORT_ID}}" data-confirm-endpoint="{{PAY_CONFIRM_ENDPOINT}}">
   <header>
     <div class="title">解锁深度报告</div>
     <div class="nav">
@@ -77,6 +77,7 @@ header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
 (function(){
   const container = document.querySelector(".container");
   const reportId = container ? container.dataset.reportId : "";
+  const confirmEndpoint = container ? container.dataset.confirmEndpoint : "";
   const lang = "cn";
   const storageKey = `order_id:${reportId}`;
   let orderId = localStorage.getItem(storageKey);
@@ -109,9 +110,26 @@ header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
   const unlockBox = document.getElementById("unlock-box");
   const paidBtn = document.getElementById("paid-btn");
   if (paidBtn) {
-    paidBtn.addEventListener("click", () => {
+    paidBtn.addEventListener("click", async () => {
       if (unlockBox) {
         unlockBox.textContent = "已提交付款信息，请等待确认…";
+      }
+      if (!confirmEndpoint) {
+        return;
+      }
+      try {
+        await fetch(confirmEndpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            report_id: reportId,
+            order_id: orderId,
+            tier: "$9",
+            lang: "cn",
+          })
+        });
+      } catch (err) {
+        // ignore
       }
     });
   }
