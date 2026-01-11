@@ -57,6 +57,10 @@ def _normalize_lang(lang):
     return "cn"
 
 
+def _url_prefix(lang):
+    return "en" if lang == "en" else "cn"
+
+
 def _refresh_admin_orders():
     script = os.path.join(ROOT, "scripts", "build_admin_orders.py")
     if not os.path.exists(script):
@@ -64,6 +68,7 @@ def _refresh_admin_orders():
     try:
         subprocess.run(
             [sys.executable, script],
+            cwd=ROOT,
             check=False,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -191,6 +196,7 @@ def _issue_unlock(config, report_id, order_id, tier, lang):
     token = uuid4().hex[:16]
     expires_at = (datetime.utcnow() + timedelta(days=config.unlock_expires_days)).isoformat() + "Z"
 
+    prefix = _url_prefix(lang)
     unlock_payload = {
         "report_id": report_id,
         "tier": tier,
@@ -205,7 +211,7 @@ def _issue_unlock(config, report_id, order_id, tier, lang):
         "tier": tier,
         "order_id": order_id,
         "token": token,
-        "unlock_url": f"/{lang}/pay/{report_id}.html?unlock={token}",
+        "unlock_url": f"/{prefix}/pay/{report_id}.html?unlock={token}",
         "expires_at": expires_at,
         "status": "confirmed",
     }
