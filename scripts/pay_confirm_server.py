@@ -2,10 +2,11 @@
 import argparse
 import json
 import os
+import subprocess
 import sys
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
 import requests
@@ -43,6 +44,32 @@ def _normalize_path(path):
     if path == "/":
         return "/"
     return path.rstrip("/")
+
+
+def _normalize_lang(lang):
+    if not lang:
+        return "cn"
+    key = str(lang).strip().lower()
+    if key in {"zh", "zh-cn", "zh-hans", "cn", "china"}:
+        return "cn"
+    if key.startswith("en"):
+        return "en"
+    return "cn"
+
+
+def _refresh_admin_orders():
+    script = os.path.join(ROOT, "scripts", "build_admin_orders.py")
+    if not os.path.exists(script):
+        return
+    try:
+        subprocess.run(
+            [sys.executable, script],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
 
 
 def _build_admin_link(base, report_id):
@@ -157,6 +184,7 @@ def _issue_unlock(config, report_id, order_id, tier, lang):
         return None
 
     date_key = entry.get("date", "")
+    lang = _normalize_lang(lang)
     lang_key = "zh" if lang == "cn" else "en"
     content_md = _load_brief_md(config.premium_dir, date_key, report_id, lang_key)
 
@@ -224,7 +252,7 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
                 order_id = str(data.get("order_id", "")).strip()
                 report_id = str(data.get("report_id", "")).strip()
                 tier = str(data.get("tier", "") or "$9").strip()
-                lang = str(data.get("lang", "") or "cn").strip()
+                lang = _normalize_lang(data.get("lang", "cn"))
 
                 if not order_id or not report_id:
                     self._json_response(400, {"ok": False, "error": "missing_fields"})
@@ -236,6 +264,7 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
                     return
 
                 _mark_order_confirmed(self.config.data_dir, order_id, status_payload.get("unlock_url"))
+                _refresh_admin_orders()
                 self._json_response(200, {"ok": True, "unlock_url": status_payload.get("unlock_url")})
                 return
 
@@ -248,7 +277,7 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
             order_id = str(data.get("order_id", "")).strip()
             tier = str(data.get("tier", "")).strip()
             email = str(data.get("email", "")).strip()
-            lang = str(data.get("lang", "")).strip() or "cn"
+            lang = _normalize_lang(data.get("lang", "cn"))
             method = str(data.get("payment_method", "")).strip()
             memo = str(data.get("memo", "")).strip()
             payment_token = str(data.get("payment_token", "")).strip()
@@ -284,6 +313,7 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
             _append_jsonl(os.path.join(self.config.data_dir, "pay", "orders.jsonl"), log_payload)
 
             _send_bark(self.config, status_payload)
+            _refresh_admin_orders()
 
             self._json_response(200, {"ok": True})
         except Exception:
@@ -302,7 +332,7 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
             order_id = (query.get("order_id", [""])[0] or "").strip()
             report_id = (query.get("report_id", [""])[0] or "").strip()
             tier = (query.get("tier", ["$9"])[0] or "$9").strip()
-            lang = (query.get("lang", ["cn"])[0] or "cn").strip()
+            lang = _normalize_lang(query.get("lang", ["cn"])[0])
 
             if not order_id or not report_id:
                 self._json_response(400, {"ok": False, "error": "missing_fields"})
@@ -314,6 +344,7 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
                 return
 
             _mark_order_confirmed(self.config.data_dir, order_id, status_payload.get("unlock_url"))
+            _refresh_admin_orders()
 
             self._json_response(200, {"ok": True, "unlock_url": status_payload.get("unlock_url")})
         except Exception:
