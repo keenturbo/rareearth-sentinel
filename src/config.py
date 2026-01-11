@@ -91,6 +91,10 @@ class Config:
     premium_min_credibility: int
     premium_min_importance: int
     premium_min_quality: int
+    pay_wechat_qr_url: str
+    pay_alipay_qr_url: str
+    pay_alipay_token: str
+    pay_usdt_trc20: str
 
     @classmethod
     def from_env(cls):
@@ -146,6 +150,14 @@ class Config:
             premium_min_credibility=_get_int("PREMIUM_MIN_CREDIBILITY", 60),
             premium_min_importance=_get_int("PREMIUM_MIN_IMPORTANCE", 3),
             premium_min_quality=_get_int("PREMIUM_MIN_QUALITY", 60),
+            pay_wechat_qr_url=_get_env(
+                "PAY_WECHAT_QR_URL", "https://pic.icon.pp.ua/wechat-pay.jpeg"
+            ),
+            pay_alipay_qr_url=_get_env(
+                "PAY_ALIPAY_QR_URL", "https://pic.icon.pp.ua/alipay.jpeg"
+            ),
+            pay_alipay_token=_get_env("PAY_ALIPAY_TOKEN", ""),
+            pay_usdt_trc20=_get_env("PAY_USDT_TRC20", ""),
         )
 
 
