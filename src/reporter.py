@@ -508,6 +508,7 @@ class Reporter:
                 .replace("{{REPORT_VALUE}}", html.escape(value))
                 .replace("{{REPORT_PREVIEW}}", preview_html)
                 .replace("{{PAYMENT_SECTION}}", payment_html)
+                .replace("{{PAY_CONFIRM_ENDPOINT}}", html.escape(self.config.pay_confirm_endpoint))
             )
 
             with open(os.path.join(pay_root, f"{report_id}.html"), "w", encoding="utf-8") as f:
@@ -550,7 +551,6 @@ class Reporter:
     def _render_payment_section(self, lang="zh"):
         wechat = self.config.pay_wechat_qr_url
         alipay = self.config.pay_alipay_qr_url
-        token = self.config.pay_alipay_token
         usdt = self.config.pay_usdt_trc20
 
         if lang == "en":
@@ -560,8 +560,8 @@ class Reporter:
             tier_strategic = "$999 Strategic · Manual · T+3"
             wechat_label = "WeChat QR"
             alipay_label = "Alipay QR"
-            token_label = "Alipay Token"
             usdt_label = "USDT (TRC20)"
+            copy_label = "Copy"
             empty = "Not set"
         else:
             tier_title = "价格档位（仅开放 $9）"
@@ -570,8 +570,8 @@ class Reporter:
             tier_strategic = "$999 战略 · 人工定制 T+3"
             wechat_label = "微信收款码"
             alipay_label = "支付宝收款码"
-            token_label = "支付宝口令"
             usdt_label = "USDT (TRC20)"
+            copy_label = "复制"
             empty = "未配置"
 
         tiers = (
@@ -591,20 +591,28 @@ class Reporter:
                 f'<img src="{html.escape(url)}" alt="{html.escape(label)}"></div>'
             )
 
-        def _text_card(label, value):
+        def _text_card(label, value, element_id=None, copy_text=None):
             if not value:
                 return f'<div class="pay-card"><div class="pay-title">{label}</div><div class="copy">{empty}</div></div>'
+            copy_button = ""
+            attr = ""
+            if element_id:
+                attr = f' id="{element_id}"'
+                if copy_text:
+                    copy_button = (
+                        f'<button class="copy-btn" data-copy="{element_id}">{html.escape(copy_text)}</button>'
+                    )
             return (
                 f'<div class="pay-card"><div class="pay-title">{label}</div>'
-                f'<div class="copy">{html.escape(value)}</div></div>'
+                f'<div class="copy"{attr}>{html.escape(value)}</div>'
+                f'{copy_button}</div>'
             )
 
         cards = [
             tiers,
             _img_card(wechat_label, wechat),
             _img_card(alipay_label, alipay),
-            _text_card(token_label, token),
-            _text_card(usdt_label, usdt),
+            _text_card(usdt_label, usdt, element_id="usdt-address", copy_text=copy_label),
         ]
         return f'<div class="pay-grid">{"".join(cards)}</div>'
 
