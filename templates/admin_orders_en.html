@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin · Orders</title>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#111827;--muted:#6b7280;--bg:#f8f6f2;--card:#ffffff;--accent:#1e3a8a}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Source Sans 3",sans-serif;background:var(--bg);color:var(--ink)}
+.container{max-width:980px;margin:0 auto;padding:24px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+header h1{font-family:"Source Serif 4",serif;margin:0;font-size:22px}
+header .meta{font-size:12px;color:var(--muted)}
+.section{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px}
+.card{border-top:1px solid #eef2f7;padding-top:12px;margin-top:12px}
+.card-title{font-weight:600;margin-bottom:4px}
+.card-meta{font-size:12px;color:var(--muted);margin-bottom:6px}
+.card-actions a{display:inline-block;margin-right:10px;font-size:12px;color:var(--accent);text-decoration:none}
+.card-actions a:hover{text-decoration:underline}
+.empty{font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>Admin · Orders</h1>
+      <div class="meta">Total {{TOTAL_COUNT}} · Updated {{LAST_UPDATE}}</div>
+    </div>
+    <div class="meta"><a href="/en/admin/premium/">Back to reports</a></div>
+  </header>
+
+  <section class="section">
+    {{ORDERS_LIST}}
+  </section>
+</div>
+</body>
+</html>
