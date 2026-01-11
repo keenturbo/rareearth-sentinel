@@ -96,6 +96,8 @@ class Config:
     pay_alipay_token: str
     pay_usdt_trc20: str
     pay_confirm_endpoint: str
+    pay_bark_url: str
+    pay_admin_base_url: str
 
     @classmethod
     def from_env(cls):
@@ -160,6 +162,8 @@ class Config:
             pay_alipay_token=_get_env("PAY_ALIPAY_TOKEN", ""),
             pay_usdt_trc20=_get_env("PAY_USDT_TRC20", ""),
             pay_confirm_endpoint=_get_env("PAY_CONFIRM_ENDPOINT", "/api/pay/confirm"),
+            pay_bark_url=_get_env("PAY_BARK_URL", ""),
+            pay_admin_base_url=_get_env("PAY_ADMIN_BASE_URL", ""),
         )
 
 
