@@ -47,10 +47,16 @@ def _send_bark(config, payload):
         return
 
     title = "支付确认"
+    method = payload.get("payment_method", "")
+    token = payload.get("payment_token", "")
     body = (
         f"report_id={payload.get('report_id')} | tier={payload.get('tier')} | "
         f"order_id={payload.get('order_id')} | email={payload.get('email')}"
     )
+    if method:
+        body += f" | method={method}"
+    if token:
+        body += f" | token={token}"
     admin_link = _build_admin_link(config.pay_admin_base_url, payload.get("report_id"))
 
     from urllib.parse import quote
@@ -96,6 +102,7 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
         lang = str(data.get("lang", "")).strip() or "cn"
         method = str(data.get("payment_method", "")).strip()
         memo = str(data.get("memo", "")).strip()
+        payment_token = str(data.get("payment_token", "")).strip()
 
         if not report_id or not order_id:
             self._json_response(400, {"ok": False, "error": "missing_fields"})
@@ -114,6 +121,7 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
             "status": "submitted",
             "email": email,
             "payment_method": method,
+            "payment_token": payment_token,
             "memo": memo,
             "created_at": now,
             "expires_at": expires_at,
