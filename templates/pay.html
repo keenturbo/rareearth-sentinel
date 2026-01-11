@@ -35,6 +35,10 @@ header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px}
 .copy-btn{margin-left:6px;font-size:11px;border:1px solid #e5e7eb;background:#fff;border-radius:6px;padding:2px 6px;cursor:pointer}
 .copy-btn:hover{background:#f9fafb}
+.pay-field{margin-top:10px;font-size:12px}
+.pay-field label{display:block;margin-bottom:4px;color:var(--muted)}
+.pay-input{width:100%;padding:6px 8px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;background:#fff}
+.pay-inline{display:flex;gap:8px;align-items:center}
 </style>
 </head>
 <body>
@@ -64,6 +68,27 @@ header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
   <section class="section">
     <div class="section-title">解锁方式（仅开放 $9）</div>
     {{PAYMENT_SECTION}}
+
+    <div class="pay-field">
+      <label for="pay-method">付款方式</label>
+      <select id="pay-method" class="pay-input">
+        <option value="wechat">微信</option>
+        <option value="alipay">支付宝</option>
+        <option value="alipay_token">支付宝口令</option>
+        <option value="usdt">USDT(TRC20)</option>
+      </select>
+    </div>
+
+    <div class="pay-field">
+      <label for="alipay-token">支付宝口令（买家填写）</label>
+      <input id="alipay-token" class="pay-input" placeholder="输入你的支付宝口令" />
+    </div>
+
+    <div class="pay-field">
+      <label for="buyer-email">邮箱（用于联系）</label>
+      <input id="buyer-email" class="pay-input" placeholder="填写你的邮箱" />
+    </div>
+
     <div class="order-box">
       <div>订单号：<span id="order-id" class="mono">--</span><button class="copy-btn" data-copy="order-id">复制</button></div>
       <div>付款备注：<span id="pay-memo" class="mono">report_id={{REPORT_ID}} tier=$9 order_id=-- email=你的邮箱</span><button class="copy-btn" data-copy="pay-memo">复制</button></div>
@@ -89,8 +114,21 @@ header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
 
   const orderEl = document.getElementById("order-id");
   const memoEl = document.getElementById("pay-memo");
+  const emailInput = document.getElementById("buyer-email");
+  const tokenInput = document.getElementById("alipay-token");
+  const methodSelect = document.getElementById("pay-method");
+
   if (orderEl) orderEl.textContent = orderId;
-  if (memoEl) memoEl.textContent = `report_id=${reportId} tier=$9 order_id=${orderId} email=你的邮箱`;
+
+  function updateMemo(){
+    const emailVal = (emailInput && emailInput.value.trim()) || "你的邮箱";
+    if (memoEl) memoEl.textContent = `report_id=${reportId} tier=$9 order_id=${orderId} email=${emailVal}`;
+  }
+
+  updateMemo();
+  if (emailInput) {
+    emailInput.addEventListener("input", updateMemo);
+  }
 
   document.querySelectorAll(".copy-btn").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -118,18 +156,28 @@ header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
         return;
       }
       try {
-        await fetch(confirmEndpoint, {
+        const payload = {
+          report_id: reportId,
+          order_id: orderId,
+          tier: "$9",
+          lang: "cn",
+          email: (emailInput && emailInput.value.trim()) || "",
+          payment_method: methodSelect ? methodSelect.value : "",
+          payment_token: (tokenInput && tokenInput.value.trim()) || "",
+          memo: memoEl ? memoEl.textContent : "",
+        };
+        const res = await fetch(confirmEndpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            report_id: reportId,
-            order_id: orderId,
-            tier: "$9",
-            lang: "cn",
-          })
+          body: JSON.stringify(payload)
         });
+        if (!res.ok && unlockBox) {
+          unlockBox.textContent = "提交失败，请稍后重试";
+        }
       } catch (err) {
-        // ignore
+        if (unlockBox) {
+          unlockBox.textContent = "提交失败，请稍后重试";
+        }
       }
     });
   }
