@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import argparse
 import json
 import os
@@ -5,6 +6,7 @@ import sys
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse
+from uuid import uuid4
 
 import requests
 
@@ -41,6 +43,15 @@ def _build_admin_link(base, report_id):
     return f"{base}{report_id}.html"
 
 
+def _build_orders_link(base, order_id):
+    if not base:
+        return ""
+    base = base if base.endswith("/") else base + "/"
+    if order_id:
+        return f"{base}?order_id={order_id}"
+    return base
+
+
 def _send_bark(config, payload):
     bark_base = _normalize_base(config.pay_bark_url)
     if not bark_base:
@@ -57,17 +68,93 @@ def _send_bark(config, payload):
         body += f" | method={method}"
     if token:
         body += f" | token={token}"
-    admin_link = _build_admin_link(config.pay_admin_base_url, payload.get("report_id"))
+
+    orders_link = _build_orders_link(config.pay_admin_orders_url, payload.get("order_id"))
+    if not orders_link:
+        orders_link = _build_orders_link(config.pay_admin_orders_url_en, payload.get("order_id"))
+    if not orders_link:
+        orders_link = _build_admin_link(config.pay_admin_base_url, payload.get("report_id"))
 
     from urllib.parse import quote
 
     url = f"{bark_base}/{quote(title)}/{quote(body)}"
-    if admin_link:
-        url = f"{url}?url={quote(admin_link)}"
+    if orders_link:
+        url = f"{url}?url={quote(orders_link)}"
     try:
         requests.get(url, timeout=6)
     except Exception:
         pass
+
+
+def _load_report_entry(premium_dir, report_id):
+    index_path = os.path.join(premium_dir, "reports_index.jsonl")
+    if not os.path.exists(index_path):
+        return None
+    with open(index_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if entry.get("report_id") == report_id:
+                return entry
+    return None
+
+
+def _load_brief_md(premium_dir, date_key, report_id, lang):
+    if not date_key:
+        return ""
+    path = os.path.join(premium_dir, date_key, f"brief_{report_id}_{lang}.md")
+    if not os.path.exists(path):
+        return ""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def _issue_unlock(config, report_id, order_id, tier, lang):
+    entry = _load_report_entry(config.premium_dir, report_id)
+    if not entry:
+        return None
+
+    date_key = entry.get("date", "")
+    lang_key = "zh" if lang == "cn" else "en"
+    content_md = _load_brief_md(config.premium_dir, date_key, report_id, lang_key)
+
+    token = uuid4().hex[:16]
+    expires_at = (datetime.utcnow() + timedelta(days=config.unlock_expires_days)).isoformat() + "Z"
+
+    unlock_payload = {
+        "report_id": report_id,
+        "tier": tier,
+        "lang": lang,
+        "token": token,
+        "expires_at": expires_at,
+        "content_md": content_md,
+    }
+
+    status_payload = {
+        "report_id": report_id,
+        "tier": tier,
+        "order_id": order_id,
+        "token": token,
+        "unlock_url": f"/{lang}/pay/{report_id}.html?unlock={token}",
+        "expires_at": expires_at,
+        "status": "confirmed",
+    }
+
+    status_path = os.path.join(config.static_dir, "pay", "status", f"{order_id}.json")
+    unlock_path = os.path.join(config.static_dir, "unlocks", f"{token}.json")
+
+    _write_json(status_path, status_payload)
+    _write_json(unlock_path, unlock_payload)
+
+    return status_payload
 
 
 class PayConfirmHandler(BaseHTTPRequestHandler):
@@ -83,7 +170,7 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
-        if parsed.path != "/api/pay/confirm":
+        if parsed.path not in {"/api/pay/confirm", self.config.pay_confirm_endpoint}:
             self._json_response(404, {"ok": False, "error": "not_found"})
             return
 
@@ -110,7 +197,7 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
 
         now = datetime.utcnow().isoformat() + "Z"
         expires_at = (
-            datetime.utcnow() + timedelta(days=7)
+            datetime.utcnow() + timedelta(days=self.config.unlock_expires_days)
         ).isoformat() + "Z"
 
         status_payload = {
@@ -127,8 +214,7 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
             "expires_at": expires_at,
         }
 
-        static_dir = self.config.static_dir
-        status_path = os.path.join(static_dir, "pay", "status", f"{order_id}.json")
+        status_path = os.path.join(self.config.static_dir, "pay", "status", f"{order_id}.json")
         _write_json(status_path, status_payload)
 
         log_payload = dict(status_payload)
@@ -138,6 +224,51 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
         _send_bark(self.config, status_payload)
 
         self._json_response(200, {"ok": True})
+
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        if parsed.path != self.config.pay_confirm_admin_endpoint:
+            self._json_response(404, {"ok": False, "error": "not_found"})
+            return
+
+        query = dict([p.split("=") for p in parsed.query.split("&") if "=" in p])
+        order_id = query.get("order_id", "")
+        report_id = query.get("report_id", "")
+        tier = query.get("tier", "$9")
+        lang = query.get("lang", "cn")
+
+        if not order_id or not report_id:
+            self._json_response(400, {"ok": False, "error": "missing_fields"})
+            return
+
+        status_payload = _issue_unlock(self.config, report_id, order_id, tier, lang)
+        if not status_payload:
+            self._json_response(404, {"ok": False, "error": "report_not_found"})
+            return
+
+        # Update order log status
+        log_path = os.path.join(self.config.data_dir, "pay", "orders.jsonl")
+        if os.path.exists(log_path):
+            try:
+                with open(log_path, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+                with open(log_path, "w", encoding="utf-8") as f:
+                    for line in lines:
+                        try:
+                            entry = json.loads(line)
+                        except json.JSONDecodeError:
+                            f.write(line)
+                            continue
+                        if entry.get("order_id") == order_id:
+                            entry["status"] = "confirmed"
+                            entry["unlock_url"] = status_payload.get("unlock_url")
+                            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                        else:
+                            f.write(line)
+            except OSError:
+                pass
+
+        self._json_response(200, {"ok": True, "unlock_url": status_payload.get("unlock_url")})
 
 
 def main():
