@@ -5,7 +5,7 @@ import os
 import sys
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 from uuid import uuid4
 
 import requests
@@ -160,6 +160,9 @@ def _issue_unlock(config, report_id, order_id, tier, lang):
 class PayConfirmHandler(BaseHTTPRequestHandler):
     config = Config.from_env()
 
+    def log_message(self, format, *args):
+        sys.stderr.write("%s - - [%s] %s\n" % (self.client_address[0], self.log_date_time_string(), format % args))
+
     def _json_response(self, code, payload):
         data = json.dumps(payload).encode("utf-8")
         self.send_response(code)
@@ -169,106 +172,111 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_POST(self):
-        parsed = urlparse(self.path)
-        if parsed.path not in {"/api/pay/confirm", self.config.pay_confirm_endpoint}:
-            self._json_response(404, {"ok": False, "error": "not_found"})
-            return
-
-        content_len = int(self.headers.get("Content-Length", 0))
-        raw = self.rfile.read(content_len) if content_len else b"{}"
         try:
-            data = json.loads(raw.decode("utf-8"))
-        except json.JSONDecodeError:
-            self._json_response(400, {"ok": False, "error": "bad_json"})
-            return
+            parsed = urlparse(self.path)
+            if parsed.path not in {"/api/pay/confirm", self.config.pay_confirm_endpoint}:
+                self._json_response(404, {"ok": False, "error": "not_found"})
+                return
 
-        report_id = str(data.get("report_id", "")).strip()
-        order_id = str(data.get("order_id", "")).strip()
-        tier = str(data.get("tier", "")).strip()
-        email = str(data.get("email", "")).strip()
-        lang = str(data.get("lang", "")).strip() or "cn"
-        method = str(data.get("payment_method", "")).strip()
-        memo = str(data.get("memo", "")).strip()
-        payment_token = str(data.get("payment_token", "")).strip()
+            content_len = int(self.headers.get("Content-Length", 0))
+            raw = self.rfile.read(content_len) if content_len else b"{}"
+            try:
+                data = json.loads(raw.decode("utf-8"))
+            except json.JSONDecodeError:
+                self._json_response(400, {"ok": False, "error": "bad_json"})
+                return
 
-        if not report_id or not order_id:
-            self._json_response(400, {"ok": False, "error": "missing_fields"})
-            return
+            report_id = str(data.get("report_id", "")).strip()
+            order_id = str(data.get("order_id", "")).strip()
+            tier = str(data.get("tier", "")).strip()
+            email = str(data.get("email", "")).strip()
+            lang = str(data.get("lang", "")).strip() or "cn"
+            method = str(data.get("payment_method", "")).strip()
+            memo = str(data.get("memo", "")).strip()
+            payment_token = str(data.get("payment_token", "")).strip()
 
-        now = datetime.utcnow().isoformat() + "Z"
-        expires_at = (
-            datetime.utcnow() + timedelta(days=self.config.unlock_expires_days)
-        ).isoformat() + "Z"
+            if not report_id or not order_id:
+                self._json_response(400, {"ok": False, "error": "missing_fields"})
+                return
 
-        status_payload = {
-            "report_id": report_id,
-            "order_id": order_id,
-            "tier": tier or "$9",
-            "lang": lang,
-            "status": "submitted",
-            "email": email,
-            "payment_method": method,
-            "payment_token": payment_token,
-            "memo": memo,
-            "created_at": now,
-            "expires_at": expires_at,
-        }
+            now = datetime.utcnow().isoformat() + "Z"
+            expires_at = (
+                datetime.utcnow() + timedelta(days=self.config.unlock_expires_days)
+            ).isoformat() + "Z"
 
-        status_path = os.path.join(self.config.static_dir, "pay", "status", f"{order_id}.json")
-        _write_json(status_path, status_payload)
+            status_payload = {
+                "report_id": report_id,
+                "order_id": order_id,
+                "tier": tier or "$9",
+                "lang": lang,
+                "status": "submitted",
+                "email": email,
+                "payment_method": method,
+                "payment_token": payment_token,
+                "memo": memo,
+                "created_at": now,
+                "expires_at": expires_at,
+            }
 
-        log_payload = dict(status_payload)
-        log_payload["ip"] = self.client_address[0]
-        _append_jsonl(os.path.join(self.config.data_dir, "pay", "orders.jsonl"), log_payload)
+            status_path = os.path.join(self.config.static_dir, "pay", "status", f"{order_id}.json")
+            _write_json(status_path, status_payload)
 
-        _send_bark(self.config, status_payload)
+            log_payload = dict(status_payload)
+            log_payload["ip"] = self.client_address[0]
+            _append_jsonl(os.path.join(self.config.data_dir, "pay", "orders.jsonl"), log_payload)
 
-        self._json_response(200, {"ok": True})
+            _send_bark(self.config, status_payload)
+
+            self._json_response(200, {"ok": True})
+        except Exception as exc:
+            self._json_response(500, {"ok": False, "error": "server_error"})
 
     def do_GET(self):
-        parsed = urlparse(self.path)
-        if parsed.path != self.config.pay_confirm_admin_endpoint:
-            self._json_response(404, {"ok": False, "error": "not_found"})
-            return
+        try:
+            parsed = urlparse(self.path)
+            if parsed.path != self.config.pay_confirm_admin_endpoint:
+                self._json_response(404, {"ok": False, "error": "not_found"})
+                return
 
-        query = dict([p.split("=") for p in parsed.query.split("&") if "=" in p])
-        order_id = query.get("order_id", "")
-        report_id = query.get("report_id", "")
-        tier = query.get("tier", "$9")
-        lang = query.get("lang", "cn")
+            query = parse_qs(parsed.query)
+            order_id = (query.get("order_id", [""])[0] or "").strip()
+            report_id = (query.get("report_id", [""])[0] or "").strip()
+            tier = (query.get("tier", ["$9"])[0] or "$9").strip()
+            lang = (query.get("lang", ["cn"])[0] or "cn").strip()
 
-        if not order_id or not report_id:
-            self._json_response(400, {"ok": False, "error": "missing_fields"})
-            return
+            if not order_id or not report_id:
+                self._json_response(400, {"ok": False, "error": "missing_fields"})
+                return
 
-        status_payload = _issue_unlock(self.config, report_id, order_id, tier, lang)
-        if not status_payload:
-            self._json_response(404, {"ok": False, "error": "report_not_found"})
-            return
+            status_payload = _issue_unlock(self.config, report_id, order_id, tier, lang)
+            if not status_payload:
+                self._json_response(404, {"ok": False, "error": "report_not_found"})
+                return
 
-        # Update order log status
-        log_path = os.path.join(self.config.data_dir, "pay", "orders.jsonl")
-        if os.path.exists(log_path):
-            try:
-                with open(log_path, "r", encoding="utf-8") as f:
-                    lines = f.readlines()
-                with open(log_path, "w", encoding="utf-8") as f:
-                    for line in lines:
-                        try:
-                            entry = json.loads(line)
-                        except json.JSONDecodeError:
-                            f.write(line)
-                            continue
-                        if entry.get("order_id") == order_id:
-                            entry["status"] = "confirmed"
-                            entry["unlock_url"] = status_payload.get("unlock_url")
-                            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-                        else:
-                            f.write(line)
-            except OSError:
-                pass
+            log_path = os.path.join(self.config.data_dir, "pay", "orders.jsonl")
+            if os.path.exists(log_path):
+                try:
+                    with open(log_path, "r", encoding="utf-8") as f:
+                        lines = f.readlines()
+                    with open(log_path, "w", encoding="utf-8") as f:
+                        for line in lines:
+                            try:
+                                entry = json.loads(line)
+                            except json.JSONDecodeError:
+                                f.write(line)
+                                continue
+                            if entry.get("order_id") == order_id:
+                                entry["status"] = "confirmed"
+                                entry["unlock_url"] = status_payload.get("unlock_url")
+                                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                            else:
+                                f.write(line)
+                except OSError:
+                    pass
 
-        self._json_response(200, {"ok": True, "unlock_url": status_payload.get("unlock_url")})
+            self._json_response(200, {"ok": True, "unlock_url": status_payload.get("unlock_url")})
+        except Exception:
+            self._json_response(500, {"ok": False, "error": "server_error"})
 
 
 def main():
