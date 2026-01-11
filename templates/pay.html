@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>解锁深度报告 | 稀土情报哨兵</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=Noto+Sans+SC:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#111827;--muted:#6b7280;--bg:#f8f6f2;--card:#ffffff;--accent:#1e3a8a;--warn:#b45309;--soft:#f3f4f6}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);line-height:1.6}
+.container{max-width:980px;margin:0 auto;padding:24px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
+.nav a{margin-left:12px;font-size:12px;color:var(--muted);text-decoration:none}
+.nav a:hover{color:var(--ink)}
+.section{background:var(--card);border-radius:10px;border:1px solid #e5e7eb;padding:16px;margin-bottom:12px}
+.section-title{font-family:"Noto Serif SC",serif;font-weight:600;margin-bottom:8px}
+.meta{font-size:12px;color:var(--muted)}
+.value{font-size:13px;margin-top:6px}
+.preview-list{margin:8px 0 0 0;padding:0;list-style:none}
+.preview-item{padding:6px 0;border-bottom:1px dashed #e5e7eb;font-size:13px}
+.preview-item:last-child{border-bottom:none}
+.preview-label{display:inline-block;min-width:72px;color:var(--muted)}
+.pay-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:10px}
+.pay-card{border:1px solid #e5e7eb;border-radius:10px;padding:12px;background:#fff}
+.pay-card img{max-width:100%;border-radius:8px;border:1px solid #e5e7eb}
+.pay-title{font-size:12px;color:var(--muted);margin-bottom:6px}
+.copy{font-size:12px;background:var(--soft);padding:6px;border-radius:8px;word-break:break-all}
+.pay-note{font-size:12px;color:var(--muted);margin-top:10px}
+.pay-btn{display:inline-block;margin-top:10px;font-size:12px;color:#fff;background:var(--warn);padding:6px 14px;border-radius:999px;text-decoration:none}
+.pay-btn:hover{background:#92400e}
+.unlock-box{margin-top:10px;font-size:12px;color:var(--muted);background:var(--soft);border-radius:8px;padding:8px}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="title">解锁深度报告</div>
+    <div class="nav">
+      <a href="/cn/">返回首页</a>
+      <a href="/cn/premium/">历史报告</a>
+      <a href="/en/pay/{{REPORT_ID}}.html">English</a>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="section-title">报告信息</div>
+    <div class="meta">报告ID：{{REPORT_ID}}</div>
+    <div class="value">{{REPORT_TITLE}}</div>
+    <div class="value">价值：{{REPORT_VALUE}}</div>
+  </section>
+
+  <section class="section">
+    <div class="section-title">公开预览（$9）</div>
+    {{REPORT_PREVIEW}}
+    <div class="meta">完整内容需付费解锁</div>
+  </section>
+
+  <section class="section">
+    <div class="section-title">解锁方式（仅开放 $9）</div>
+    {{PAYMENT_SECTION}}
+    <div class="pay-note">付款备注请填写：report_id + tier + email</div>
+    <a class="pay-btn" href="#">我已付款（下一步将启用自动确认）</a>
+    <div class="unlock-box">解锁链接：等待确认</div>
+  </section>
+</div>
+</body>
+</html>
