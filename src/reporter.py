@@ -75,6 +75,10 @@ class Reporter:
         self.build_premium_admin_pages(storage, record_map, lang="zh", subdir="cn")
         self.build_premium_admin_pages(storage, record_map, lang="en", subdir="en")
 
+        # Build pay pages for premium reports
+        self.build_pay_pages(storage, record_map, lang="zh", subdir="cn")
+        self.build_pay_pages(storage, record_map, lang="en", subdir="en")
+
     def _load_premium_briefs(self, storage):
         data = {"zh": [], "en": []}
         if not self.config.premium_enabled:
@@ -93,31 +97,44 @@ class Reporter:
             return data
 
         for entry in entries:
+            report_id = entry.get("report_id", "")
             preview_zh = entry.get("preview_zh") or {}
             preview_en = entry.get("preview_en") or {}
             if preview_zh:
                 data["zh"].append(
                     {
+                        "report_id": report_id,
                         "title": preview_zh.get("title", ""),
                         "value": preview_zh.get("value", ""),
                         "preview": preview_zh.get("preview", ""),
                         "price": 9,
                         "tier": "brief",
-                        "unlock": "mailto:sentinel@dataspices.com",
+                        "unlock": self._pay_link("zh", report_id)
+                        if report_id
+                        else "mailto:sentinel@dataspices.com",
                     }
                 )
             if preview_en:
                 data["en"].append(
                     {
+                        "report_id": report_id,
                         "title": preview_en.get("title", ""),
                         "value": preview_en.get("value", ""),
                         "preview": preview_en.get("preview", ""),
                         "price": 9,
                         "tier": "brief",
-                        "unlock": "mailto:sentinel@dataspices.com",
+                        "unlock": self._pay_link("en", report_id)
+                        if report_id
+                        else "mailto:sentinel@dataspices.com",
                     }
                 )
         return data
+
+    def _pay_link(self, lang, report_id):
+        if not report_id:
+            return "mailto:sentinel@dataspices.com"
+        subdir = "cn" if lang == "zh" else "en"
+        return f"/{subdir}/pay/{report_id}.html"
 
     def _get_daily_extractor(self):
         if self._daily_extractor is None:
@@ -409,12 +426,13 @@ class Reporter:
                 btn_label = (
                     f"解锁深度报告 (${price})" if lang == "zh" else f"Unlock Report (${price})"
                 )
+                pay_link = self._pay_link(lang, report_id)
                 blocks.append(
                     '<div class="card">'
                     f'<div class="card-title">{title}</div>'
                     f'<div class="card-meta">{html.escape(meta)} · {html.escape(report_id)}</div>'
                     f"{value_html}{preview_html}"
-                    f'<a class="btn" href="mailto:sentinel@dataspices.com">{btn_label}</a>'
+                    f'<a class="btn" href="{html.escape(pay_link)}">{btn_label}</a>'
                     '</div>'
                 )
             return "".join(blocks)
@@ -436,6 +454,159 @@ class Reporter:
         os.makedirs(premium_dir, exist_ok=True)
         with open(os.path.join(premium_dir, "index.html"), "w", encoding="utf-8") as f:
             f.write(html_out)
+
+    def build_pay_pages(self, storage, record_map, lang="zh", subdir="cn"):
+        base_dir = storage.premium_dir
+        index_path = os.path.join(base_dir, "reports_index.jsonl")
+        entries = []
+        if os.path.exists(index_path):
+            with open(index_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(entry, dict):
+                        entries.append(entry)
+
+        entries.sort(key=lambda e: e.get("created_at", ""), reverse=True)
+        display_entries = entries[:300]
+
+        template_name = "pay_en.html" if lang == "en" else "pay.html"
+        template_path = os.path.join(self.config.templates_dir, template_name)
+        with open(template_path, "r", encoding="utf-8") as f:
+            template = f.read()
+
+        pay_root = os.path.join(storage._subdir_base(subdir), "pay")
+        os.makedirs(pay_root, exist_ok=True)
+
+        for entry in display_entries:
+            report_id = entry.get("report_id")
+            if not report_id:
+                continue
+            date_key = entry.get("date", "")
+            brief_json = self._load_brief_json(base_dir, date_key, report_id, "en" if lang == "en" else "zh")
+            preview = entry.get("preview_zh") if lang == "zh" else entry.get("preview_en")
+
+            title = ""
+            value = ""
+            if isinstance(preview, dict):
+                title = preview.get("title", "")
+                value = preview.get("value", "")
+            if not title:
+                title = entry.get("source_title", "")
+
+            preview_html = self._render_pay_preview(brief_json, lang=lang)
+            payment_html = self._render_payment_section(lang=lang)
+
+            html_out = (
+                template.replace("{{REPORT_ID}}", html.escape(report_id))
+                .replace("{{REPORT_TITLE}}", html.escape(title))
+                .replace("{{REPORT_VALUE}}", html.escape(value))
+                .replace("{{REPORT_PREVIEW}}", preview_html)
+                .replace("{{PAYMENT_SECTION}}", payment_html)
+            )
+
+            with open(os.path.join(pay_root, f"{report_id}.html"), "w", encoding="utf-8") as f:
+                f.write(html_out)
+
+    def _render_pay_preview(self, brief, lang="zh"):
+        if not isinstance(brief, dict) or not brief:
+            empty = "暂无预览" if lang == "zh" else "No preview yet."
+            return f'<div class="meta">{empty}</div>'
+
+        def _first(items):
+            if not items:
+                return "-"
+            return str(items[0])
+
+        conclusion = brief.get("conclusion", "")
+        fact_first = _first(brief.get("fact_checks", []))
+        number_first = _first(brief.get("key_numbers", []))
+
+        if lang == "en":
+            items = [
+                ("Conclusion", conclusion or "-"),
+                ("Fact check", fact_first),
+                ("Key number", number_first),
+            ]
+        else:
+            items = [
+                ("结论", conclusion or "-"),
+                ("事实核查", fact_first),
+                ("关键数字", number_first),
+            ]
+
+        lines = []
+        for label, value in items:
+            lines.append(
+                f'<li class="preview-item"><span class="preview-label">{html.escape(label)}</span>{html.escape(value)}</li>'
+            )
+        return f'<ul class="preview-list">{"".join(lines)}</ul>'
+
+    def _render_payment_section(self, lang="zh"):
+        wechat = self.config.pay_wechat_qr_url
+        alipay = self.config.pay_alipay_qr_url
+        token = self.config.pay_alipay_token
+        usdt = self.config.pay_usdt_trc20
+
+        if lang == "en":
+            tier_title = "Pricing (only $9 open)"
+            tier_brief = "$9 Brief · 24h delivery"
+            tier_standard = "$99 Standard · Manual · T+1"
+            tier_strategic = "$999 Strategic · Manual · T+3"
+            wechat_label = "WeChat QR"
+            alipay_label = "Alipay QR"
+            token_label = "Alipay Token"
+            usdt_label = "USDT (TRC20)"
+            empty = "Not set"
+        else:
+            tier_title = "价格档位（仅开放 $9）"
+            tier_brief = "$9 简报 · 24小时内交付"
+            tier_standard = "$99 深度 · 人工定制 T+1"
+            tier_strategic = "$999 战略 · 人工定制 T+3"
+            wechat_label = "微信收款码"
+            alipay_label = "支付宝收款码"
+            token_label = "支付宝口令"
+            usdt_label = "USDT (TRC20)"
+            empty = "未配置"
+
+        tiers = (
+            '<div class="pay-card">'
+            f'<div class="pay-title">{tier_title}</div>'
+            f'<div class="meta">{tier_brief}</div>'
+            f'<div class="meta">{tier_standard}</div>'
+            f'<div class="meta">{tier_strategic}</div>'
+            '</div>'
+        )
+
+        def _img_card(label, url):
+            if not url:
+                return f'<div class="pay-card"><div class="pay-title">{label}</div><div class="copy">{empty}</div></div>'
+            return (
+                f'<div class="pay-card"><div class="pay-title">{label}</div>'
+                f'<img src="{html.escape(url)}" alt="{html.escape(label)}"></div>'
+            )
+
+        def _text_card(label, value):
+            if not value:
+                return f'<div class="pay-card"><div class="pay-title">{label}</div><div class="copy">{empty}</div></div>'
+            return (
+                f'<div class="pay-card"><div class="pay-title">{label}</div>'
+                f'<div class="copy">{html.escape(value)}</div></div>'
+            )
+
+        cards = [
+            tiers,
+            _img_card(wechat_label, wechat),
+            _img_card(alipay_label, alipay),
+            _text_card(token_label, token),
+            _text_card(usdt_label, usdt),
+        ]
+        return f'<div class="pay-grid">{"".join(cards)}</div>'
 
     def build_premium_admin_pages(self, storage, record_map, lang="zh", subdir="cn"):
         base_dir = storage.premium_dir
