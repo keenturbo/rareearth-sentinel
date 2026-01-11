@@ -117,6 +117,31 @@ def _load_brief_md(premium_dir, date_key, report_id, lang):
         return ""
 
 
+def _mark_order_confirmed(data_dir, order_id, unlock_url):
+    log_path = os.path.join(data_dir, "pay", "orders.jsonl")
+    if not os.path.exists(log_path):
+        return
+    try:
+        with open(log_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        with open(log_path, "w", encoding="utf-8") as f:
+            for line in lines:
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    f.write(line)
+                    continue
+                if entry.get("order_id") == order_id:
+                    entry["status"] = "confirmed"
+                    if unlock_url:
+                        entry["unlock_url"] = unlock_url
+                    f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                else:
+                    f.write(line)
+    except OSError:
+        return
+
+
 def _issue_unlock(config, report_id, order_id, tier, lang):
     entry = _load_report_entry(config.premium_dir, report_id)
     if not entry:
@@ -174,16 +199,35 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             parsed = urlparse(self.path)
-            if parsed.path not in {"/api/pay/confirm", self.config.pay_confirm_endpoint}:
-                self._json_response(404, {"ok": False, "error": "not_found"})
-                return
-
             content_len = int(self.headers.get("Content-Length", 0))
             raw = self.rfile.read(content_len) if content_len else b"{}"
             try:
                 data = json.loads(raw.decode("utf-8"))
             except json.JSONDecodeError:
                 self._json_response(400, {"ok": False, "error": "bad_json"})
+                return
+
+            if parsed.path == self.config.pay_confirm_admin_endpoint:
+                order_id = str(data.get("order_id", "")).strip()
+                report_id = str(data.get("report_id", "")).strip()
+                tier = str(data.get("tier", "") or "$9").strip()
+                lang = str(data.get("lang", "") or "cn").strip()
+
+                if not order_id or not report_id:
+                    self._json_response(400, {"ok": False, "error": "missing_fields"})
+                    return
+
+                status_payload = _issue_unlock(self.config, report_id, order_id, tier, lang)
+                if not status_payload:
+                    self._json_response(404, {"ok": False, "error": "report_not_found"})
+                    return
+
+                _mark_order_confirmed(self.config.data_dir, order_id, status_payload.get("unlock_url"))
+                self._json_response(200, {"ok": True, "unlock_url": status_payload.get("unlock_url")})
+                return
+
+            if parsed.path not in {"/api/pay/confirm", self.config.pay_confirm_endpoint}:
+                self._json_response(404, {"ok": False, "error": "not_found"})
                 return
 
             report_id = str(data.get("report_id", "")).strip()
@@ -228,7 +272,7 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
             _send_bark(self.config, status_payload)
 
             self._json_response(200, {"ok": True})
-        except Exception as exc:
+        except Exception:
             self._json_response(500, {"ok": False, "error": "server_error"})
 
     def do_GET(self):
@@ -253,26 +297,7 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
                 self._json_response(404, {"ok": False, "error": "report_not_found"})
                 return
 
-            log_path = os.path.join(self.config.data_dir, "pay", "orders.jsonl")
-            if os.path.exists(log_path):
-                try:
-                    with open(log_path, "r", encoding="utf-8") as f:
-                        lines = f.readlines()
-                    with open(log_path, "w", encoding="utf-8") as f:
-                        for line in lines:
-                            try:
-                                entry = json.loads(line)
-                            except json.JSONDecodeError:
-                                f.write(line)
-                                continue
-                            if entry.get("order_id") == order_id:
-                                entry["status"] = "confirmed"
-                                entry["unlock_url"] = status_payload.get("unlock_url")
-                                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-                            else:
-                                f.write(line)
-                except OSError:
-                    pass
+            _mark_order_confirmed(self.config.data_dir, order_id, status_payload.get("unlock_url"))
 
             self._json_response(200, {"ok": True, "unlock_url": status_payload.get("unlock_url")})
         except Exception:
