@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>订单确认 | 稀土情报哨兵</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=Noto+Sans+SC:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#111827;--muted:#6b7280;--bg:#f8f6f2;--card:#ffffff;--accent:#1e3a8a;--warn:#b45309;--soft:#f3f4f6}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);line-height:1.6}
+.container{max-width:980px;margin:0 auto;padding:24px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
+.nav a{margin-left:12px;font-size:12px;color:var(--muted);text-decoration:none}
+.nav a:hover{color:var(--ink)}
+.section{background:var(--card);border-radius:10px;border:1px solid #e5e7eb;padding:16px;margin-bottom:12px}
+.section-title{font-family:"Noto Serif SC",serif;font-weight:600;margin-bottom:8px}
+.meta{font-size:12px;color:var(--muted)}
+.orders{margin-top:12px;display:grid;gap:10px}
+.order-card{border:1px solid #e5e7eb;border-radius:10px;padding:12px;background:#fff}
+.order-title{font-size:14px;font-weight:600;margin-bottom:6px}
+.order-meta{font-size:12px;color:var(--muted)}
+.order-actions{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
+.btn{display:inline-block;font-size:12px;color:#fff;background:var(--accent);padding:6px 12px;border-radius:999px;text-decoration:none;border:0;cursor:pointer}
+.btn:hover{background:#1f3a9b}
+.btn.secondary{background:#374151}
+.btn.secondary:hover{background:#1f2937}
+.empty{font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="title">订单确认</div>
+    <div class="nav">
+      <a href="/cn/">返回首页</a>
+      <a href="/cn/premium/">历史报告</a>
+      <a href="/en/admin/orders/">English</a>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="section-title">待确认订单</div>
+    <div class="meta">此页面仅供管理员使用，展示已提交付款但未确认的订单。</div>
+    <div id="orders" class="orders">
+      <div class="empty">正在加载订单…</div>
+    </div>
+  </section>
+</div>
+<script>
+(async function(){
+  const ordersEl = document.getElementById('orders');
+  async function loadOrders(){
+    try{
+      const res = await fetch('/api/pay/orders?lang=cn');
+      if(!res.ok){
+        ordersEl.innerHTML = '<div class="empty">无法加载订单</div>';
+        return;
+      }
+      const data = await res.json();
+      const items = data && data.orders ? data.orders : [];
+      if(!items.length){
+        ordersEl.innerHTML = '<div class="empty">暂无待确认订单</div>';
+        return;
+      }
+      ordersEl.innerHTML = items.map(item => {
+        const title = item.title || '';
+        const reportId = item.report_id || '';
+        const orderId = item.order_id || '';
+        const tier = item.tier || '$9';
+        const email = item.email || '-';
+        const created = item.created_at || '';
+        const link = item.admin_link || `/cn/admin/premium/${reportId}.html`;
+        return `
+          <div class="order-card">
+            <div class="order-title">${title || reportId}</div>
+            <div class="order-meta">report_id: ${reportId} · order_id: ${orderId}</div>
+            <div class="order-meta">tier: ${tier} · email: ${email}</div>
+            <div class="order-meta">提交时间: ${created}</div>
+            <div class="order-actions">
+              <a class="btn secondary" href="${link}" target="_blank">查看报告</a>
+              <button class="btn" data-order="${orderId}">确认收款</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+      ordersEl.querySelectorAll('button[data-order]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const orderId = btn.getAttribute('data-order');
+          btn.textContent = '处理中...';
+          try{
+            const res = await fetch('/api/pay/confirm_admin', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ order_id: orderId })
+            });
+            if(res.ok){
+              btn.textContent = '已确认';
+              btn.disabled = true;
+              loadOrders();
+            } else {
+              btn.textContent = '确认失败';
+            }
+          }catch(e){
+            btn.textContent = '确认失败';
+          }
+        });
+      });
+    }catch(e){
+      ordersEl.innerHTML = '<div class="empty">无法加载订单</div>';
+    }
+  }
+
+  loadOrders();
+})();
+</script>
+</body>
+</html>
