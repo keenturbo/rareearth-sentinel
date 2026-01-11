@@ -36,6 +36,15 @@ def _normalize_base(url):
     return url.rstrip("/")
 
 
+def _normalize_path(path):
+    if not path:
+        return "/"
+    path = path.strip()
+    if path == "/":
+        return "/"
+    return path.rstrip("/")
+
+
 def _build_admin_link(base, report_id):
     if not base or not report_id:
         return ""
@@ -199,6 +208,10 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             parsed = urlparse(self.path)
+            normalized_path = _normalize_path(parsed.path)
+            admin_path = _normalize_path(self.config.pay_confirm_admin_endpoint)
+            confirm_path = _normalize_path(self.config.pay_confirm_endpoint)
+
             content_len = int(self.headers.get("Content-Length", 0))
             raw = self.rfile.read(content_len) if content_len else b"{}"
             try:
@@ -207,7 +220,7 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
                 self._json_response(400, {"ok": False, "error": "bad_json"})
                 return
 
-            if parsed.path == self.config.pay_confirm_admin_endpoint:
+            if normalized_path == admin_path:
                 order_id = str(data.get("order_id", "")).strip()
                 report_id = str(data.get("report_id", "")).strip()
                 tier = str(data.get("tier", "") or "$9").strip()
@@ -226,7 +239,8 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
                 self._json_response(200, {"ok": True, "unlock_url": status_payload.get("unlock_url")})
                 return
 
-            if parsed.path not in {"/api/pay/confirm", self.config.pay_confirm_endpoint}:
+            allowed_confirm = {confirm_path, _normalize_path("/api/pay/confirm")}
+            if normalized_path not in allowed_confirm:
                 self._json_response(404, {"ok": False, "error": "not_found"})
                 return
 
@@ -278,7 +292,9 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             parsed = urlparse(self.path)
-            if parsed.path != self.config.pay_confirm_admin_endpoint:
+            normalized_path = _normalize_path(parsed.path)
+            admin_path = _normalize_path(self.config.pay_confirm_admin_endpoint)
+            if normalized_path != admin_path:
                 self._json_response(404, {"ok": False, "error": "not_found"})
                 return
 
