@@ -13,9 +13,9 @@ from src.utils import now_cst, isoformat
 
 
 def _read_jsonl(path):
-    entries = []
+    entries = {}
     if not os.path.exists(path):
-        return entries
+        return []
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -25,9 +25,14 @@ def _read_jsonl(path):
                 entry = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if isinstance(entry, dict):
-                entries.append(entry)
-    return entries
+            if not isinstance(entry, dict):
+                continue
+            order_id = entry.get("order_id")
+            if not order_id:
+                continue
+            # Later entries overwrite earlier ones
+            entries[order_id] = entry
+    return list(entries.values())
 
 
 def _read_reports_index(path):
@@ -55,6 +60,9 @@ def _render_orders(entries, reports, lang="zh"):
         return f'<div class="empty">{empty}</div>'
 
     blocks = []
+    confirm_label = "确认收款" if lang == "zh" else "Confirm"
+    confirmed_text = "已确认" if lang == "zh" else "Confirmed"
+
     for entry in entries:
         report_id = entry.get("report_id", "")
         order_id = entry.get("order_id", "")
@@ -64,6 +72,7 @@ def _render_orders(entries, reports, lang="zh"):
         email = entry.get("email", "-")
         method = entry.get("payment_method", "-")
         token = entry.get("payment_token", "-")
+        unlock_url = entry.get("unlock_url", "")
 
         report = reports.get(report_id, {})
         title = report.get("source_title", report_id)
@@ -78,6 +87,19 @@ def _render_orders(entries, reports, lang="zh"):
         meta = f"{created_at} · {order_id} · {tier} · {status}"
         extra = f"{email} · {method} · {token}"
 
+        confirm_btn = (
+            f'<button class="confirm-btn" data-order-id="{order_id}" '
+            f'data-report-id="{report_id}" data-tier="{tier}" data-lang="{lang}">{confirm_label}</button>'
+            if status != "confirmed"
+            else f'<span class="confirmed">{confirmed_text}</span>'
+        )
+
+        unlock_block = (
+            f'<div class="unlock-link"><a href="{unlock_url}" target="_blank">{unlock_url}</a></div>'
+            if unlock_url
+            else '<div class="unlock-link" data-empty="1"></div>'
+        )
+
         blocks.append(
             '<div class="card">'
             f'<div class="card-title">{title}</div>'
@@ -87,12 +109,14 @@ def _render_orders(entries, reports, lang="zh"):
             f'<a href="{pay_link}" target="_blank">Pay Page</a>'
             f'<a href="{admin_link}" target="_blank">Report</a>'
             '</div>'
+            f'<div class="card-confirm">{confirm_btn}</div>'
+            f'{unlock_block}'
             '</div>'
         )
     return "".join(blocks)
 
 
-def _build_page(template_path, output_path, entries, reports, lang="zh"):
+def _build_page(template_path, output_path, entries, reports, lang="zh", confirm_endpoint=""):
     with open(template_path, "r", encoding="utf-8") as f:
         template = f.read()
 
@@ -100,6 +124,7 @@ def _build_page(template_path, output_path, entries, reports, lang="zh"):
         template.replace("{{TOTAL_COUNT}}", str(len(entries)))
         .replace("{{LAST_UPDATE}}", isoformat(now_cst()))
         .replace("{{ORDERS_LIST}}", _render_orders(entries, reports, lang=lang))
+        .replace("{{CONFIRM_ENDPOINT}}", confirm_endpoint)
     )
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -122,8 +147,22 @@ def main():
     cn_output = os.path.join(config.static_dir, "cn", "admin", "orders", "index.html")
     en_output = os.path.join(config.static_dir, "en", "admin", "orders", "index.html")
 
-    _build_page(cn_template, cn_output, entries, reports, lang="zh")
-    _build_page(en_template, en_output, entries, reports, lang="en")
+    _build_page(
+        cn_template,
+        cn_output,
+        entries,
+        reports,
+        lang="zh",
+        confirm_endpoint=config.pay_confirm_admin_endpoint,
+    )
+    _build_page(
+        en_template,
+        en_output,
+        entries,
+        reports,
+        lang="en",
+        confirm_endpoint=config.pay_confirm_admin_endpoint,
+    )
 
     print("Admin orders pages built")
     return 0
