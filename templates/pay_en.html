@@ -28,13 +28,17 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
 .pay-title{font-size:12px;color:var(--muted);margin-bottom:6px}
 .copy{font-size:12px;background:var(--soft);padding:6px;border-radius:8px;word-break:break-all}
 .pay-note{font-size:12px;color:var(--muted);margin-top:10px}
-.pay-btn{display:inline-block;margin-top:10px;font-size:12px;color:#fff;background:var(--warn);padding:6px 14px;border-radius:999px;text-decoration:none}
+.pay-btn{display:inline-block;margin-top:10px;font-size:12px;color:#fff;background:var(--warn);padding:6px 14px;border-radius:999px;text-decoration:none;border:0;cursor:pointer}
 .pay-btn:hover{background:#92400e}
 .unlock-box{margin-top:10px;font-size:12px;color:var(--muted);background:var(--soft);border-radius:8px;padding:8px}
+.order-box{margin-top:10px;font-size:12px;color:var(--muted);background:var(--soft);border-radius:8px;padding:8px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px}
+.copy-btn{margin-left:6px;font-size:11px;border:1px solid #e5e7eb;background:#fff;border-radius:6px;padding:2px 6px;cursor:pointer}
+.copy-btn:hover{background:#f9fafb}
 </style>
 </head>
 <body>
-<div class="container">
+<div class="container" data-report-id="{{REPORT_ID}}">
   <header>
     <div class="title">Unlock Report</div>
     <div class="nav">
@@ -60,10 +64,78 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
   <section class="section">
     <div class="section-title">Payment (Only $9 open)</div>
     {{PAYMENT_SECTION}}
-    <div class="pay-note">Memo format: report_id + tier + email</div>
-    <a class="pay-btn" href="#">I have paid (auto confirm coming)</a>
-    <div class="unlock-box">Unlock link: pending confirmation</div>
+    <div class="order-box">
+      <div>Order ID: <span id="order-id" class="mono">--</span><button class="copy-btn" data-copy="order-id">Copy</button></div>
+      <div>Payment memo: <span id="pay-memo" class="mono">report_id={{REPORT_ID}} tier=$9 order_id=-- email=your@email</span><button class="copy-btn" data-copy="pay-memo">Copy</button></div>
+    </div>
+    <div class="pay-note">Please include the memo in your payment remark so we can match your order.</div>
+    <button class="pay-btn" id="paid-btn">I have paid</button>
+    <div class="unlock-box" id="unlock-box">Unlock link: pending confirmation</div>
   </section>
 </div>
+<script>
+(function(){
+  const container = document.querySelector(".container");
+  const reportId = container ? container.dataset.reportId : "";
+  const lang = "en";
+  const storageKey = `order_id:${reportId}`;
+  let orderId = localStorage.getItem(storageKey);
+  if (!orderId) {
+    const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
+    orderId = `RE-${Date.now().toString(36).toUpperCase()}-${rand}`;
+    localStorage.setItem(storageKey, orderId);
+  }
+
+  const orderEl = document.getElementById("order-id");
+  const memoEl = document.getElementById("pay-memo");
+  if (orderEl) orderEl.textContent = orderId;
+  if (memoEl) memoEl.textContent = `report_id=${reportId} tier=$9 order_id=${orderId} email=your@email`;
+
+  document.querySelectorAll(".copy-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const targetId = btn.getAttribute("data-copy");
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      const text = target.textContent || "";
+      if (!text) return;
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text);
+      }
+      btn.textContent = "Copied";
+      setTimeout(() => { btn.textContent = "Copy"; }, 1200);
+    });
+  });
+
+  const unlockBox = document.getElementById("unlock-box");
+  const paidBtn = document.getElementById("paid-btn");
+  if (paidBtn) {
+    paidBtn.addEventListener("click", () => {
+      if (unlockBox) {
+        unlockBox.textContent = "Payment submitted. Awaiting confirmation…";
+      }
+    });
+  }
+
+  async function pollStatus(){
+    if (!orderId) return;
+    try {
+      const res = await fetch(`/pay/status/${orderId}.json?ts=${Date.now()}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data || data.report_id !== reportId) return;
+      const token = data.token || "";
+      const url = data.unlock_url || (token ? `/${lang}/pay/${reportId}.html?unlock=${token}` : "");
+      if (url && unlockBox) {
+        unlockBox.innerHTML = `Unlock link: <a href="${url}" target="_blank">${url}</a>`;
+      }
+    } catch (err) {
+      // ignore
+    }
+  }
+
+  pollStatus();
+  setInterval(pollStatus, 5000);
+})();
+</script>
 </body>
 </html>
