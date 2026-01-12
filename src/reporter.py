@@ -558,8 +558,6 @@ class Reporter:
             tier_brief = "$9 Brief · 24h delivery"
             tier_standard = "$99 Standard · Manual · T+1"
             tier_strategic = "$999 Strategic · Manual · T+3"
-            wechat_label = "WeChat QR"
-            alipay_label = "Alipay QR"
             usdt_label = "USDT (TRC20)"
             copy_label = "Copy"
             empty = "Not set"
@@ -570,7 +568,6 @@ class Reporter:
             tier_strategic = "$999 战略 · 人工定制 T+3"
             wechat_label = "微信收款码"
             alipay_label = "支付宝收款码"
-            usdt_label = "USDT (TRC20)"
             copy_label = "复制"
             empty = "未配置"
 
@@ -608,12 +605,17 @@ class Reporter:
                 f'{copy_button}</div>'
             )
 
-        cards = [
-            tiers,
-            _img_card(wechat_label, wechat),
-            _img_card(alipay_label, alipay),
-            _text_card(usdt_label, usdt, element_id="usdt-address", copy_text=copy_label),
-        ]
+        if lang == "en":
+            cards = [
+                tiers,
+                _text_card(usdt_label, usdt, element_id="usdt-address", copy_text=copy_label),
+            ]
+        else:
+            cards = [
+                tiers,
+                _img_card(wechat_label, wechat),
+                _img_card(alipay_label, alipay),
+            ]
         return f'<div class="pay-grid">{"".join(cards)}</div>'
 
     def build_premium_admin_pages(self, storage, record_map, lang="zh", subdir="cn"):
