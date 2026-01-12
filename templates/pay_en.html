@@ -38,6 +38,9 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
 .pay-field{margin-top:10px;font-size:12px}
 .pay-field label{display:block;margin-bottom:4px;color:var(--muted)}
 .pay-input{width:100%;padding:6px 8px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;background:#fff}
+.report-body h1,.report-body h2,.report-body h3{font-family:"Source Serif 4",serif;margin:12px 0 6px}
+.report-body p{margin:6px 0}
+.report-body ul{margin:6px 0 6px 16px}
 </style>
 </head>
 <body>
@@ -64,7 +67,7 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
     <div class="meta">Full report requires payment</div>
   </section>
 
-  <section class="section">
+  <section class="section" id="payment-section">
     <div class="section-title">Payment (Only $9 open)</div>
     {{PAYMENT_SECTION}}
 
@@ -96,6 +99,12 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
     <button class="pay-btn" id="paid-btn">I have paid</button>
     <div class="unlock-box" id="unlock-box">Unlock link: pending confirmation</div>
   </section>
+
+  <section class="section" id="full-report" style="display:none">
+    <div class="section-title">Full Report</div>
+    <div class="report-body" id="full-content"></div>
+    <div class="meta">Link expires in 7 days.</div>
+  </section>
 </div>
 <script>
 (function(){
@@ -116,6 +125,10 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
   const emailInput = document.getElementById("buyer-email");
   const tokenInput = document.getElementById("alipay-token");
   const methodSelect = document.getElementById("pay-method");
+  const unlockBox = document.getElementById("unlock-box");
+  const paidBtn = document.getElementById("paid-btn");
+  const fullReport = document.getElementById("full-report");
+  const fullContent = document.getElementById("full-content");
 
   if (orderEl) orderEl.textContent = orderId;
 
@@ -144,8 +157,94 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
     });
   });
 
-  const unlockBox = document.getElementById("unlock-box");
-  const paidBtn = document.getElementById("paid-btn");
+  function escapeHtml(str){
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  function mdToHtml(md){
+    if (!md) return "";
+    const lines = md.split(/\r?\n/);
+    let out = "";
+    let inList = false;
+    const closeList = () => {
+      if (inList) {
+        out += "</ul>";
+        inList = false;
+      }
+    };
+    for (const raw of lines) {
+      const line = raw.replace(/\s+$/, "");
+      if (!line.trim()) {
+        closeList();
+        continue;
+      }
+      if (line.startsWith("### ")) {
+        closeList();
+        out += `<h3>${escapeHtml(line.slice(4))}</h3>`;
+        continue;
+      }
+      if (line.startsWith("## ")) {
+        closeList();
+        out += `<h2>${escapeHtml(line.slice(3))}</h2>`;
+        continue;
+      }
+      if (line.startsWith("# ")) {
+        closeList();
+        out += `<h1>${escapeHtml(line.slice(2))}</h1>`;
+        continue;
+      }
+      if (line.startsWith("- ")) {
+        if (!inList) {
+          out += "<ul>";
+          inList = true;
+        }
+        out += `<li>${escapeHtml(line.slice(2))}</li>`;
+        continue;
+      }
+      closeList();
+      out += `<p>${escapeHtml(line)}</p>`;
+    }
+    closeList();
+    return out;
+  }
+
+  function renderFull(content){
+    if (fullContent) {
+      fullContent.innerHTML = mdToHtml(content) || "<div class=\"meta\">No content.</div>";
+    }
+    if (fullReport) {
+      fullReport.style.display = "block";
+    }
+  }
+
+  async function fetchUnlock(token){
+    if (!token) return false;
+    try {
+      const res = await fetch(`/unlocks/${token}.json?ts=${Date.now()}`);
+      if (!res.ok) return false;
+      const data = await res.json();
+      if (!data || data.report_id !== reportId) return false;
+      if (data.expires_at) {
+        const exp = new Date(data.expires_at);
+        if (!Number.isNaN(exp.getTime()) && exp.getTime() < Date.now()) {
+          if (unlockBox) unlockBox.textContent = "Link expired. Contact support.";
+          return false;
+        }
+      }
+      const url = `/${lang}/pay/${reportId}.html?unlock=${token}`;
+      if (unlockBox) {
+        unlockBox.innerHTML = `Unlock link: <a href="${url}" target="_blank">${url}</a>`;
+      }
+      renderFull(data.content_md || "");
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }
+
   if (paidBtn) {
     paidBtn.addEventListener("click", async () => {
       if (unlockBox) {
@@ -189,13 +288,18 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
       const data = await res.json();
       if (!data || data.report_id !== reportId) return;
       const token = data.token || "";
-      const url = data.unlock_url || (token ? `/${lang}/pay/${reportId}.html?unlock=${token}` : "");
-      if (url && unlockBox) {
-        unlockBox.innerHTML = `Unlock link: <a href="${url}" target="_blank">${url}</a>`;
+      if (token) {
+        await fetchUnlock(token);
       }
     } catch (err) {
       // ignore
     }
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const unlockToken = params.get("unlock");
+  if (unlockToken) {
+    fetchUnlock(unlockToken);
   }
 
   pollStatus();
