@@ -1,0 +1,19 @@
+- id: baotou_ree_index
+  name: Baotou REE Exchange Index
+  mode: site_search
+  domain: reex.com.cn
+  query_terms: '稀土 价格 指数 OR 稀土 价格 指数 发布 OR 稀土 指数'
+  news_lang: zh-CN
+  news_region: CN
+  news_edition: CN:zh-Hans
+  max_items: 10
+
+- id: xinhua_ree_index
+  name: Xinhua Finance REE Index
+  mode: site_search
+  domain: xinhuafinance.com
+  query_terms: '稀土 价格 指数 OR 稀土 指数 新华财经'
+  news_lang: zh-CN
+  news_region: CN
+  news_edition: CN:zh-Hans
+  max_items: 10
