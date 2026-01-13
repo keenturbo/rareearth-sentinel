@@ -70,9 +70,13 @@ header .sub{font-size:12px;color:var(--muted)}
 .analysis-grid{font-size:12px;color:var(--muted);margin-top:4px}
 .analysis-list ul{margin:6px 0 0 18px;font-size:12px;color:var(--muted)}
 .empty{font-size:12px;color:var(--muted)}
+.index-watch-meta{font-size:12px;color:var(--muted);margin-bottom:8px}
 .index-table{width:100%;border-collapse:collapse;font-size:12px}
 .index-table th,.index-table td{border:1px solid #e5e7eb;padding:6px 8px;text-align:left}
 .index-table th{background:#f9fafb;font-weight:600}
+.idx-up{color:#dc2626;font-weight:600}
+.idx-down{color:#16a34a;font-weight:600}
+.idx-flat{color:#64748b;font-weight:600}
 </style>
 </head>
 <body>
@@ -97,27 +101,7 @@ header .sub{font-size:12px;color:var(--muted)}
   </header>
 
   <section class="section">
-    <div class="section-title">评分说明/图例</div>
-    <div class="legend">分项 0-100；预测箭头 ↑ 上行压力、↓ 下行压力、→ 持平；括号为置信度。</div>
-  </section>
-
-  <section class="section" id="status-section">
-    <div class="section-title">运行状态</div>
-    <div class="status-row" id="status-line">加载中...</div>
-    <div class="status-sub" id="status-detail"></div>
-  </section>
-
-  <section class="section">
     {{DAILY_REPORT}}
-  </section>
-
-  <section class="section">
-    {{INDEX_WATCH}}
-  </section>
-
-  <section class="section">
-    <div class="section-title">趋势汇总</div>
-    {{ROLLUPS}}
   </section>
 
   <section class="section">
@@ -131,8 +115,28 @@ header .sub{font-size:12px;color:var(--muted)}
   </section>
 
   <section class="section">
+    <div class="section-title">趋势汇总</div>
+    {{ROLLUPS}}
+  </section>
+
+  <section class="section">
+    {{INDEX_WATCH}}
+  </section>
+
+  <section class="section" id="status-section">
+    <div class="section-title">运行状态</div>
+    <div class="status-row" id="status-line">加载中...</div>
+    <div class="status-sub" id="status-detail"></div>
+  </section>
+
+  <section class="section">
     <div class="section-title">归档月份</div>
     <div class="archive">{{ARCHIVE_NAV}}</div>
+  </section>
+
+  <section class="section">
+    <div class="section-title">评分说明/图例</div>
+    <div class="legend">分项 0-100；预测箭头 ↑ 上行压力、↓ 下行压力、→ 持平；括号为置信度。</div>
   </section>
 
   <div class="filters">
