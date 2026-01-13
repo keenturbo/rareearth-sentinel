@@ -25,9 +25,7 @@ class Reporter:
     def rebuild(self, storage):
         all_records = list(storage.iter_records())
         total_count = len(all_records)
-        sorted_records = sorted(
-            all_records, key=self._record_ts, reverse=True
-        )
+        sorted_records = sorted(all_records, key=self._record_ts, reverse=True)
         recent_records = (
             sorted_records[: self.config.index_limit] if total_count else []
         )
@@ -42,10 +40,7 @@ class Reporter:
         index_watch = self._load_index_watch()
 
         def build_lang(lang, subdir):
-            items = [
-                self._safe_prune_record(r, lang=lang)
-                for r in recent_records
-            ]
+            items = [self._safe_prune_record(r, lang=lang) for r in recent_records]
             stats = self._build_stats(items, total_count, lang=lang)
             rollups = self._build_rollups(all_records, lang=lang)
             archives = self._build_archives(
@@ -227,13 +222,8 @@ class Reporter:
         archives = []
 
         for month in months:
-            month_records = sorted(
-                grouped[month], key=self._record_ts, reverse=True
-            )
-            items = [
-                self._safe_prune_record(r, lang=lang)
-                for r in month_records
-            ]
+            month_records = sorted(grouped[month], key=self._record_ts, reverse=True)
+            items = [self._safe_prune_record(r, lang=lang) for r in month_records]
             stats = self._build_stats(items, len(month_records), lang=lang)
             archive_data = {
                 "last_update": isoformat(now_cst()),
@@ -396,9 +386,7 @@ class Reporter:
             lang=lang,
         )
         rollups_html = self._render_rollups(index_data.get("rollups", {}), lang=lang)
-        premium_html = self._render_premium(
-            index_data.get("premium", []), items, lang=lang
-        )
+        premium_html = self._render_premium(index_data.get("premium", []), items, lang=lang)
         index_watch_html = self._render_index_watch(
             index_watch or index_data.get("index_watch", {}), lang=lang
         )
@@ -406,9 +394,7 @@ class Reporter:
         page_note = ""
         if archive_month:
             page_note = (
-                f"归档月份：{archive_month}"
-                if lang == "zh"
-                else f"Archive: {archive_month}"
+                f"归档月份：{archive_month}" if lang == "zh" else f"Archive: {archive_month}"
             )
 
         html_out = (
@@ -468,7 +454,9 @@ class Reporter:
             signal = item.get("signal", "flat")
             arrow = {"up": "↑", "down": "↓", "flat": "→"}.get(signal, "→")
             alert = " alert" if item.get("alert") else ""
-            value_text = f"{value:,.0f}" if isinstance(value, (int, float)) else str(value or "-")
+            value_text = (
+                f"{value:,.0f}" if isinstance(value, (int, float)) else str(value or "-")
+            )
             cards.append(
                 '<div class="index-card{alert}">'
                 f'<div class="index-name">{mineral}</div>'
@@ -553,7 +541,6 @@ class Reporter:
             .replace("{{LAST_UPDATE}}", isoformat(now_cst()))
             .replace("{{PREMIUM_LIST}}", list_html)
         )
-        # write to /premium/index.html under subdir
         base = storage._subdir_base(subdir)
         premium_dir = os.path.join(base, "premium")
         os.makedirs(premium_dir, exist_ok=True)
@@ -593,7 +580,9 @@ class Reporter:
             if not report_id:
                 continue
             date_key = entry.get("date", "")
-            brief_json = self._load_brief_json(base_dir, date_key, report_id, "en" if lang == "en" else "zh")
+            brief_json = self._load_brief_json(
+                base_dir, date_key, report_id, "en" if lang == "en" else "zh"
+            )
             preview = entry.get("preview_zh") if lang == "zh" else entry.get("preview_en")
 
             title = ""
@@ -682,7 +671,7 @@ class Reporter:
             f'<div class="meta">{tier_brief}</div>'
             f'<div class="meta">{tier_standard}</div>'
             f'<div class="meta">{tier_strategic}</div>'
-            '</div>'
+            "</div>"
         )
 
         def _img_card(label, url):
