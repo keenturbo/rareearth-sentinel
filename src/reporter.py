@@ -16,6 +16,12 @@ class Reporter:
         self.config = config
         self._daily_extractor = None
 
+    def _safe_prune_record(self, record, lang="zh"):
+        prune = getattr(self, "_prune_record", None)
+        if callable(prune):
+            return prune(record, lang=lang)
+        return record
+
     def rebuild(self, storage):
         all_records = list(storage.iter_records())
         total_count = len(all_records)
@@ -37,7 +43,7 @@ class Reporter:
 
         def build_lang(lang, subdir):
             items = [
-                self._prune_record(r, lang=lang)
+                self._safe_prune_record(r, lang=lang)
                 for r in recent_records
             ]
             stats = self._build_stats(items, total_count, lang=lang)
@@ -225,7 +231,7 @@ class Reporter:
                 grouped[month], key=self._record_ts, reverse=True
             )
             items = [
-                self._prune_record(r, lang=lang)
+                self._safe_prune_record(r, lang=lang)
                 for r in month_records
             ]
             stats = self._build_stats(items, len(month_records), lang=lang)
@@ -773,3 +779,216 @@ class Reporter:
             f'<div class="daily-body">{body}</div>'
             f'{bullets_block}'
         )
+
+    def _render_premium(self, premium_items, items, lang="zh"):
+        if premium_items:
+            blocks = []
+            reason_label = "价值" if lang == "zh" else "Why it matters"
+            preview_label = "报告包含" if lang == "zh" else "Includes"
+            for item in premium_items[:3]:
+                title = html.escape(item.get("title", ""))
+                value = html.escape(item.get("value", ""))
+                preview = html.escape(item.get("preview", ""))
+                price = item.get("price", 9)
+                unlock = item.get("unlock") or "mailto:sentinel@dataspices.com"
+                btn_label = (
+                    f"解锁深度报告 (${price})" if lang == "zh" else f"Unlock Deep Report (${price})"
+                )
+                preview_html = (
+                    f'<div class="premium-preview">{preview_label}：{preview}</div>'
+                    if preview
+                    else ""
+                )
+                block = (
+                    '<div class="premium-item">'
+                    f'<div class="premium-topic">{title}</div>'
+                    f'<div class="premium-reason">{reason_label}：{value}</div>'
+                    f"{preview_html}"
+                    f'<a class="premium-btn" href="{html.escape(unlock)}">{btn_label}</a>'
+                    "</div>"
+                )
+                blocks.append(block)
+            return "".join(blocks)
+
+        today_items = [item for item in items if self._is_today(item)]
+        if not today_items:
+            return (
+                '<div class="meta">暂无重点追踪</div>'
+                if lang == "zh"
+                else '<div class="meta">No premium leads today.</div>'
+            )
+
+        def score(item):
+            return int(item.get("risk_score", 0) or 0)
+
+        top_items = sorted(today_items, key=score, reverse=True)[:3]
+        blocks = []
+        for item in top_items:
+            title = html.escape(item.get("title", ""))
+            reason = html.escape(item.get("expert_summary", "") or item.get("summary", ""))
+            reason_label = "价值" if lang == "zh" else "Why it matters"
+            btn_label = "解锁深度报告" if lang == "zh" else "Unlock Deep Report"
+            block = (
+                '<div class="premium-item">'
+                f'<div class="premium-topic">{title}</div>'
+                f'<div class="premium-reason">{reason_label}：{reason}</div>'
+                f'<a class="premium-btn" href="mailto:sentinel@dataspices.com">{btn_label}</a>'
+                '</div>'
+            )
+            blocks.append(block)
+        return "".join(blocks)
+
+    def _render_archive_nav(self, archives, archive_month="", prefix="", lang="zh"):
+        if not archives:
+            return ""
+        show_limit = 7
+        links = []
+        hidden = 0
+
+        for idx, entry in enumerate(archives):
+            month = entry.get("month")
+            count = entry.get("count", 0)
+            if not month:
+                continue
+            active = " active" if month == archive_month else ""
+            is_extra = idx >= show_limit and not active
+            extra_class = " archive-extra" if is_extra else ""
+            if is_extra:
+                hidden += 1
+            href = f"{prefix}archive/{month}.html"
+            links.append(
+                f'<a class="archive-link{active}{extra_class}" href="{href}">{month} ({count})</a>'
+            )
+
+        toggle_html = ""
+        if hidden > 0:
+            show_label = "展开更多" if lang == "zh" else "Show more"
+            hide_label = "收起" if lang == "zh" else "Show less"
+            toggle_html = (
+                f'<button class="archive-toggle" data-show="{show_label}" '
+                f'data-hide="{hide_label}" data-expanded="false">{show_label}</button>'
+            )
+
+        return "".join(links) + toggle_html
+
+    def _render_rollups(self, rollups, lang="zh"):
+        if not rollups:
+            return '<div class="rollups-empty">暂无汇总</div>'
+
+        windows = rollups.get("windows", {})
+        window_30 = windows.get("30d", {})
+        window_90 = windows.get("90d", {})
+
+        def _top_chips(entries):
+            chips = []
+            for entry in entries:
+                name = entry.get("name")
+                count = entry.get("count")
+                if not name:
+                    continue
+                chips.append(f'<span class="rollup-chip">{html.escape(name)} {count}</span>')
+            return "".join(chips)
+
+        top_minerals = _top_chips(rollups.get("top_minerals", []))
+        top_countries = _top_chips(rollups.get("top_countries", []))
+        top_actions = _top_chips(rollups.get("top_actions", []))
+
+        if lang == "en":
+            summary_line = (
+                f"Last 30d {window_30.get('count', 0)} · High Risk {window_30.get('high_risk', 0)}"
+                f" ｜ Last 90d {window_90.get('count', 0)} · High Risk {window_90.get('high_risk', 0)}"
+            )
+            mineral_label = "Minerals"
+            country_label = "Countries"
+            action_label = "Actions"
+            fallback = '<div class="meta">None</div>'
+        else:
+            summary_line = (
+                f"近30天 {window_30.get('count', 0)} 条 · 高风险 {window_30.get('high_risk', 0)}"
+                f" ｜ 近90天 {window_90.get('count', 0)} 条 · 高风险 {window_90.get('high_risk', 0)}"
+            )
+            mineral_label = "矿种聚合"
+            country_label = "国家聚合"
+            action_label = "动作聚合"
+            fallback = '<div class="meta">暂无</div>'
+
+        return (
+            f'<div class="rollups-row">{summary_line}</div>'
+            f'<div class="rollups-grid">'
+            f'<div class="rollup-col"><div class="meta">{mineral_label}</div>{top_minerals or fallback}</div>'
+            f'<div class="rollup-col"><div class="meta">{country_label}</div>{top_countries or fallback}</div>'
+            f'<div class="rollup-col"><div class="meta">{action_label}</div>{top_actions or fallback}</div>'
+            f'</div>'
+        )
+
+    def _prune_record(self, record, lang="zh"):
+        if lang == "en":
+            summary = record.get("summary_en") or record.get("summary_zh", "")
+            impact = record.get("impact_west", "Neutral")
+            risk_trend = record.get("risk_trend_west", "Stable")
+            expert_summary = record.get("expert_summary_en") or ""
+            rec_strategy = record.get("recommendations_strategy_en", [])
+            rec_tactical = record.get("recommendations_tactical_en", [])
+            supply = record.get("supply_risk_score_en", record.get("supply_risk_score"))
+            policy = record.get("policy_risk_score_en", record.get("policy_risk_score"))
+            price = record.get("price_pressure_score_en", record.get("price_pressure_score"))
+            risk_score = record.get("risk_score_en", record.get("risk_score"))
+            risk_level = record.get("risk_level_en", record.get("risk_level"))
+            forecast_6m = record.get("forecast_6m_en") or record.get("forecast_6m", {})
+            forecast_12m = record.get("forecast_12m_en") or record.get("forecast_12m", {})
+            forecast_24m = record.get("forecast_24m_en") or record.get("forecast_24m", {})
+            forecast_48m = record.get("forecast_48m_en") or record.get("forecast_48m", {})
+        else:
+            summary = record.get("summary_zh", "")
+            impact = record.get("china_impact", "中性")
+            risk_trend = record.get("china_risk_trend", "持平")
+            expert_summary = record.get("expert_summary", "")
+            rec_strategy = record.get("recommendations_strategy", [])
+            rec_tactical = record.get("recommendations_tactical", [])
+            supply = record.get("supply_risk_score")
+            policy = record.get("policy_risk_score")
+            price = record.get("price_pressure_score")
+            risk_score = record.get("risk_score")
+            risk_level = record.get("risk_level")
+            forecast_6m = record.get("forecast_6m", {})
+            forecast_12m = record.get("forecast_12m", {})
+            forecast_24m = record.get("forecast_24m", {})
+            forecast_48m = record.get("forecast_48m", {})
+
+        fields = {
+            "id": record.get("id"),
+            "title": record.get("title", ""),
+            "url": record.get("url", ""),
+            "source_type": record.get("source_type", ""),
+            "published_at": record.get("published_at", ""),
+            "collected_at": record.get("collected_at", ""),
+            "language": record.get("language", ""),
+            "summary": summary,
+            "country_primary": record.get("country_primary", ""),
+            "event_location": record.get("event_location", ""),
+            "minerals": record.get("minerals", []),
+            "entities": record.get("entities", []),
+            "action_type": record.get("action_type", "Other"),
+            "risk_level": risk_level or 0,
+            "importance_score": record.get("importance_score", 0),
+            "china_involved": record.get("china_involved", False),
+            "china_dependency": record.get("china_dependency", "None"),
+            "china_role": record.get("china_role", "Mentioned"),
+            "confidence": record.get("confidence", 60),
+            "impact": impact,
+            "risk_trend": risk_trend,
+            "expert_summary": expert_summary,
+            "recommendations_strategy": rec_strategy,
+            "recommendations_tactical": rec_tactical,
+            "supply_risk_score": supply,
+            "policy_risk_score": policy,
+            "price_pressure_score": price,
+            "risk_score": risk_score,
+            "forecast_6m": forecast_6m,
+            "forecast_12m": forecast_12m,
+            "forecast_24m": forecast_24m,
+            "forecast_48m": forecast_48m,
+            "related_context": record.get("related_context", []),
+            "analysis_with_context": record.get("analysis_with_context"),
+        }
+        return fields
