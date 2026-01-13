@@ -474,7 +474,7 @@ class Reporter:
                 f'<div class="index-name">{mineral}</div>'
                 f'<div class="index-value">{value_text} {unit}</div>'
                 f'<div class="index-change">{arrow} {daily_label} {daily_pct} · {weekly_label} {weekly_pct}</div>'
-                '</div>'
+                "</div>"
             )
         cards_html = "".join(cards)
         return (
