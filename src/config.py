@@ -68,6 +68,9 @@ class Config:
     index_limit: int
     official_sources_file: str
     official_max_items: int
+    index_enabled: bool
+    index_sources_file: str
+    index_raw_dir: str
     context_window_days: int
     context_max_items: int
     context_mode: str
@@ -129,6 +132,11 @@ class Config:
                 "OFFICIAL_SOURCES_FILE", "config/external_sources.yml"
             ),
             official_max_items=_get_int("OFFICIAL_MAX_ITEMS", 6),
+            index_enabled=_get_bool("INDEX_ENABLED", True),
+            index_sources_file=_get_env(
+                "INDEX_SOURCES_FILE", "config/index_sources.yml"
+            ),
+            index_raw_dir=_get_env("INDEX_RAW_DIR", "data/indices/raw"),
             context_window_days=_get_int("CONTEXT_WINDOW_DAYS", 365),
             context_max_items=_get_int("CONTEXT_MAX_ITEMS", 6),
             context_mode=_get_env("CONTEXT_MODE", "vector"),
