@@ -17,7 +17,7 @@ DEFAULT_QUERY = (
     '"rare earth" OR "rare earths" OR "critical minerals" OR 稀土 OR 价格 指数'
 )
 
-EXCEL_URL_RE = re.compile(r"https?://[^\s'\"]+\.xls", re.IGNORECASE)
+EXCEL_URL_RE = re.compile(r"https?://[^\s'\"]+\.(?:xls|xlsx)", re.IGNORECASE)
 
 
 class IndexCollector:
@@ -146,27 +146,28 @@ class IndexCollector:
     def _fetch_excel(self, source):
         excel_url = source.get("excel_url") or source.get("url")
         page_url = source.get("page_url")
-        if excel_url and not excel_url.lower().endswith(".xls"):
+        if excel_url and not re.search(r"\.xlsx?$", str(excel_url), re.IGNORECASE):
             excel_url = None
         urls_to_try = []
         if excel_url:
-            urls_to_try.append(excel_url)
+            self._add_excel_candidate(urls_to_try, excel_url)
         if page_url:
             extracted = self._extract_excel_url(page_url)
-            if extracted and extracted not in urls_to_try:
-                urls_to_try.append(extracted)
+            if extracted:
+                self._add_excel_candidate(urls_to_try, extracted)
         if not urls_to_try:
             return None
         headers = {"User-Agent": "Mozilla/5.0 (compatible; RareEarthSentinel/1.0)"}
         last_error = None
+        timeout = max(60, int(self.config.fetch_timeout_seconds or 20))
         for url in urls_to_try:
             try:
-                response = requests.get(url, headers=headers, timeout=30)
+                response = requests.get(url, headers=headers, timeout=timeout)
                 status = response.status_code
                 if status != 200:
                     last_error = f"status {status}"
                     continue
-                filename = source.get("filename") or f"{source.get('id','index_excel')}.xls"
+                filename = source.get("filename") or self._excel_filename(source, url)
                 return {
                     "id": source.get("id") or "index_excel",
                     "name": source.get("name") or url,
@@ -190,6 +191,31 @@ class IndexCollector:
             "status": "error",
             "error": last_error or "fetch_failed",
         }
+
+    def _excel_filename(self, source: dict, url: str) -> str:
+        ext = ".xls"
+        if isinstance(url, str) and url.lower().endswith(".xlsx"):
+            ext = ".xlsx"
+        return source.get("filename") or f"{source.get('id','index_excel')}{ext}"
+
+    def _normalize_excel_url(self, url: str) -> str:
+        if not url:
+            return ""
+        # Fix double slashes after port or protocol
+        url = re.sub(r":(\d+)//", r":\1/", url)
+        url = url.replace("//static/", "/static/")
+        return url
+
+    def _add_excel_candidate(self, urls: list, url: str):
+        url = self._normalize_excel_url(url)
+        if not url:
+            return
+        if url not in urls:
+            urls.append(url)
+        if url.startswith("https://"):
+            alt = "http://" + url[len("https://") :]
+            if alt not in urls:
+                urls.append(alt)
 
     def _extract_excel_url(self, page_url: str) -> str:
         headers = {"User-Agent": "Mozilla/5.0 (compatible; RareEarthSentinel/1.0)"}
