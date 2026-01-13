@@ -45,6 +45,32 @@ class IndexNormalizer:
             self._write_timeseries(records)
         return records
 
+    def normalize_manual(self, manual_dir: str | None = None) -> List[Dict]:
+        manual_dir = manual_dir or os.path.join(self.raw_dir, "manual")
+        if not os.path.isdir(manual_dir):
+            return []
+        latest = self._latest_excel(manual_dir)
+        if not latest:
+            return []
+        meta = {
+            "name": "REPE",
+            "source_url": "",
+            "fetched_at": now_cst().isoformat(),
+        }
+        records = self._parse_repe_excel(latest, meta)
+        if records:
+            self._write_timeseries(records)
+        return records
+
+    def _latest_excel(self, manual_dir: str) -> str | None:
+        candidates = []
+        for name in os.listdir(manual_dir):
+            if name.lower().endswith((".xls", ".xlsx")):
+                candidates.append(os.path.join(manual_dir, name))
+        if not candidates:
+            return None
+        return max(candidates, key=os.path.getmtime)
+
     def _iter_meta_files(self) -> Iterable[str]:
         if not os.path.isdir(self.raw_dir):
             return []
