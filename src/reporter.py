@@ -717,4 +717,59 @@ class Reporter:
             ]
         return f'<div class="pay-grid">{"".join(cards)}</div>'
 
-    # ... rest of file unchanged
+    def _daily_context_lines(self, records, lang="zh"):
+        lines = []
+        for record in records:
+            dt = self._record_datetime(record)
+            date_str = dt.date().isoformat() if dt else ""
+            country = str(record.get("country_primary", "")).strip()
+            minerals = ",".join([str(m) for m in (record.get("minerals") or []) if m])
+            action = str(record.get("action_type", "")).strip()
+            title = str(record.get("title", "")).strip()
+            if lang == "en":
+                line = f"{date_str} | {country} | {minerals} | {action} | {title}"
+            else:
+                line = f"{date_str} | {country} | {minerals} | {action} | {title}"
+            lines.append(line)
+        return lines
+
+    def _generate_daily_report(self, records, lang="zh"):
+        if not records:
+            return None
+        recent = sorted(records, key=self._record_ts, reverse=True)[:40]
+        context_lines = self._daily_context_lines(recent, lang=lang)
+        context_text = "\n".join(context_lines).strip()
+        if not context_text:
+            return None
+        extractor = self._get_daily_extractor()
+        report = extractor.analyze_daily_report(context_text, lang=lang)
+        if report:
+            return report
+        # Fallback: simple summary
+        headline = "今日要闻速览" if lang == "zh" else "Daily Brief"
+        bullets = [
+            line.split(" | ")[-1] for line in context_lines[:3]
+        ]
+        body = "；".join(bullets) if lang == "zh" else ". ".join(bullets)
+        return {"headline": headline, "body": body, "bullets": bullets}
+
+    def _render_daily_report(self, daily_report, lang="zh"):
+        title = "每日情报综合报告" if lang == "zh" else "Daily Intelligence Summary"
+        if not daily_report:
+            empty = "今日暂无综合报告" if lang == "zh" else "No daily report yet."
+            return f'<div class="section-title">{title}</div><div class="meta">{empty}</div>'
+
+        headline = html.escape(daily_report.get("headline", ""))
+        body = html.escape(daily_report.get("body", ""))
+        bullets = daily_report.get("bullets") or []
+        bullet_html = "".join(
+            f"<li>{html.escape(str(b))}</li>" for b in bullets if str(b).strip()
+        )
+        bullets_block = f"<ul class=\"daily-bullets\">{bullet_html}</ul>" if bullet_html else ""
+
+        return (
+            f'<div class="section-title">{title}</div>'
+            f'<div class="daily-headline">{headline}</div>'
+            f'<div class="daily-body">{body}</div>'
+            f'{bullets_block}'
+        )
