@@ -52,10 +52,19 @@ class IndexCollector:
     def _load_sources(self, path):
         if not path:
             return []
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                content = f.read()
-        except FileNotFoundError:
+        candidates = [path]
+        if not os.path.isabs(path):
+            root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+            candidates.append(os.path.join(root, path))
+        content = None
+        for candidate in candidates:
+            try:
+                with open(candidate, "r", encoding="utf-8") as f:
+                    content = f.read()
+                break
+            except FileNotFoundError:
+                continue
+        if content is None:
             return []
         try:
             data = json.loads(content)
@@ -139,45 +148,48 @@ class IndexCollector:
         page_url = source.get("page_url")
         if excel_url and not excel_url.lower().endswith(".xls"):
             excel_url = None
-        if not excel_url and page_url:
-            excel_url = self._extract_excel_url(page_url)
-        if not excel_url:
+        urls_to_try = []
+        if excel_url:
+            urls_to_try.append(excel_url)
+        if page_url:
+            extracted = self._extract_excel_url(page_url)
+            if extracted and extracted not in urls_to_try:
+                urls_to_try.append(extracted)
+        if not urls_to_try:
             return None
         headers = {"User-Agent": "Mozilla/5.0 (compatible; RareEarthSentinel/1.0)"}
-        try:
-            response = requests.get(excel_url, headers=headers, timeout=30)
-            status = response.status_code
-            if status != 200:
+        last_error = None
+        for url in urls_to_try:
+            try:
+                response = requests.get(url, headers=headers, timeout=30)
+                status = response.status_code
+                if status != 200:
+                    last_error = f"status {status}"
+                    continue
+                filename = source.get("filename") or f"{source.get('id','index_excel')}.xls"
                 return {
                     "id": source.get("id") or "index_excel",
-                    "name": source.get("name") or excel_url,
+                    "name": source.get("name") or url,
                     "mode": "excel",
-                    "source_url": excel_url,
+                    "source_url": url,
                     "fetched_at": isoformat(now_cst()),
                     "status": status,
+                    "binary": True,
+                    "filename": filename,
+                    "content_bytes": response.content,
                 }
-            filename = source.get("filename") or f"{source.get('id','index_excel')}.xls"
-            return {
-                "id": source.get("id") or "index_excel",
-                "name": source.get("name") or excel_url,
-                "mode": "excel",
-                "source_url": excel_url,
-                "fetched_at": isoformat(now_cst()),
-                "status": status,
-                "binary": True,
-                "filename": filename,
-                "content_bytes": response.content,
-            }
-        except Exception as exc:
-            return {
-                "id": source.get("id") or "index_excel",
-                "name": source.get("name") or excel_url,
-                "mode": "excel",
-                "source_url": excel_url,
-                "fetched_at": isoformat(now_cst()),
-                "status": "error",
-                "error": str(exc),
-            }
+            except Exception as exc:
+                last_error = str(exc)
+                continue
+        return {
+            "id": source.get("id") or "index_excel",
+            "name": source.get("name") or (excel_url or page_url or ""),
+            "mode": "excel",
+            "source_url": excel_url or page_url or "",
+            "fetched_at": isoformat(now_cst()),
+            "status": "error",
+            "error": last_error or "fetch_failed",
+        }
 
     def _extract_excel_url(self, page_url: str) -> str:
         headers = {"User-Agent": "Mozilla/5.0 (compatible; RareEarthSentinel/1.0)"}
