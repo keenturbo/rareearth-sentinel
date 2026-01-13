@@ -72,6 +72,9 @@ class Config:
     index_sources_file: str
     index_raw_dir: str
     index_normalized_dir: str
+    index_daily_threshold: float
+    index_weekly_threshold: float
+    index_watch_max: int
     context_window_days: int
     context_max_items: int
     context_mode: str
@@ -141,6 +144,9 @@ class Config:
             index_normalized_dir=_get_env(
                 "INDEX_NORMALIZED_DIR", "data/indices/normalized"
             ),
+            index_daily_threshold=_get_float("INDEX_DAILY_THRESHOLD", 3.0),
+            index_weekly_threshold=_get_float("INDEX_WEEKLY_THRESHOLD", 10.0),
+            index_watch_max=_get_int("INDEX_WATCH_MAX", 6),
             context_window_days=_get_int("CONTEXT_WINDOW_DAYS", 365),
             context_max_items=_get_int("CONTEXT_MAX_ITEMS", 6),
             context_mode=_get_env("CONTEXT_MODE", "vector"),
