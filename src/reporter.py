@@ -976,6 +976,12 @@ class Reporter:
 
             forecast_line = self._render_forecast(item, lang=lang)
             related_html = self._render_related_context(item.get("related_context", []), lang=lang)
+            scores_html = (
+                f'<div class="card-scores">{scores_line}</div>' if scores_line else ""
+            )
+            forecast_html = (
+                f'<div class="card-forecast">{forecast_line}</div>' if forecast_line else ""
+            )
 
             blocks.append(
                 '<article class="card">'
@@ -983,9 +989,7 @@ class Reporter:
                 f'<div class="card-title"><a href="{html.escape(url)}" target="_blank">{title}</a></div>'
                 f'<div class="card-summary">摘要：{summary}</div>'
                 f'<div class="card-impact">{impact_line} {trend_line} 综合风险 {risk_score}/100</div>'
-                f'{f"<div class=\"card-scores\">{scores_line}</div>" if scores_line else ""}'
-                f'{f"<div class=\"card-forecast\">{forecast_line}</div>" if forecast_line else ""}'
-                f'{related_html}'
+                f"{scores_html}{forecast_html}{related_html}"
                 '</article>'
             )
         return "".join(blocks)
