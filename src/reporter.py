@@ -43,7 +43,12 @@ class Reporter:
             stats = self._build_stats(items, total_count, lang=lang)
             rollups = self._build_rollups(all_records, lang=lang)
             archives = self._build_archives(
-                storage, all_records, rollups, lang=lang, subdir=subdir
+                storage,
+                all_records,
+                rollups,
+                lang=lang,
+                subdir=subdir,
+                index_watch=index_watch,
             )
 
             index_data = {
@@ -195,7 +200,15 @@ class Reporter:
             return "unknown"
         return dt.strftime("%Y-%m")
 
-    def _build_archives(self, storage, records, rollups, lang="zh", subdir=""):
+    def _build_archives(
+        self,
+        storage,
+        records,
+        rollups,
+        lang="zh",
+        subdir="",
+        index_watch=None,
+    ):
         grouped = defaultdict(list)
         for record in records:
             dt = self._record_datetime(record)
