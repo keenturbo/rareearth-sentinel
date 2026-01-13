@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 import os
 from collections import defaultdict
@@ -26,7 +24,7 @@ def build_index_watch(
     normalized_dir: str,
     daily_threshold: float = 3.0,
     weekly_threshold: float = 10.0,
-    max_items: int = 6,
+    max_items: int | None = 6,
 ) -> Dict:
     path = os.path.join(normalized_dir, "index_timeseries.jsonl")
     if not os.path.exists(path):
@@ -107,14 +105,36 @@ def build_index_watch(
     signals.sort(
         key=lambda x: abs(x.get("daily_pct") or 0), reverse=True
     )
+    if max_items is not None:
+        signals = signals[:max_items]
+
     latest_date = max(latest_dates).strftime("%Y-%m-%d") if latest_dates else ""
     return {
         "date": latest_date,
         "alerts": sum(1 for item in signals if item.get("alert")),
         "daily_threshold": daily_threshold,
         "weekly_threshold": weekly_threshold,
-        "signals": signals[:max_items],
+        "signals": signals,
     }
+
+
+def write_index_signals(
+    normalized_dir: str,
+    daily_threshold: float = 3.0,
+    weekly_threshold: float = 10.0,
+) -> Dict:
+    watch = build_index_watch(
+        normalized_dir,
+        daily_threshold=daily_threshold,
+        weekly_threshold=weekly_threshold,
+        max_items=None,
+    )
+    signals = watch.get("signals", [])
+    out_path = os.path.join(normalized_dir, "index_signals.jsonl")
+    with open(out_path, "w", encoding="utf-8") as f:
+        for entry in signals:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return watch
 
 
 def _iter_jsonl(path: str) -> List[Dict]:
