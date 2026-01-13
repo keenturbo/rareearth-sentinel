@@ -415,30 +415,47 @@ class Reporter:
         )
         return html_out
 
-    def _render_index_watch(self, watch, lang="zh"):
+    def _render_index_watch(self, index_watch, lang="zh"):
         title = "价格指数风向标" if lang == "zh" else "Price Index Watch"
-        if not watch:
-            empty = "暂无指数数据" if lang == "zh" else "No index data yet."
+        if not index_watch:
+            empty = "暂无指数数据" if lang == "zh" else "No index data yet"
             return f'<div class="section-title">{title}</div><div class="meta">{empty}</div>'
 
-        date = watch.get("date", "")
-        alerts = watch.get("alerts", 0)
-        daily_th = watch.get("daily_threshold", self.config.index_daily_threshold)
-        weekly_th = watch.get("weekly_threshold", self.config.index_weekly_threshold)
-        signals = watch.get("signals", []) or []
+        date = index_watch.get("date", "-")
+        alerts = index_watch.get("alerts", 0)
+        daily = index_watch.get("daily_threshold", self.config.index_daily_threshold)
+        weekly = index_watch.get("weekly_threshold", self.config.index_weekly_threshold)
 
-        if lang == "zh":
-            summary = (
-                f"日期 {date} · 触发预警 {alerts} · 阈值：日 {daily_th}% / 周 {weekly_th}%"
-            )
-            daily_label = "日变动"
-            weekly_label = "周变动"
-        else:
-            summary = (
-                f"Date {date} · Alerts {alerts} · Thresholds: Daily {daily_th}% / Weekly {weekly_th}%"
-            )
-            daily_label = "Daily"
-            weekly_label = "Weekly"
+        cn2en = {
+            "氧化镨钕": "Pr-Nd Oxide",
+            "金属镨钕": "Pr-Nd Metal",
+            "金属钕": "Neodymium Metal",
+            "氧化镝": "Dysprosium Oxide",
+            "氧化铽": "Terbium Oxide",
+            "氧化镧": "Lanthanum Oxide",
+            "氧化铈": "Cerium Oxide",
+            "氧化镧铈": "Lanthanum-Cerium Oxide",
+            "金属铈": "Cerium Metal",
+            "金属镧": "Lanthanum Metal",
+            "金属镧铈": "La-Ce Metal",
+            "碳酸镧": "Lanthanum Carbonate",
+            "碳酸铈": "Cerium Carbonate",
+            "碳酸镧铈": "La-Ce Carbonate",
+            "氧化镨": "Praseodymium Oxide",
+            "氧化钕": "Neodymium Oxide",
+            "氧化铕": "Europium Oxide",
+            "氧化钆": "Gadolinium Oxide",
+            "氧化钐": "Samarium Oxide",
+            "氧化铒": "Erbium Oxide",
+            "氧化钬": "Holmium Oxide",
+            "氧化钇": "Yttrium Oxide",
+        }
+
+        def _coerce_num(val):
+            try:
+                return float(val)
+            except (TypeError, ValueError):
+                return None
 
         def _fmt_pct(val):
             if val is None:
@@ -446,31 +463,67 @@ class Reporter:
             sign = "+" if val > 0 else ""
             return f"{sign}{val:.2f}%"
 
-        cards = []
-        for item in signals:
-            mineral = html.escape(str(item.get("mineral", "")))
-            value = item.get("value")
-            unit = html.escape(str(item.get("unit", "")))
-            daily_pct = _fmt_pct(item.get("daily_pct"))
-            weekly_pct = _fmt_pct(item.get("weekly_pct"))
-            signal = item.get("signal", "flat")
-            arrow = {"up": "↑", "down": "↓", "flat": "→"}.get(signal, "→")
-            alert = " alert" if item.get("alert") else ""
+        def _arrow(val):
+            if val is None:
+                return ("→", "idx-flat")
+            if val > 0:
+                return ("↑", "idx-up")
+            if val < 0:
+                return ("↓", "idx-down")
+            return ("→", "idx-flat")
+
+        items = index_watch.get("signals") or index_watch.get("items") or []
+        if not items:
+            empty = "暂无指数数据" if lang == "zh" else "No index data yet"
+            return f'<div class="section-title">{title}</div><div class="meta">{empty}</div>'
+
+        rows = []
+        for item in items:
+            name = item.get("mineral") or item.get("name") or "-"
+            name = str(name).strip() or "-"
+            if lang == "en":
+                name = cn2en.get(name, name)
+            unit = str(item.get("unit") or "CNY/ton")
+            value_raw = item.get("value")
+            value_num = _coerce_num(value_raw)
             value_text = (
-                f"{value:,.0f}" if isinstance(value, (int, float)) else str(value or "-")
+                f"{value_num:,.0f}" if value_num is not None else str(value_raw or "-")
             )
-            cards.append(
-                '<div class="index-card{alert}">'
-                f'<div class="index-name">{mineral}</div>'
-                f'<div class="index-value">{value_text} {unit}</div>'
-                f'<div class="index-change">{arrow} {daily_label} {daily_pct} · {weekly_label} {weekly_pct}</div>'
-                "</div>"
+            daily_pct = _coerce_num(item.get("daily_pct"))
+            weekly_pct = _coerce_num(item.get("weekly_pct"))
+            daily_arrow, daily_class = _arrow(daily_pct)
+            weekly_arrow, weekly_class = _arrow(weekly_pct)
+
+            rows.append(
+                "<tr>"
+                f"<td>{html.escape(name)}</td>"
+                f"<td>{html.escape(value_text)} {html.escape(unit)}</td>"
+                f"<td><span class=\"{daily_class}\">{daily_arrow}</span> {_fmt_pct(daily_pct)}</td>"
+                f"<td><span class=\"{weekly_class}\">{weekly_arrow}</span> {_fmt_pct(weekly_pct)}</td>"
+                "</tr>"
             )
-        cards_html = "".join(cards)
+
+        meta = (
+            f"日期 {date} · 预警 {alerts} · 阈值 日 {daily}% / 周 {weekly}%"
+            if lang == "zh"
+            else f"Date {date} · Alerts {alerts} · Thresholds: Daily {daily}% / Weekly {weekly}%"
+        )
+
+        table = (
+            '<table class="index-table">'
+            '<thead><tr>'
+            f"<th>{'品种' if lang == 'zh' else 'Mineral'}</th>"
+            f"<th>{'价格' if lang == 'zh' else 'Price'}</th>"
+            f"<th>{'日变动' if lang == 'zh' else 'Daily'}</th>"
+            f"<th>{'周变动' if lang == 'zh' else 'Weekly'}</th>"
+            "</tr></thead>"
+            "<tbody>" + "".join(rows) + "</tbody></table>"
+        )
+
         return (
             f'<div class="section-title">{title}</div>'
-            f'<div class="index-watch-meta">{summary}</div>'
-            f'<div class="index-grid">{cards_html}</div>'
+            f'<div class="index-watch-meta">{meta}</div>'
+            f"{table}"
         )
 
     def build_premium_archive(self, storage, lang="zh", subdir=""):
