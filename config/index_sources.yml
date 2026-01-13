@@ -1,19 +1,12 @@
-- id: baotou_ree_index
-  name: Baotou REE Exchange Index
-  mode: site_search
-  domain: reex.com.cn
-  query_terms: '稀土 价格 指数 OR 稀土 价格 指数 发布 OR 稀土 指数'
-  news_lang: zh-CN
-  news_region: CN
-  news_edition: CN:zh-Hans
-  max_items: 10
+- id: repe_price_table
+  name: REPE Price Table
+  mode: excel
+  # Direct Excel URL (preferred, update if changed)
+  excel_url: https://price.repe.com.cn:5000//static/excle/稀交所报价详情表b1646b5e-b8dd-4cb8-82d1-9442a6abd6c2.xls
+  # Optional page URL for fallback parsing
+  page_url: https://dc.repe.com.cn/?spm=datav.10712494.0.0.2b292b93XYp1ix#/price
 
 - id: xinhua_ree_index
   name: Xinhua Finance REE Index
-  mode: site_search
-  domain: xinhuafinance.com
-  query_terms: '稀土 价格 指数 OR 稀土 指数 新华财经'
-  news_lang: zh-CN
-  news_region: CN
-  news_edition: CN:zh-Hans
-  max_items: 10
+  mode: html
+  url: https://indices.cnfin.com/3319073/index.html?idx=1

@@ -1,6 +1,6 @@
 import json
 import os
-from dataclasses import asdict
+import re
 from typing import List
 from urllib.parse import quote_plus, urlparse
 
@@ -16,6 +16,8 @@ RSS_URL_TEMPLATE = (
 DEFAULT_QUERY = (
     '"rare earth" OR "rare earths" OR "critical minerals" OR 稀土 OR 价格 指数'
 )
+
+EXCEL_URL_RE = re.compile(r"https?://[^\s'\"]+\.xls", re.IGNORECASE)
 
 
 class IndexCollector:
@@ -34,10 +36,17 @@ class IndexCollector:
             record = self._fetch_source(source)
             if not record:
                 continue
-            path = os.path.join(out_dir, f"{record['id']}.json")
-            with open(path, "w", encoding="utf-8") as f:
+            if record.get("binary"):
+                filename = record.get("filename") or f"{record['id']}.bin"
+                file_path = os.path.join(out_dir, filename)
+                with open(file_path, "wb") as f:
+                    f.write(record.get("content_bytes") or b"")
+                record.pop("content_bytes", None)
+                record["file_path"] = file_path
+            meta_path = os.path.join(out_dir, f"{record['id']}.json")
+            with open(meta_path, "w", encoding="utf-8") as f:
                 json.dump(record, f, ensure_ascii=False, indent=2)
-            written.append(path)
+            written.append(meta_path)
         return written
 
     def _load_sources(self, path):
@@ -68,6 +77,8 @@ class IndexCollector:
             return self._fetch_rss(source)
         if mode == "site_search":
             return self._fetch_site_search(source)
+        if mode in {"excel", "excel_from_page"}:
+            return self._fetch_excel(source)
         return self._fetch_html(source)
 
     def _entry_max(self, source):
@@ -122,6 +133,63 @@ class IndexCollector:
             "fetched_at": isoformat(now_cst()),
             "items": items,
         }
+
+    def _fetch_excel(self, source):
+        excel_url = source.get("excel_url") or source.get("url")
+        page_url = source.get("page_url")
+        if excel_url and not excel_url.lower().endswith(".xls"):
+            excel_url = None
+        if not excel_url and page_url:
+            excel_url = self._extract_excel_url(page_url)
+        if not excel_url:
+            return None
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; RareEarthSentinel/1.0)"}
+        try:
+            response = requests.get(excel_url, headers=headers, timeout=30)
+            status = response.status_code
+            if status != 200:
+                return {
+                    "id": source.get("id") or "index_excel",
+                    "name": source.get("name") or excel_url,
+                    "mode": "excel",
+                    "source_url": excel_url,
+                    "fetched_at": isoformat(now_cst()),
+                    "status": status,
+                }
+            filename = source.get("filename") or f"{source.get('id','index_excel')}.xls"
+            return {
+                "id": source.get("id") or "index_excel",
+                "name": source.get("name") or excel_url,
+                "mode": "excel",
+                "source_url": excel_url,
+                "fetched_at": isoformat(now_cst()),
+                "status": status,
+                "binary": True,
+                "filename": filename,
+                "content_bytes": response.content,
+            }
+        except Exception as exc:
+            return {
+                "id": source.get("id") or "index_excel",
+                "name": source.get("name") or excel_url,
+                "mode": "excel",
+                "source_url": excel_url,
+                "fetched_at": isoformat(now_cst()),
+                "status": "error",
+                "error": str(exc),
+            }
+
+    def _extract_excel_url(self, page_url: str) -> str:
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; RareEarthSentinel/1.0)"}
+        try:
+            response = requests.get(page_url, headers=headers, timeout=20)
+            text = response.text
+        except Exception:
+            return ""
+        matches = EXCEL_URL_RE.findall(text or "")
+        if matches:
+            return matches[0]
+        return ""
 
     def _fetch_html(self, source):
         url = source.get("url")

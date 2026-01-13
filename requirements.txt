@@ -3,3 +3,5 @@ feedparser
 python-dotenv
 google-generativeai
 pyyaml
+pandas
+xlrd

@@ -71,6 +71,7 @@ class Config:
     index_enabled: bool
     index_sources_file: str
     index_raw_dir: str
+    index_normalized_dir: str
     context_window_days: int
     context_max_items: int
     context_mode: str
@@ -137,6 +138,9 @@ class Config:
                 "INDEX_SOURCES_FILE", "config/index_sources.yml"
             ),
             index_raw_dir=_get_env("INDEX_RAW_DIR", "data/indices/raw"),
+            index_normalized_dir=_get_env(
+                "INDEX_NORMALIZED_DIR", "data/indices/normalized"
+            ),
             context_window_days=_get_int("CONTEXT_WINDOW_DAYS", 365),
             context_max_items=_get_int("CONTEXT_MAX_ITEMS", 6),
             context_mode=_get_env("CONTEXT_MODE", "vector"),
