@@ -921,6 +921,346 @@ class Reporter:
             f'</div>'
         )
 
+    def _render_cards(self, items, lang="zh"):
+        if not items:
+            empty = "暂无情报" if lang == "zh" else "No items"
+            return f'<div class="meta">{empty}</div>'
+
+        blocks = []
+        for item in items:
+            title = html.escape(item.get("title", ""))
+            url = item.get("url", "")
+            summary = html.escape(item.get("summary", ""))
+            country = html.escape(str(item.get("country_primary", "")))
+            action = html.escape(str(item.get("action_type", "")))
+            risk_level = item.get("risk_level", 0)
+            risk_score = item.get("risk_score", 0)
+            impact = html.escape(str(item.get("impact", "")))
+            risk_trend = html.escape(str(item.get("risk_trend", "")))
+
+            dt = self._record_datetime(item)
+            if dt:
+                date_str = dt.strftime("%Y-%m-%d") if lang == "zh" else dt.strftime("%a, %d %b %Y")
+            else:
+                date_str = ""
+
+            meta = " · ".join([p for p in [country, action, f"{date_str}"] if p])
+            if lang == "zh":
+                meta = f"{country} · {action} · 风险 {risk_level} · {date_str}" if date_str else f"{country} · {action} · 风险 {risk_level}"
+            else:
+                meta = f"{country} · {action} · Risk {risk_level} · {date_str}" if date_str else f"{country} · {action} · Risk {risk_level}"
+
+            impact_line = ""
+            if impact:
+                if lang == "zh":
+                    impact_line = f"对中国：{impact}"
+                else:
+                    impact_line = f"Impact: {impact}"
+
+            trend_line = ""
+            if risk_trend:
+                if lang == "zh":
+                    trend_line = f"风险：{risk_trend}"
+                else:
+                    trend_line = f"Risk trend: {risk_trend}"
+
+            scores_line = ""
+            supply = item.get("supply_risk_score")
+            policy = item.get("policy_risk_score")
+            price = item.get("price_pressure_score")
+            if supply is not None and policy is not None and price is not None:
+                if lang == "zh":
+                    scores_line = f"分项：供应链 {supply}/100 · 政策 {policy}/100 · 价格 {price}/100"
+                else:
+                    scores_line = f"Breakdown: Supply {supply}/100 · Policy {policy}/100 · Price {price}/100"
+
+            forecast_line = self._render_forecast(item, lang=lang)
+            related_html = self._render_related_context(item.get("related_context", []), lang=lang)
+
+            blocks.append(
+                '<article class="card">'
+                f'<div class="card-meta">{meta}</div>'
+                f'<div class="card-title"><a href="{html.escape(url)}" target="_blank">{title}</a></div>'
+                f'<div class="card-summary">摘要：{summary}</div>'
+                f'<div class="card-impact">{impact_line} {trend_line} 综合风险 {risk_score}/100</div>'
+                f'{f"<div class=\"card-scores\">{scores_line}</div>" if scores_line else ""}'
+                f'{f"<div class=\"card-forecast\">{forecast_line}</div>" if forecast_line else ""}'
+                f'{related_html}'
+                '</article>'
+            )
+        return "".join(blocks)
+
+    def _render_related_context(self, related, lang="zh"):
+        if not related:
+            return ""
+        label = "关联脉络" if lang == "zh" else "Related Context"
+        items = []
+        for line in related:
+            if not isinstance(line, str):
+                continue
+            if lang == "en":
+                parts = [p.strip() for p in line.split("|")]
+                parts = [p for p in parts if "风险" not in p and "对中国" not in p]
+                line = " | ".join(parts)
+            items.append(f"<li>{html.escape(line.strip())}</li>")
+        if not items:
+            return ""
+        return f'<div class="related"><div class="meta">{label}</div><ul>{"".join(items)}</ul></div>'
+
+    def _render_forecast(self, item, lang="zh"):
+        def _fmt_block(label, data):
+            if not isinstance(data, dict):
+                return ""
+            direction = str(
+                data.get("direction")
+                or data.get("trend")
+                or data.get("price_pressure")
+                or ""
+            ).lower()
+            confidence = data.get("confidence")
+            arrow = "→"
+            if "up" in direction:
+                arrow = "↑"
+            elif "down" in direction:
+                arrow = "↓"
+            if confidence is None:
+                return f"{label}{arrow}"
+            return f"{label}{arrow}({confidence})"
+
+        blocks = [
+            _fmt_block("6月", item.get("forecast_6m")),
+            _fmt_block("12月", item.get("forecast_12m")),
+            _fmt_block("24月", item.get("forecast_24m")),
+            _fmt_block("48月", item.get("forecast_48m")),
+        ]
+        blocks = [b for b in blocks if b]
+        if not blocks:
+            return ""
+        if lang == "en":
+            return "Forecast: " + " · ".join(blocks)
+        return "预测：" + " · ".join(blocks)
+
+    def _render_daily_brief(self, items, lang="zh"):
+        if not items:
+            return '<div class="meta">暂无摘要</div>' if lang == "zh" else '<div class="meta">No brief</div>'
+
+        if lang == "en":
+            key_strategy = "recommendations_strategy"
+            key_tactical = "recommendations_tactical"
+            title_strategy = "Strategic"
+            title_tactical = "Tactical"
+            empty = "No summary"
+        else:
+            key_strategy = "recommendations_strategy"
+            key_tactical = "recommendations_tactical"
+            title_strategy = "战略建议"
+            title_tactical = "操作建议"
+            empty = "今日暂无摘要"
+
+        strategy = []
+        tactical = []
+        for item in items:
+            if not self._is_today(item):
+                continue
+            strategy.extend([s for s in (item.get(key_strategy) or []) if s])
+            tactical.extend([s for s in (item.get(key_tactical) or []) if s])
+
+        def _dedupe(values, limit=5):
+            seen = set()
+            output = []
+            for value in values:
+                value = str(value).strip()
+                if not value or value in seen:
+                    continue
+                seen.add(value)
+                output.append(value)
+                if len(output) >= limit:
+                    break
+            return output
+
+        strategy = _dedupe(strategy)
+        tactical = _dedupe(tactical)
+
+        if not strategy and not tactical:
+            return f'<div class="meta">{empty}</div>'
+
+        def _render_block(title, rows):
+            if not rows:
+                return ""
+            items_html = "".join(f"<li>{html.escape(r)}</li>" for r in rows)
+            return f'<div class="brief-block"><div class="brief-title">{title}</div><ul>{items_html}</ul></div>'
+
+        return _render_block(title_strategy, strategy) + _render_block(title_tactical, tactical)
+
+    def _is_today(self, item):
+        dt = self._record_datetime(item)
+        if not dt:
+            return False
+        return dt.date() == now_cst().date()
+
+    def _load_brief_json(self, base_dir, date_key, report_id, lang):
+        if date_key:
+            path = os.path.join(base_dir, date_key, f"brief_{report_id}_{lang}.json")
+            if os.path.exists(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        return json.load(f)
+                except (OSError, json.JSONDecodeError):
+                    return {}
+        # fallback: search directories
+        try:
+            for name in os.listdir(base_dir):
+                path = os.path.join(base_dir, name, f"brief_{report_id}_{lang}.json")
+                if os.path.exists(path):
+                    with open(path, "r", encoding="utf-8") as f:
+                        return json.load(f)
+        except OSError:
+            return {}
+        return {}
+
+    def build_premium_admin_pages(self, storage, record_map, lang="zh", subdir="cn"):
+        base_dir = storage.premium_dir
+        index_path = os.path.join(base_dir, "reports_index.jsonl")
+        entries = []
+        if os.path.exists(index_path):
+            with open(index_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(entry, dict):
+                        entries.append(entry)
+
+        entries.sort(key=lambda e: e.get("created_at", ""), reverse=True)
+        display_entries = entries[:300]
+
+        template_name = "admin_premium_en.html" if lang == "en" else "admin_premium.html"
+        template_path = os.path.join(self.config.templates_dir, template_name)
+        with open(template_path, "r", encoding="utf-8") as f:
+            template = f.read()
+
+        list_blocks = []
+        for entry in display_entries:
+            title = html.escape(entry.get("source_title", ""))
+            report_id = entry.get("report_id", "")
+            created_at = entry.get("created_at", "")
+            preview = entry.get("preview_en") if lang == "en" else entry.get("preview_zh")
+            value = preview.get("value", "") if isinstance(preview, dict) else ""
+            detail_link = f"/{subdir}/admin/premium/{report_id}.html"
+            list_blocks.append(
+                '<div class="card">'
+                f'<div class="card-title"><a href="{detail_link}">{title}</a></div>'
+                f'<div class="card-meta">{html.escape(created_at)} · {html.escape(report_id)}</div>'
+                f'<div class="card-value">{html.escape(value)}</div>'
+                '</div>'
+            )
+
+        list_html = "".join(list_blocks) if list_blocks else (
+            '<div class="empty">暂无报告</div>' if lang == "zh" else '<div class="empty">No reports</div>'
+        )
+        html_out = (
+            template.replace("{{TOTAL_COUNT}}", str(len(entries)))
+            .replace("{{LAST_UPDATE}}", isoformat(now_cst()))
+            .replace("{{PREMIUM_LIST}}", list_html)
+        )
+        admin_root = os.path.join(storage._subdir_base(subdir), "admin", "premium")
+        os.makedirs(admin_root, exist_ok=True)
+        with open(os.path.join(admin_root, "index.html"), "w", encoding="utf-8") as f:
+            f.write(html_out)
+
+        # detail pages
+        detail_template = "admin_premium_detail_en.html" if lang == "en" else "admin_premium_detail.html"
+        detail_template_path = os.path.join(self.config.templates_dir, detail_template)
+        with open(detail_template_path, "r", encoding="utf-8") as f:
+            detail_template_html = f.read()
+
+        for entry in display_entries:
+            report_id = entry.get("report_id", "")
+            if not report_id:
+                continue
+            date_key = entry.get("date", "")
+            md_path = os.path.join(base_dir, date_key, f"brief_{report_id}_{'en' if lang == 'en' else 'zh'}.md")
+            report_body = ""
+            if os.path.exists(md_path):
+                try:
+                    with open(md_path, "r", encoding="utf-8") as f:
+                        report_body = self._markdown_to_html(f.read())
+                except OSError:
+                    report_body = ""
+
+            record = record_map.get(entry.get("event_id", ""), {})
+            report_url = record.get("url", "")
+            credibility = record.get("credibility", {}).get("score", "-")
+            impact = record.get("risk_score", "-")
+
+            detail_html = (
+                detail_template_html.replace("{{REPORT_TITLE}}", html.escape(entry.get("source_title", "")))
+                .replace("{{REPORT_ID}}", html.escape(report_id))
+                .replace("{{REPORT_DATE}}", html.escape(entry.get("created_at", "")))
+                .replace("{{REPORT_PRICE}}", str(entry.get("price", 9)))
+                .replace("{{REPORT_CREDIBILITY}}", str(credibility))
+                .replace("{{REPORT_IMPACT}}", str(impact))
+                .replace("{{REPORT_URL}}", self._render_admin_url(report_url))
+                .replace("{{REPORT_BODY}}", report_body)
+                .replace("{{BACK_LINK}}", f"/{subdir}/admin/premium/")
+            )
+            with open(os.path.join(admin_root, f"{report_id}.html"), "w", encoding="utf-8") as f:
+                f.write(detail_html)
+
+    def _markdown_to_html(self, text):
+        if not text:
+            return ""
+        lines = text.splitlines()
+        html_lines = []
+        in_list = False
+        for line in lines:
+            line = line.rstrip()
+            if line.startswith("# "):
+                if in_list:
+                    html_lines.append("</ul>")
+                    in_list = False
+                html_lines.append(f"<h1>{html.escape(line[2:])}</h1>")
+                continue
+            if line.startswith("## "):
+                if in_list:
+                    html_lines.append("</ul>")
+                    in_list = False
+                html_lines.append(f"<h2>{html.escape(line[3:])}</h2>")
+                continue
+            if line.startswith("### "):
+                if in_list:
+                    html_lines.append("</ul>")
+                    in_list = False
+                html_lines.append(f"<h3>{html.escape(line[4:])}</h3>")
+                continue
+            if line.startswith("- "):
+                if not in_list:
+                    html_lines.append("<ul>")
+                    in_list = True
+                html_lines.append(f"<li>{html.escape(line[2:])}</li>")
+                continue
+            if in_list:
+                html_lines.append("</ul>")
+                in_list = False
+            if not line:
+                html_lines.append("<p></p>")
+                continue
+            escaped = html.escape(line)
+            escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+            html_lines.append(f"<p>{escaped}</p>")
+        if in_list:
+            html_lines.append("</ul>")
+        return "\n".join(html_lines)
+
+    def _render_admin_url(self, url):
+        if not url:
+            return ""
+        return f'<a href="{html.escape(url)}" target="_blank">{html.escape(url)}</a>'
+
     def _prune_record(self, record, lang="zh"):
         if lang == "en":
             summary = record.get("summary_en") or record.get("summary_zh", "")
