@@ -63,6 +63,7 @@ class Config:
     fetch_timeout_seconds: int
     fetch_delay_seconds: float
     analyze_delay_seconds: float
+    analyze_timeout_seconds: int
     min_content_chars: int
     summary_min_chars: int
     index_limit: int
@@ -129,6 +130,7 @@ class Config:
             fetch_timeout_seconds=_get_int("FETCH_TIMEOUT_SECONDS", 20),
             fetch_delay_seconds=_get_float("FETCH_DELAY_SECONDS", 1.5),
             analyze_delay_seconds=_get_float("ANALYZE_DELAY_SECONDS", 1.5),
+            analyze_timeout_seconds=_get_int("ANALYZE_TIMEOUT_SECONDS", 25),
             min_content_chars=_get_int("MIN_CONTENT_CHARS", 300),
             summary_min_chars=_get_int("SUMMARY_MIN_CHARS", 120),
             index_limit=_get_int("INDEX_LIMIT", 200),
