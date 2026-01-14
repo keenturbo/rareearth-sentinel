@@ -1,3 +1,4 @@
+import concurrent.futures
 import google.generativeai as genai
 
 from .utils import extract_json, normalize_analysis, normalize_analysis_en
@@ -20,6 +21,14 @@ def _safe_response_text(response):
         return ""
 
 
+def _generate_with_timeout(model, prompt, timeout_seconds):
+    if not timeout_seconds or timeout_seconds <= 0:
+        return model.generate_content(prompt)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(model.generate_content, prompt)
+        return future.result(timeout=timeout_seconds)
+
+
 class GeminiExtractor:
     def __init__(self, config):
         if not config.gemini_api_key:
@@ -29,6 +38,7 @@ class GeminiExtractor:
             config.gemini_model,
             generation_config={"temperature": 0.2},
         )
+        self.analyze_timeout_seconds = config.analyze_timeout_seconds
 
     def analyze(self, text, context_summary=""):
         if not text:
@@ -110,7 +120,14 @@ Article:
 """
 
         try:
-            response = self.model.generate_content(prompt)
+            response = _generate_with_timeout(
+                self.model,
+                prompt,
+                self.analyze_timeout_seconds,
+            )
+        except concurrent.futures.TimeoutError:
+            print("[!] Gemini request timed out")
+            return None
         except Exception:
             return None
 
@@ -181,7 +198,14 @@ Article:
 """
 
         try:
-            response = self.model.generate_content(prompt)
+            response = _generate_with_timeout(
+                self.model,
+                prompt,
+                self.analyze_timeout_seconds,
+            )
+        except concurrent.futures.TimeoutError:
+            print("[!] Gemini request timed out")
+            return None
         except Exception:
             return None
 
@@ -247,7 +271,14 @@ Event list:
 """
 
         try:
-            response = self.model.generate_content(prompt)
+            response = _generate_with_timeout(
+                self.model,
+                prompt,
+                self.analyze_timeout_seconds,
+            )
+        except concurrent.futures.TimeoutError:
+            print("[!] Gemini request timed out")
+            return None
         except Exception:
             return None
 
