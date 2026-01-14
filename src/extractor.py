@@ -3,6 +3,23 @@ import google.generativeai as genai
 from .utils import extract_json, normalize_analysis, normalize_analysis_en
 
 
+def _safe_response_text(response):
+    try:
+        return response.text or ""
+    except Exception:
+        pass
+    try:
+        cand = response.candidates[0] if getattr(response, "candidates", None) else None
+        parts = getattr(getattr(cand, "content", None), "parts", []) if cand else []
+        return "".join(
+            getattr(part, "text", "")
+            for part in parts
+            if getattr(part, "text", "")
+        )
+    except Exception:
+        return ""
+
+
 class GeminiExtractor:
     def __init__(self, config):
         if not config.gemini_api_key:
@@ -97,7 +114,11 @@ Article:
         except Exception:
             return None
 
-        data = extract_json(getattr(response, "text", ""))
+        raw_text = _safe_response_text(response)
+        if not raw_text.strip():
+            return None
+
+        data = extract_json(raw_text)
         if data is None:
             return None
         return normalize_analysis(data)
@@ -164,7 +185,11 @@ Article:
         except Exception:
             return None
 
-        data = extract_json(getattr(response, "text", ""))
+        raw_text = _safe_response_text(response)
+        if not raw_text.strip():
+            return None
+
+        data = extract_json(raw_text)
         if data is None:
             return None
         return normalize_analysis_en(data)
@@ -226,7 +251,11 @@ Event list:
         except Exception:
             return None
 
-        data = extract_json(getattr(response, "text", ""))
+        raw_text = _safe_response_text(response)
+        if not raw_text.strip():
+            return None
+
+        data = extract_json(raw_text)
         if data is None:
             return None
         return self._normalize_daily_report(data)
