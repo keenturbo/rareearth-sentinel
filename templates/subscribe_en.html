@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Subscribe · RareEarth Sentinel</title>
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500&family=Source+Serif+4:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#111827;--muted:#6b7280;--accent:#1e3a8a;--bg:#f8fafc;--card:#ffffff;}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Source Sans 3",system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg);}
+h1,h2{font-family:"Source Serif 4","Source Sans 3",serif;}
+.container{max-width:1100px;margin:0 auto;padding:32px 20px;}
+.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
+.nav a{color:var(--muted);text-decoration:none;margin-left:12px;font-size:13px;}
+.nav a:hover{color:var(--accent)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-top:16px;}
+.card{background:var(--card);border:1px solid #e5e7eb;border-radius:12px;padding:16px;}
+.price{font-size:22px;font-weight:600;margin:8px 0;}
+.note{color:var(--muted);font-size:12px;line-height:1.6;}
+</style>
+</head>
+<body>
+  <main class="container">
+    <header class="header">
+      <div>
+        <h1>Subscribe</h1>
+        <div class="note">Subscriptions include credits and discounts. Single reports are still available.</div>
+      </div>
+      <nav class="nav">
+        <a href="/en/">Home</a>
+        <a href="/en/about/">About</a>
+        <a href="/en/rank/">Ranking</a>
+      </nav>
+    </header>
+
+    <section class="grid">
+      <div class="card">
+        <h2>Essential</h2>
+        <div class="price">$29 / month</div>
+        <div class="note">6 Brief credits, price index alerts, single‑report discounts.</div>
+      </div>
+      <div class="card">
+        <h2>Pro</h2>
+        <div class="price">$99 / month</div>
+        <div class="note">20 Brief credits + 2 discounted Standard reports; 1 weekly task.</div>
+      </div>
+      <div class="card">
+        <h2>Institutional</h2>
+        <div class="price">$499 / month</div>
+        <div class="note">Unlimited Briefs, $99 discounts, $999 priority, daily/trigger tasks.</div>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top:16px;">
+      <h2>Single Purchase</h2>
+      <div class="note">$9 / $99 / $999 unlocks remain available.</div>
+    </section>
+  </main>
+</body>
+</html>
