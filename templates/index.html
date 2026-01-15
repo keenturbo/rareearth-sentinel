@@ -10,12 +10,16 @@
 *{box-sizing:border-box}
 body{margin:0;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);line-height:1.55}
 .container{max-width:1100px;margin:0 auto;padding:24px}
-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;gap:16px}
-header h1{margin:0;font-size:24px;font-family:"Noto Serif SC",serif;letter-spacing:.3px}
-header .sub{font-size:12px;color:var(--muted)}
-.nav a{margin-left:12px;font-size:12px;color:var(--muted);text-decoration:none}
+header.topbar{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;gap:16px;flex-wrap:wrap}
+.brand .title{margin:0;font-size:24px;font-family:"Noto Serif SC",serif;letter-spacing:.3px;font-weight:600}
+.brand .subtitle{font-size:12px;color:var(--muted)}
+.meta-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:4px 0 12px}
+.meta{font-size:12px;color:var(--muted)}
+.nav{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.nav a{font-size:12px;color:var(--muted);text-decoration:none}
 .nav a:hover{color:var(--ink)}
 .nav .gear{font-size:16px;line-height:1}
+@media(max-width:720px){.nav{width:100%}}
 .kpis{display:flex;gap:10px;flex-wrap:wrap}
 .kpi{background:#fff;border-radius:10px;padding:8px 12px;border:1px solid #e5e7eb;font-size:12px}
 .section{background:#fff;border-radius:10px;padding:14px;border:1px solid #e5e7eb;margin-bottom:12px}
@@ -81,19 +85,12 @@ header .sub{font-size:12px;color:var(--muted)}
 </head>
 <body>
 <div class="container">
-  <header>
-    <div>
-      <h1>稀土情报哨兵</h1>
-      <div class="sub">Atlas Feed · 中国视角</div>
-      <div class="sub">{{PAGE_NOTE}}</div>
-      <div class="sub">更新：{{LAST_UPDATE}}</div>
+  <header class="topbar">
+    <div class="brand">
+      <div class="title">稀土情报哨兵</div>
+      <div class="subtitle">Atlas Feed · 中国视角</div>
     </div>
-    <div class="kpis">
-      <div class="kpi">累计情报 {{TOTAL_COUNT}}</div>
-      <div class="kpi">高风险 {{HIGH_RISK_COUNT}}</div>
-      <div class="kpi">今日新增 {{TODAY_COUNT}}</div>
-    </div>
-    <div class="nav">
+    <nav class="nav">
       <a href="/cn/">首页</a>
       <a href="/cn/about/">关于</a>
       <a href="/cn/subscribe/">订阅</a>
@@ -101,8 +98,17 @@ header .sub{font-size:12px;color:var(--muted)}
       <a href="/cn/premium/">付费报告</a>
       <a href="/en/">English</a>
       <a class="gear" href="/cn/admin/premium/" aria-label="Admin">⚙️</a>
-    </div>
+    </nav>
   </header>
+  <div class="meta-row">
+    <div class="meta">{{PAGE_NOTE}}</div>
+    <div class="meta">更新：{{LAST_UPDATE}}</div>
+    <div class="kpis">
+      <div class="kpi">累计情报 {{TOTAL_COUNT}}</div>
+      <div class="kpi">高风险 {{HIGH_RISK_COUNT}}</div>
+      <div class="kpi">今日新增 {{TODAY_COUNT}}</div>
+    </div>
+  </div>
 
   <section class="section">
     {{DAILY_REPORT}}
