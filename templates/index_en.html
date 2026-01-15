@@ -89,6 +89,8 @@ body{margin:0;font-family:"Source Sans 3",system-ui,Segoe UI,Roboto,Helvetica,Ar
 .label-strong{font-weight:600;color:#111}
 .sentinel-cta{margin-top:8px;background:var(--warn);color:#fff;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:600;display:inline-flex;gap:6px;align-items:center}
 .sentinel-cta .premium-badge{background:#fef3c7;color:#92400e}
+.sentinel-cta::after{content:"Sentinel will monitor and alert based on these recommendations.";color:#6b7280;font-size:11px;margin-left:8px}
+@media(max-width:720px){.sentinel-cta::after{display:block;margin-left:0;margin-top:4px}}
 .legend-box{background:#f8fafc;border-left:none;padding:10px 12px;border-radius:8px;font-size:12px;line-height:1.6}
 .legend-box div:first-child{font-weight:600;color:#111}
 </style>
