@@ -28,7 +28,9 @@ class Reporter:
         all_records = list(storage.iter_records())
         total_count = len(all_records)
         sorted_records = sorted(all_records, key=self._record_ts, reverse=True)
-        recent_records = (
+        home_limit = 5
+        home_records = sorted_records[:home_limit] if total_count else []
+        news_records = (
             sorted_records[: self.config.index_limit] if total_count else []
         )
         record_map = {r.get("id"): r for r in all_records if r.get("id")}
@@ -42,8 +44,8 @@ class Reporter:
         index_watch = self._load_index_watch()
 
         def build_lang(lang, subdir):
-            items = [self._safe_prune_record(r, lang=lang) for r in recent_records]
-            stats = self._build_stats(items, total_count, lang=lang)
+            items = [self._safe_prune_record(r, lang=lang) for r in home_records]
+            stats = self._build_stats(sorted_records, total_count, lang=lang)
             rollups = self._build_rollups(all_records, lang=lang)
             archives = self._build_archives(
                 storage,
@@ -78,6 +80,28 @@ class Reporter:
         build_lang("zh", "")
         build_lang("zh", "cn")
         build_lang("en", "en")
+
+        # Build news pages with full list
+        self.build_news_pages(
+            storage,
+            all_records,
+            news_records,
+            daily_reports,
+            index_watch,
+            premium_briefs,
+            lang="zh",
+            subdir="cn",
+        )
+        self.build_news_pages(
+            storage,
+            all_records,
+            news_records,
+            daily_reports,
+            index_watch,
+            premium_briefs,
+            lang="en",
+            subdir="en",
+        )
 
         # Always build premium archive pages (shows empty state if no data)
         self.build_premium_archive(storage, lang="zh", subdir="cn")
@@ -400,8 +424,11 @@ class Reporter:
         index_watch_html = self._render_index_watch(
             index_watch or index_data.get("index_watch", {}), lang=lang
         )
+        news_more_html = (
+            "" if index_data.get("is_news") else self._render_news_more(lang=lang)
+        )
 
-        page_note = ""
+        page_note = index_data.get("page_note", "")
         if archive_month:
             page_note = (
                 f"归档月份：{archive_month}" if lang == "zh" else f"Archive: {archive_month}"
@@ -420,8 +447,14 @@ class Reporter:
             .replace("{{PAGE_NOTE}}", page_note)
             .replace("{{PREMIUM_TRACKING}}", premium_html)
             .replace("{{INDEX_WATCH}}", index_watch_html)
+            .replace("{{NEWS_MORE}}", news_more_html)
         )
         return html_out
+
+    def _render_news_more(self, lang="zh"):
+        href = "/cn/news/" if lang == "zh" else "/en/news/"
+        label = "阅读更多" if lang == "zh" else "Read more"
+        return f'<div class="news-more"><a href="{href}">{label} →</a></div>'
 
     def _render_index_watch(self, index_watch, lang="zh"):
         title = "价格指数风向标" if lang == "zh" else "Price Index Watch"
@@ -857,6 +890,53 @@ class Reporter:
         os.makedirs(target_dir, exist_ok=True)
         with open(os.path.join(target_dir, "index.html"), "w", encoding="utf-8") as f:
             f.write(html_out)
+
+    def build_news_pages(
+        self,
+        storage,
+        all_records,
+        news_records,
+        daily_reports,
+        index_watch,
+        premium_briefs,
+        lang="zh",
+        subdir="cn",
+    ):
+        items = [self._safe_prune_record(r, lang=lang) for r in news_records]
+        stats = self._build_stats(all_records, len(all_records), lang=lang)
+        rollups = self._build_rollups(all_records, lang=lang)
+        archives = self._build_archives(
+            storage,
+            all_records,
+            rollups,
+            lang=lang,
+            subdir=subdir,
+            index_watch=index_watch,
+        )
+        note = "情报列表" if lang == "zh" else "News"
+        index_data = {
+            "last_update": isoformat(now_cst()),
+            "total_count": len(all_records),
+            "items": items,
+            "stats": stats,
+            "archives": archives,
+            "rollups": rollups,
+            "premium": premium_briefs.get(lang, []),
+            "index_watch": index_watch,
+            "page_note": note,
+            "is_news": True,
+        }
+        html_content = self._build_html(
+            index_data,
+            lang=lang,
+            archive_prefix="../",
+            daily_report=daily_reports.get(lang),
+            index_watch=index_watch,
+        )
+        news_dir = os.path.join(storage._subdir_base(subdir), "news")
+        os.makedirs(news_dir, exist_ok=True)
+        with open(os.path.join(news_dir, "index.html"), "w", encoding="utf-8") as f:
+            f.write(html_content)
 
     def build_premium_admin_pages(self, storage, record_map, lang="zh", subdir="cn"):
         base_dir = storage.premium_dir
