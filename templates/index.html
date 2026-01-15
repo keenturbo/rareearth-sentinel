@@ -83,6 +83,9 @@ header.topbar{display:flex;justify-content:space-between;align-items:center;marg
 .idx-up{color:#dc2626;font-weight:600}
 .idx-down{color:#16a34a;font-weight:600}
 .idx-flat{color:#64748b;font-weight:600}
+.news-more{margin:12px 0;text-align:center}
+.news-more a{display:inline-block;font-size:12px;color:var(--accent);text-decoration:none}
+.news-more a:hover{text-decoration:underline}
 </style>
 </head>
 <body>
@@ -163,6 +166,7 @@ header.topbar{display:flex;justify-content:space-between;align-items:center;marg
   <div class="feed">
     {{CARDS}}
   </div>
+  {{NEWS_MORE}}
 </div>
 
 <script>
