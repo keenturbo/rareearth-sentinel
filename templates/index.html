@@ -91,10 +91,11 @@ header.topbar{display:flex;justify-content:space-between;align-items:center;marg
 .news-more a:hover{text-decoration:underline}
 .label-gray{background:#f3f4f6;color:#374151;padding:1px 6px;border-radius:6px;font-size:11px;margin-right:4px}
 .label-strong{font-weight:600;color:var(--ink)}
-.sentinel-cta{margin-top:8px;background:var(--warn);color:#fff;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:600;display:inline-flex;gap:6px;align-items:center}
+.sentinel-cta-wrap{margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sentinel-cta{background:var(--warn);color:#fff;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:600;display:inline-flex;gap:6px;align-items:center}
 .sentinel-cta .premium-badge{background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:6px;font-size:10px;font-weight:700;letter-spacing:.2px}
-.sentinel-cta::after{content:"哨兵将按操作建议持续跟踪并预警。";color:#6b7280;font-size:11px;margin-left:8px}
-@media(max-width:720px){.sentinel-cta::after{display:block;margin-left:0;margin-top:4px}}
+.sentinel-note{color:#6b7280;font-size:11px}
+@media(max-width:720px){.sentinel-cta-wrap{flex-direction:column;align-items:flex-start}}
 </style>
 </head>
 <body>
