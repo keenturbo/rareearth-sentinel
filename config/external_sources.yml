@@ -97,3 +97,13 @@
   news_region: CA
   news_edition: CA:en
   max_items: 6
+
+- id: rare_earth_exchanges
+  name: Rare Earth Exchanges
+  mode: site_search
+  domain: rareearthexchanges.com
+  query_terms: '"rare earth" OR "rare earths" OR "critical minerals" OR "supply chain"'
+  news_lang: en-US
+  news_region: US
+  news_edition: US:en
+  max_items: 6
