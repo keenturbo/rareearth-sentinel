@@ -1159,6 +1159,7 @@ class Reporter:
 
         summary_label = "摘要" if lang == "zh" else "Summary"
         risk_label = "风险" if lang == "zh" else "Risk"
+        summary_label_html = f'<span class="label-gray">{summary_label}</span>'
 
         rows = []
         for item in items:
@@ -1213,7 +1214,7 @@ class Reporter:
                     meta_line=meta_line,
                     title=title,
                     url=html.escape(item.get("url", "")),
-                    summary_label=summary_label,
+                    summary_label=summary_label_html,
                     summary=summary or "-",
                     analysis_html=analysis_html,
                     context_html=context_html,
@@ -1252,7 +1253,7 @@ class Reporter:
             return ""
         list_html = "".join(f"<li>{item}</li>" for item in safe_items)
         return (
-            f'<div class="analysis-list"><div class="meta">{label}</div>'
+            f'<div class="analysis-list"><div class="meta"><span class="label-strong">{label}</span></div>'
             f"<ul>{list_html}</ul></div>"
         )
 
@@ -1361,17 +1362,19 @@ class Reporter:
 
         head_html = "".join(head_parts)
         summary_html = (
-            f'<div class="analysis-summary">{labels["summary"]}：{expert_summary}</div>'
+            f'<div class="analysis-summary"><span class="label-strong">{labels["summary"]}</span>：{expert_summary}</div>'
             if expert_summary
             else ""
         )
 
         detail_blocks = []
         if score_line:
-            detail_blocks.append(f'<div class="analysis-grid">{labels["subscores"]}：{score_line}</div>')
+            detail_blocks.append(
+                f'<div class="analysis-grid"><span class="label-strong">{labels["subscores"]}</span>：{score_line}</div>'
+            )
         if forecast_line:
             detail_blocks.append(
-                f'<div class="analysis-grid">{labels["forecast"]}：{forecast_line}</div>'
+                f'<div class="analysis-grid"><span class="label-strong">{labels["forecast"]}</span>：{forecast_line}</div>'
             )
         if strategy_html:
             detail_blocks.append(strategy_html)
@@ -1676,6 +1679,8 @@ class Reporter:
             blocks = []
             reason_label = "价值" if lang == "zh" else "Why it matters"
             preview_label = "报告包含" if lang == "zh" else "Includes"
+            reason_label_html = f'<span class="label-gray">{reason_label}</span>'
+            preview_label_html = f'<span class="label-gray">{preview_label}</span>'
             for item in premium_items[:3]:
                 title = html.escape(item.get("title", ""))
                 value = html.escape(item.get("value", ""))
@@ -1686,14 +1691,14 @@ class Reporter:
                     f"解锁深度报告 (${price})" if lang == "zh" else f"Unlock Deep Report (${price})"
                 )
                 preview_html = (
-                    f'<div class="premium-preview">{preview_label}：{preview}</div>'
+                    f'<div class="premium-preview">{preview_label_html}：{preview}</div>'
                     if preview
                     else ""
                 )
                 block = (
                     '<div class="premium-item">'
                     f'<div class="premium-topic">{title}</div>'
-                    f'<div class="premium-reason">{reason_label}：{value}</div>'
+                    f'<div class="premium-reason">{reason_label_html}：{value}</div>'
                     f"{preview_html}"
                     f'<a class="premium-btn" href="{html.escape(unlock)}">{btn_label}</a>'
                     "</div>"
@@ -1718,11 +1723,12 @@ class Reporter:
             title = html.escape(item.get("title", ""))
             reason = html.escape(item.get("expert_summary", "") or item.get("summary", ""))
             reason_label = "价值" if lang == "zh" else "Why it matters"
+            reason_label_html = f'<span class="label-gray">{reason_label}</span>'
             btn_label = "解锁深度报告" if lang == "zh" else "Unlock Deep Report"
             block = (
                 '<div class="premium-item">'
                 f'<div class="premium-topic">{title}</div>'
-                f'<div class="premium-reason">{reason_label}：{reason}</div>'
+                f'<div class="premium-reason">{reason_label_html}：{reason}</div>'
                 f'<a class="premium-btn" href="mailto:sentinel@dataspices.com">{btn_label}</a>'
                 '</div>'
             )
