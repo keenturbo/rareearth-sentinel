@@ -1316,7 +1316,7 @@ class Reporter:
         if tactical_html:
             cta_html = (
                 '<div class="sentinel-cta-wrap">'
-                f'<div class="sentinel-cta"><span class="premium-badge">Premium</span>{cta_text}</div>'
+                f'<div class="sentinel-cta">{cta_text}</div>'
                 '</div>'
             )
 
