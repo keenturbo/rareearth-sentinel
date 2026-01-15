@@ -1311,7 +1311,7 @@ class Reporter:
 
         strategy_html = self._render_list(item.get("recommendations_strategy", []), labels["strategy"])
         tactical_html = self._render_list(item.get("recommendations_tactical", []), labels["tactical"])
-        cta_text = "哨兵执行（点击付费）" if lang == "zh" else "Sentinel executes(click to paid)"
+        cta_text = "哨兵执行（点击付费）" if lang == "zh" else "Sentinel executes (click to pay)"
         cta_html = ""
         if tactical_html:
             cta_html = f'<div class="sentinel-cta"><span class="premium-badge">Premium</span>{cta_text}</div>'
