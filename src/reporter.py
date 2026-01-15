@@ -613,7 +613,7 @@ class Reporter:
                 )
                 meta = item.get("created_at", "")
                 btn_label = (
-                    f"解锁深度报告" if lang == "zh" else f"Unlock Report (${price})"
+                    f"解锁深度报告" if lang == "zh" else f"Unlock Deep Report"
                 )
                 pay_link = self._pay_link(lang, report_id)
                 blocks.append(
@@ -1311,10 +1311,7 @@ class Reporter:
 
         strategy_html = self._render_list(item.get("recommendations_strategy", []), labels["strategy"])
         tactical_html = self._render_list(item.get("recommendations_tactical", []), labels["tactical"])
-        cta_text = "哨兵执行（点击付费）" if lang == "zh" else "Sentinel executes (click to pay)"
-            if lang == "zh"
-            else "Sentinel will monitor and alert based on these recommendations."
-        )
+        cta_text = "哨兵执行操作建议" if lang == "zh" else "Sentinel executes recommendations"
         cta_html = ""
         if tactical_html:
             cta_html = (
@@ -1695,7 +1692,7 @@ class Reporter:
                 price = item.get("price", 9)
                 unlock = item.get("unlock") or "mailto:sentinel@dataspices.com"
                 btn_label = (
-                    f"解锁深度报告" if lang == "zh" else f"Unlock Deep Report (${price})"
+                    f"解锁深度报告" if lang == "zh" else f"Unlock Deep Report"
                 )
                 preview_html = (
                     f'<div class="premium-preview">{preview_label_html}：{preview}</div>'
