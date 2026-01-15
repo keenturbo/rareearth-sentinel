@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>哨兵任务付费 | 稀土情报哨兵</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=Noto+Sans+SC:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#111827;--muted:#6b7280;--bg:#f8f6f2;--card:#ffffff;--accent:#1e3a8a;--warn:#b45309;--soft:#f3f4f6}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);line-height:1.6}
+.container{max-width:980px;margin:0 auto;padding:24px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
+.nav a{margin-left:12px;font-size:12px;color:var(--muted);text-decoration:none}
+.nav a:hover{color:var(--ink)}
+.section{background:var(--card);border-radius:10px;border:1px solid #e5e7eb;padding:16px;margin-bottom:12px}
+.section-title{font-family:"Noto Serif SC",serif;font-weight:600;margin-bottom:8px}
+.meta{font-size:12px;color:var(--muted)}
+.value{font-size:13px;margin-top:6px}
+.task-options{margin:8px 0}
+.task-option{display:flex;gap:8px;align-items:flex-start;font-size:13px;padding:6px 0;border-bottom:1px dashed #e5e7eb}
+.task-option:last-child{border-bottom:none}
+.task-option input{margin-top:3px}
+.task-meta{font-size:12px;color:var(--muted)}
+.price-badge{display:inline-block;background:var(--soft);padding:4px 8px;border-radius:8px;font-size:12px;margin-left:6px}
+.pay-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:10px}
+.pay-card{border:1px solid #e5e7eb;border-radius:10px;padding:12px;background:#fff}
+.pay-card img{max-width:100%;border-radius:8px;border:1px solid #e5e7eb}
+.pay-title{font-size:12px;color:var(--muted);margin-bottom:6px}
+.tier-disabled{opacity:0.45}
+.copy{font-size:12px;background:var(--soft);padding:6px;border-radius:8px;word-break:break-all}
+.pay-note{font-size:12px;color:var(--muted);margin-top:10px}
+.pay-btn{display:inline-block;margin-top:10px;font-size:12px;color:#fff;background:var(--warn);padding:6px 14px;border-radius:999px;text-decoration:none;border:0;cursor:pointer}
+.pay-btn:hover{background:#92400e}
+.unlock-box{margin-top:10px;font-size:12px;color:var(--muted);background:var(--soft);border-radius:8px;padding:8px}
+.notice-gold{color:#b45309;font-weight:600}
+.order-box{margin-top:10px;font-size:12px;color:var(--muted);background:var(--soft);border-radius:8px;padding:8px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px}
+.copy-btn{margin-left:6px;font-size:11px;border:1px solid #e5e7eb;background:#fff;border-radius:6px;padding:2px 6px;cursor:pointer}
+.copy-btn:hover{background:#f9fafb}
+.pay-field{margin-top:10px;font-size:12px}
+.pay-field label{display:block;margin-bottom:4px;color:var(--muted)}
+.pay-input{width:100%;padding:6px 8px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;background:#fff}
+.pay-open-btn{display:inline-block;margin-top:10px;font-size:12px;color:#fff;background:var(--accent);padding:6px 14px;border-radius:999px;text-decoration:none;border:0;cursor:pointer}
+.pay-open-btn:hover{background:#1f3a8a}
+.modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(17,24,39,0.45);z-index:60}
+.modal-card{background:var(--bg);border-radius:12px;max-width:860px;width:92%;max-height:90vh;overflow:auto;padding:16px;position:relative}
+.modal-close{position:absolute;top:10px;right:12px;border:0;background:transparent;font-size:20px;cursor:pointer;color:var(--muted)}
+.modal-close:hover{color:var(--ink)}
+.modal-backdrop{position:absolute;inset:0}
+@media (max-width:720px){
+  .modal{align-items:stretch}
+  .modal-card{width:100%;height:100%;max-height:none;border-radius:0;padding:16px 14px 90px}
+  .modal-close{position:fixed;top:12px;right:16px;font-size:24px}
+  .pay-grid{grid-template-columns:1fr}
+  .pay-btn,.pay-open-btn{width:100%;padding:10px 0;font-size:14px}
+}
+</style>
+</head>
+<body>
+<div class="container" data-report-id="{{REPORT_ID}}" data-confirm-endpoint="{{PAY_CONFIRM_ENDPOINT}}">
+  <header>
+    <div class="title">哨兵任务付费</div>
+    <div class="nav">
+      <a href="/cn/">返回首页</a>
+      <a href="/cn/premium/">历史报告</a>
+      <a href="/en/task/pay/{{REPORT_ID}}.html">English</a>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="section-title">任务信息</div>
+    <div class="meta">任务ID：{{TASK_ID}}</div>
+    <div class="value">关联报告：{{REPORT_TITLE}}</div>
+    <div class="value">价值：{{REPORT_VALUE}}</div>
+  </section>
+
+  <section class="section">
+    <div class="section-title">选择操作建议（单选）</div>
+    <div class="task-options">
+      {{TASK_OPTIONS}}
+    </div>
+    <div class="task-meta">请选择一条操作建议，系统将按该建议持续跟踪并预警。</div>
+  </section>
+
+  <section class="section">
+    <div class="section-title">任务频率</div>
+    <div class="pay-field">
+      <label for="task-plan">频率选择</label>
+      <select id="task-plan" class="pay-input">
+        <option value="weekly" data-price="9">周报（$9/周）</option>
+        <option value="weekly_4" data-price="29">周报（4周 $29）</option>
+        <option value="daily_30" data-price="30">日报（30天 $30）</option>
+        <option value="daily_60" data-price="60">日报（60天 $60）</option>
+        <option value="daily_180" data-price="180">日报（180天 $180）</option>
+        <option value="daily_365" data-price="365">日报（365天 $365）</option>
+        <option value="trigger" data-price="29">事件触发（$29/月）</option>
+      </select>
+      <div class="task-meta">当前价格：<span id="task-price" class="price-badge">$9</span></div>
+    </div>
+    <button class="pay-open-btn" id="pay-open">解锁并支付</button>
+  </section>
+
+  <div class="modal" id="payment-modal" aria-hidden="true">
+    <div class="modal-backdrop" id="pay-close"></div>
+    <div class="modal-card">
+      <button class="modal-close" id="pay-close-btn">×</button>
+      <section class="section" id="payment-section">
+        <div class="section-title">支付方式（仅开放 $9）</div>
+        {{PAYMENT_SECTION}}
+
+        <div class="pay-field">
+          <label for="pay-method">付款方式</label>
+          <select id="pay-method" class="pay-input">
+            <option value="wechat">微信</option>
+            <option value="alipay">支付宝</option>
+            <option value="alipay_token">支付宝口令</option>
+          </select>
+        </div>
+
+        <div class="pay-field">
+          <label for="alipay-token">支付宝口令（买家填写）</label>
+          <input id="alipay-token" class="pay-input" placeholder="输入你的支付宝口令" />
+        </div>
+
+        <div class="pay-field">
+          <label for="buyer-email">邮箱（用于联系）</label>
+          <input id="buyer-email" class="pay-input" placeholder="填写你的邮箱" />
+        </div>
+
+        <div class="order-box">
+          <div>订单号：<span id="order-id" class="mono">--</span><button class="copy-btn" data-copy="order-id">复制</button></div>
+          <div>付款备注：<span id="pay-memo" class="mono">report_id={{REPORT_ID}} tier=$9 order_id=-- email=你的邮箱</span><button class="copy-btn" data-copy="pay-memo">复制</button></div>
+        </div>
+        <div class="pay-note">付款时请务必填写备注，否则无法自动确认。</div>
+        <button class="pay-btn" id="paid-btn">我已付款</button>
+        <div class="unlock-box notice-gold" id="unlock-box">解锁链接：等待确认（通常 10-30 分钟内释放任务链接）</div>
+      </section>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  const planSelect = document.getElementById("task-plan");
+  const priceEl = document.getElementById("task-price");
+  if (planSelect && priceEl) {
+    const updatePrice = () => {
+      const opt = planSelect.options[planSelect.selectedIndex];
+      const price = opt ? opt.getAttribute("data-price") : "9";
+      priceEl.textContent = `$${price}`;
+    };
+    planSelect.addEventListener("change", updatePrice);
+    updatePrice();
+  }
+})();
+</script>
+</body>
+</html>
