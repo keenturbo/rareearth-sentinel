@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>哨兵任务跟踪 | 稀土情报哨兵</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=Noto+Sans+SC:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#111827;--muted:#6b7280;--bg:#f8f6f2;--card:#ffffff;--accent:#1e3a8a;--warn:#b45309;--soft:#f3f4f6}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);line-height:1.6}
+.container{max-width:980px;margin:0 auto;padding:24px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
+.nav a{margin-left:12px;font-size:12px;color:var(--muted);text-decoration:none}
+.nav a:hover{color:var(--ink)}
+.section{background:var(--card);border-radius:10px;border:1px solid #e5e7eb;padding:16px;margin-bottom:12px}
+.section-title{font-family:"Noto Serif SC",serif;font-weight:600;margin-bottom:8px}
+.meta{font-size:12px;color:var(--muted)}
+.value{font-size:13px;margin-top:6px}
+.summary{font-size:13px;margin-top:8px;line-height:1.7}
+.task-table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px}
+.task-table th,.task-table td{border:1px solid #e5e7eb;padding:6px 8px;text-align:left;vertical-align:top}
+.task-table th{background:var(--soft);font-weight:600}
+.history-list{margin:6px 0 0 0;padding-left:16px;font-size:12px;color:var(--muted)}
+.history-list a{text-decoration:none;color:var(--accent)}
+.history-list a:hover{text-decoration:underline}
+.empty{font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="title">哨兵任务跟踪</div>
+    <div class="nav">
+      <a href="/cn/">返回首页</a>
+      <a href="/cn/premium/">历史报告</a>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="section-title">任务信息</div>
+    <div class="meta">任务ID：{{TASK_ID}}</div>
+    <div class="value">关联报告：{{REPORT_TITLE}}</div>
+    <div class="value">价值：{{REPORT_VALUE}}</div>
+  </section>
+
+  <section class="section">
+    <div class="section-title">任务设置</div>
+    <div class="value">操作建议：{{TASK_SUGGESTION}}</div>
+    <div class="meta">频率：{{TASK_FREQUENCY}} · 状态：{{TASK_STATUS}}</div>
+    <div class="meta">最近更新：{{LAST_UPDATE}}</div>
+  </section>
+
+  <section class="section">
+    <div class="section-title">最新任务结果</div>
+    {{TASK_SUMMARY}}
+    {{ACTION_TABLE}}
+  </section>
+
+  <section class="section">
+    <div class="section-title">历史报告</div>
+    {{REPORT_LIST}}
+  </section>
+</div>
+</body>
+</html>

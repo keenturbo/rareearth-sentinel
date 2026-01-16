@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Task Report | Rare Earth Sentinel</title>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#111827;--muted:#6b7280;--bg:#f8f6f2;--card:#ffffff;--accent:#1e3a8a;--soft:#f3f4f6}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Source Sans 3",sans-serif;background:var(--bg);color:var(--ink);line-height:1.6}
+.container{max-width:980px;margin:0 auto;padding:24px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
+.nav a{margin-left:12px;font-size:12px;color:var(--muted);text-decoration:none}
+.nav a:hover{color:var(--ink)}
+.section{background:var(--card);border-radius:10px;border:1px solid #e5e7eb;padding:16px;margin-bottom:12px}
+.section-title{font-family:"Source Serif 4",serif;font-weight:600;margin-bottom:8px}
+.meta{font-size:12px;color:var(--muted)}
+.value{font-size:13px;margin-top:6px}
+.summary{font-size:13px;margin-top:8px;line-height:1.7}
+.task-table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px}
+.task-table th,.task-table td{border:1px solid #e5e7eb;padding:6px 8px;text-align:left;vertical-align:top}
+.task-table th{background:var(--soft);font-weight:600}
+.source-list{margin:6px 0 0 0;padding-left:16px;font-size:12px;color:var(--muted)}
+.source-list a{text-decoration:none;color:var(--accent)}
+.source-list a:hover{text-decoration:underline}
+.empty{font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="title">Task Report</div>
+    <div class="nav">
+      <a href="/en/">Home</a>
+      <a href="{{TASK_LINK}}">Back to Task</a>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="section-title">Report Info</div>
+    <div class="meta">Task ID: {{TASK_ID}}</div>
+    <div class="value">Report date: {{REPORT_DATE}}</div>
+    <div class="value">Linked report: {{REPORT_TITLE}}</div>
+    <div class="value">Action: {{TASK_SUGGESTION}}</div>
+  </section>
+
+  <section class="section">
+    <div class="section-title">Summary</div>
+    {{REPORT_SUMMARY}}
+  </section>
+
+  <section class="section">
+    <div class="section-title">Key Path</div>
+    {{ACTION_TABLE}}
+  </section>
+
+  <section class="section">
+    <div class="section-title">Sources</div>
+    {{SOURCE_LIST}}
+  </section>
+</div>
+</body>
+</html>

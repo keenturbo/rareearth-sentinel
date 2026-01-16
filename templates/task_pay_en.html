@@ -59,7 +59,7 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
 </style>
 </head>
 <body>
-<div class="container" data-report-id="{{REPORT_ID}}" data-confirm-endpoint="{{PAY_CONFIRM_ENDPOINT}}">
+<div class="container" data-report-id="{{REPORT_ID}}" data-task-id="{{TASK_ID}}" data-confirm-endpoint="{{PAY_CONFIRM_ENDPOINT}}">
   <header>
     <div class="title">Sentinel Task Payment</div>
     <div class="nav">
@@ -123,28 +123,179 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
 
         <div class="order-box">
           <div>Order ID: <span id="order-id" class="mono">--</span><button class="copy-btn" data-copy="order-id">Copy</button></div>
-          <div>Payment memo: <span id="pay-memo" class="mono">report_id={{REPORT_ID}} tier=$9 order_id=-- email=your@email</span><button class="copy-btn" data-copy="pay-memo">Copy</button></div>
+          <div>Payment memo: <span id="pay-memo" class="mono">task_id={{TASK_ID}} report_id={{REPORT_ID}} frequency=weekly tier=$9 order_id=-- email=your@email</span><button class="copy-btn" data-copy="pay-memo">Copy</button></div>
         </div>
         <div class="pay-note">Please include the memo in your payment remark so we can match your order.</div>
         <button class="pay-btn" id="paid-btn">I have paid</button>
-        <div class="unlock-box notice-gold" id="unlock-box">Unlock link: pending confirmation (usually 10–30 minutes)</div>
+        <div class="unlock-box notice-gold" id="unlock-box">Task link: pending confirmation (usually 10–30 minutes)</div>
       </section>
     </div>
   </div>
 </div>
 <script>
 (function(){
+  const container = document.querySelector(".container");
+  const reportId = container ? container.dataset.reportId : "";
+  const taskId = container ? container.dataset.taskId : "";
+  const confirmEndpoint = container ? container.dataset.confirmEndpoint : "";
+  const lang = "en";
+  const storageKey = `task_order_id:${taskId || reportId}`;
+  let orderId = localStorage.getItem(storageKey);
+  if (!orderId) {
+    const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
+    orderId = `TK-${Date.now().toString(36).toUpperCase()}-${rand}`;
+    localStorage.setItem(storageKey, orderId);
+  }
+
+  const orderEl = document.getElementById("order-id");
+  const memoEl = document.getElementById("pay-memo");
+  const emailInput = document.getElementById("buyer-email");
+  const methodSelect = document.getElementById("pay-method");
   const planSelect = document.getElementById("task-plan");
   const priceEl = document.getElementById("task-price");
-  if (planSelect && priceEl) {
-    const updatePrice = () => {
-      const opt = planSelect.options[planSelect.selectedIndex];
-      const price = opt ? opt.getAttribute("data-price") : "9";
-      priceEl.textContent = `$${price}`;
-    };
-    planSelect.addEventListener("change", updatePrice);
-    updatePrice();
+  const unlockBox = document.getElementById("unlock-box");
+  const paidBtn = document.getElementById("paid-btn");
+  const payOpen = document.getElementById("pay-open");
+  const payModal = document.getElementById("payment-modal");
+  const payClose = document.getElementById("pay-close");
+  const payCloseBtn = document.getElementById("pay-close-btn");
+
+  if (orderEl) orderEl.textContent = orderId;
+
+  function planValue(){
+    return planSelect ? planSelect.value : "weekly";
   }
+
+  function planPrice(){
+    const opt = planSelect ? planSelect.options[planSelect.selectedIndex] : null;
+    return opt ? opt.getAttribute("data-price") : "9";
+  }
+
+  function planFrequency(plan){
+    if (!plan) return "weekly";
+    if (plan.startsWith("daily")) return "daily";
+    if (plan.startsWith("weekly")) return "weekly";
+    if (plan.startsWith("trigger")) return "event";
+    return plan;
+  }
+
+  function selectedSuggestion(){
+    const input = document.querySelector('input[name="task-option"]:checked');
+    return input ? input.value : "";
+  }
+
+  function updateMemo(){
+    const emailVal = (emailInput && emailInput.value.trim()) || "your@email";
+    const plan = planValue();
+    const frequency = planFrequency(plan);
+    const price = planPrice();
+    if (memoEl) {
+      memoEl.textContent = `task_id=${taskId} report_id=${reportId} frequency=${frequency} plan=${plan} tier=$${price} order_id=${orderId} email=${emailVal}`;
+    }
+  }
+
+  function updatePrice(){
+    const price = planPrice();
+    if (priceEl) priceEl.textContent = `$${price}`;
+    updateMemo();
+  }
+
+  updatePrice();
+  if (planSelect) planSelect.addEventListener("change", updatePrice);
+  if (emailInput) emailInput.addEventListener("input", updateMemo);
+
+  document.querySelectorAll(".copy-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const targetId = btn.getAttribute("data-copy");
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      const text = target.textContent || "";
+      if (!text) return;
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text);
+      }
+      btn.textContent = "Copied";
+      setTimeout(() => { btn.textContent = "Copy"; }, 1200);
+    });
+  });
+
+  function openModal(){
+    if (payModal) {
+      payModal.style.display = "flex";
+      payModal.setAttribute("aria-hidden", "false");
+    }
+  }
+
+  function closeModal(){
+    if (payModal) {
+      payModal.style.display = "none";
+      payModal.setAttribute("aria-hidden", "true");
+    }
+  }
+
+  if (payOpen) payOpen.addEventListener("click", openModal);
+  if (payClose) payClose.addEventListener("click", closeModal);
+  if (payCloseBtn) payCloseBtn.addEventListener("click", closeModal);
+
+  if (paidBtn) {
+    paidBtn.addEventListener("click", async () => {
+      if (unlockBox) {
+        unlockBox.textContent = "Payment submitted. Awaiting confirmation…";
+      }
+      if (!confirmEndpoint) {
+        return;
+      }
+      try {
+        const plan = planValue();
+        const price = planPrice();
+        const payload = {
+          order_type: "task",
+          task_id: taskId,
+          report_id: reportId,
+          order_id: orderId,
+          tier: `$${price}`,
+          frequency: planFrequency(plan),
+          plan: plan,
+          lang: lang,
+          email: (emailInput && emailInput.value.trim()) || "",
+          payment_method: methodSelect ? methodSelect.value : "usdt",
+          task_suggestion: selectedSuggestion(),
+          memo: memoEl ? memoEl.textContent : "",
+        };
+        const res = await fetch(confirmEndpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok && unlockBox) {
+          unlockBox.textContent = "Submission failed. Please retry.";
+        }
+      } catch (err) {
+        if (unlockBox) {
+          unlockBox.textContent = "Submission failed. Please retry.";
+        }
+      }
+    });
+  }
+
+  async function pollStatus(){
+    if (!orderId) return;
+    try {
+      const res = await fetch(`/pay/status/${orderId}.json?ts=${Date.now()}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data || data.order_id !== orderId) return;
+      const taskUrl = data.task_url || "";
+      if (taskUrl && unlockBox) {
+        unlockBox.innerHTML = `Task link: <a href="${taskUrl}" target="_blank">${taskUrl}</a>`;
+      }
+    } catch (err) {
+      return;
+    }
+  }
+
+  pollStatus();
+  setInterval(pollStatus, 5000);
 })();
 </script>
 </body>
