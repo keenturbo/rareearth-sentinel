@@ -1397,6 +1397,8 @@ class Reporter:
 
     def _render_related_context(self, item, lang="zh"):
         context_lines = item.get("related_context") or []
+        if not self.config.show_related_context:
+    return ""
         if not context_lines:
             return ""
         safe_lines = []
