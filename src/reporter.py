@@ -114,7 +114,8 @@ class Reporter:
         # Build pay pages for premium reports
         self.build_pay_pages(storage, record_map, lang="zh", subdir="cn")
         self.build_pay_pages(storage, record_map, lang="en", subdir="en")
-
+        self.build_task_pay_pages(storage, record_map, lang="zh", subdir="cn")
+        self.build_task_pay_pages(storage, record_map, lang="en", subdir="en")
         # Build static info pages (about/subscribe/rank)
         self.build_about_pages(storage, lang="zh", subdir="cn")
         self.build_about_pages(storage, lang="en", subdir="en")
@@ -703,7 +704,81 @@ class Reporter:
 
             with open(os.path.join(pay_root, f"{report_id}.html"), "w", encoding="utf-8") as f:
                 f.write(html_out)
+    
+    def build_task_pay_pages(self, storage, record_map, lang="zh", subdir="cn"):
+        template_name = "task_pay_en.html" if lang == "en" else "task_pay.html"
+        template_path = os.path.join(self.config.templates_dir, template_name)
+        if not os.path.exists(template_path):
+            return
+        with open(template_path, "r", encoding="utf-8") as f:
+            template = f.read()
 
+        pay_root = os.path.join(storage._subdir_base(subdir), "task", "pay")
+        os.makedirs(pay_root, exist_ok=True)
+
+        def render_task_options(options):
+            if not options:
+                empty = "暂无操作建议" if lang == "zh" else "No action recommendations."
+                return f'<div class="meta">{empty}</div>'
+            blocks = []
+            for idx, text in enumerate(options):
+                safe = html.escape(text)
+                checked = " checked" if idx == 0 else ""
+                blocks.append(
+                    '<label class="task-option">'
+                    f'<input type="radio" name="task-option" value="{safe}"{checked}>'
+                    f"<div>{safe}</div>"
+                    "</label>"
+                )
+            return "".join(blocks)
+
+        for report_id, record in record_map.items():
+            report_id = str(report_id).strip()
+            if not report_id or not isinstance(record, dict):
+                continue
+            if lang == "en":
+                options = record.get("recommendations_tactical_en") or record.get("recommendations_tactical") or []
+                value = (
+                    record.get("expert_summary_en")
+                    or record.get("summary_en")
+                    or record.get("expert_summary")
+                    or record.get("summary_zh")
+                    or ""
+                )
+            else:
+                options = record.get("recommendations_tactical") or []
+                value = (
+                    record.get("expert_summary")
+                    or record.get("summary_zh")
+                    or record.get("expert_summary_en")
+                    or record.get("summary_en")
+                    or ""
+                )
+            options = [str(o).strip() for o in options if str(o).strip()]
+            if not options:
+                continue
+
+            title = str(record.get("title", "") or "")
+            task_options_html = render_task_options(options)
+            payment_html = self._render_payment_section(lang=lang)
+            task_id = f"task-{report_id}"
+
+            html_out = (
+                template.replace("{{REPORT_ID}}", html.escape(report_id))
+                .replace("{{TASK_ID}}", html.escape(task_id))
+                .replace("{{REPORT_TITLE}}", html.escape(title))
+                .replace("{{REPORT_VALUE}}", html.escape(value))
+                .replace("{{TASK_OPTIONS}}", task_options_html)
+                .replace("{{PAYMENT_SECTION}}", payment_html)
+                .replace(
+                    "{{PAY_CONFIRM_ENDPOINT}}",
+                    html.escape(self.config.pay_confirm_endpoint),
+                )
+            )
+
+            with open(os.path.join(pay_root, f"{report_id}.html"), "w", encoding="utf-8") as f:
+                f.write(html_out)
+                
     def _render_pay_preview(self, brief, lang="zh"):
         if not isinstance(brief, dict) or not brief:
             empty = "暂无预览" if lang == "zh" else "No preview yet."
@@ -1313,11 +1388,14 @@ class Reporter:
         tactical_html = self._render_list(item.get("recommendations_tactical", []), labels["tactical"])
         cta_text = "哨兵执行操作建议" if lang == "zh" else "Sentinel executes recommendations"
         cta_html = ""
-        if tactical_html:
+        report_id = str(item.get("id", "")).strip()
+        if tactical_html and report_id:
+            subdir = "cn" if lang == "zh" else "en"
+            href = f"/{subdir}/task/pay/{report_id}.html"
             cta_html = (
                 '<div class="sentinel-cta-wrap">'
-                f'<div class="sentinel-cta">{cta_text}</div>'
-                '</div>'
+                f'<a class="sentinel-cta" href="{html.escape(href)}">{cta_text}</a>'
+                "</div>"
             )
 
         has_any = any(
