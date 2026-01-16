@@ -111,6 +111,7 @@ class Config:
     pay_admin_orders_url: str
     pay_admin_orders_url_en: str
     unlock_expires_days: int
+    show_related_context: bool
 
     @classmethod
     def from_env(cls):
@@ -196,6 +197,7 @@ class Config:
             pay_admin_orders_url=_get_env("PAY_ADMIN_ORDERS_URL", ""),
             pay_admin_orders_url_en=_get_env("PAY_ADMIN_ORDERS_URL_EN", ""),
             unlock_expires_days=_get_int("UNLOCK_EXPIRES_DAYS", 7),
+            show_related_context=_get_bool("SHOW_RELATED_CONTEXT", False),
         )
 
 
