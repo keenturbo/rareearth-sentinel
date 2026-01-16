@@ -94,6 +94,40 @@ def _build_orders_link(base, order_id):
     return base
 
 
+def _build_task_orders_link(base, order_id):
+    if not base:
+        return ""
+    base = base if base.endswith("/") else base + "/"
+    if "/admin/orders/" in base:
+        base = base.replace("/admin/orders/", "/admin/task-orders/")
+    elif base.endswith("/admin/orders"):
+        base = base.replace("/admin/orders", "/admin/task-orders")
+    elif "/orders/" in base:
+        base = base.replace("/orders/", "/task-orders/")
+    elif base.endswith("/orders"):
+        base = base.replace("/orders", "/task-orders")
+    else:
+        base = base.rstrip("/") + "/task-orders/"
+    if order_id:
+        return f"{base}?order_id={order_id}"
+    return base
+
+
+def _parse_memo_kv(memo):
+    if not memo:
+        return {}
+    data = {}
+    for part in str(memo).strip().split():
+        if "=" not in part:
+            continue
+        key, value = part.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        data[key] = value.strip()
+    return data
+
+
 def _send_bark(config, payload):
     bark_base = _normalize_base(config.pay_bark_url)
     if not bark_base:
@@ -121,7 +155,13 @@ def _send_bark(config, payload):
     if token:
         body += f" | token={token}"
 
-    orders_link = _build_orders_link(config.pay_admin_orders_url, payload.get("order_id"))
+    orders_link = ""
+    if is_task:
+        orders_link = _build_task_orders_link(config.pay_admin_orders_url, payload.get("order_id"))
+        if not orders_link:
+            orders_link = _build_task_orders_link(config.pay_admin_orders_url_en, payload.get("order_id"))
+    if not orders_link:
+        orders_link = _build_orders_link(config.pay_admin_orders_url, payload.get("order_id"))
     if not orders_link:
         orders_link = _build_orders_link(config.pay_admin_orders_url_en, payload.get("order_id"))
     if not orders_link:
@@ -460,14 +500,25 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
                 tier = str(data.get("tier", "") or "$9").strip()
                 lang = _normalize_lang(data.get("lang", "cn"))
                 task_id = str(data.get("task_id", "")).strip()
-                is_task = bool(task_id) or str(data.get("task", "")).strip() in {"1", "true", "yes"}
+                task_flag = str(data.get("task", "")).strip().lower()
+                is_task = bool(task_id) or task_flag in {"1", "true", "yes"}
+
+                task_entry = _load_task_order(self.config.data_dir, order_id) if order_id else None
+                if task_entry:
+                    if not task_id:
+                        task_id = str(task_entry.get("task_id", "")).strip()
+                    if not report_id:
+                        report_id = str(task_entry.get("report_id", "")).strip()
+                    is_task = True
 
                 if not order_id or not report_id:
                     self._json_response(400, {"ok": False, "error": "missing_fields"})
                     return
 
                 if is_task:
-                    task_entry = _load_task_order(self.config.data_dir, order_id) or {}
+                    if task_entry is None:
+                        task_entry = _load_task_order(self.config.data_dir, order_id)
+                    task_entry = task_entry or {}
                     if not task_id:
                         task_id = str(task_entry.get("task_id", "")).strip()
                     if not task_id:
@@ -519,6 +570,19 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
             payment_token = str(data.get("payment_token", "")).strip()
             task_id = str(data.get("task_id", "")).strip()
             order_type = str(data.get("order_type", "")).strip().lower()
+            memo_fields = _parse_memo_kv(memo)
+            if not task_id:
+                task_id = memo_fields.get("task_id", "").strip()
+            if not order_type:
+                order_type = memo_fields.get("order_type", "").strip().lower()
+            if not report_id:
+                report_id = memo_fields.get("report_id", "").strip() or report_id
+            if not order_id:
+                order_id = memo_fields.get("order_id", "").strip() or order_id
+            if not tier:
+                tier = memo_fields.get("tier", "").strip()
+            if not email:
+                email = memo_fields.get("email", "").strip()
             is_task = order_type == "task" or bool(task_id)
 
             if not report_id or not order_id:
@@ -531,8 +595,8 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
             ).isoformat() + "Z"
 
             if is_task:
-                frequency = str(data.get("frequency", "")).strip() or "weekly"
-                plan = str(data.get("plan", "")).strip() or frequency
+                frequency = str(data.get("frequency", "")).strip() or memo_fields.get("frequency", "") or "weekly"
+                plan = str(data.get("plan", "")).strip() or memo_fields.get("plan", "") or frequency
                 task_suggestion = str(data.get("task_suggestion", "")).strip()
                 report_title = str(data.get("report_title", "")).strip()
                 report_value = str(data.get("report_value", "")).strip()
@@ -618,12 +682,22 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
             task_flag = (query.get("task", [""])[0] or "").strip().lower()
             is_task = bool(task_id) or task_flag in {"1", "true", "yes"}
 
+            task_entry = _load_task_order(self.config.data_dir, order_id) if order_id else None
+            if task_entry:
+                if not task_id:
+                    task_id = str(task_entry.get("task_id", "")).strip()
+                if not report_id:
+                    report_id = str(task_entry.get("report_id", "")).strip()
+                is_task = True
+
             if not order_id or not report_id:
                 self._json_response(400, {"ok": False, "error": "missing_fields"})
                 return
 
             if is_task:
-                task_entry = _load_task_order(self.config.data_dir, order_id) or {}
+                if task_entry is None:
+                    task_entry = _load_task_order(self.config.data_dir, order_id)
+                task_entry = task_entry or {}
                 if not task_id:
                     task_id = str(task_entry.get("task_id", "")).strip()
                 if not task_id:
