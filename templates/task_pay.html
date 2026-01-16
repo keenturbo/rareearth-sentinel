@@ -59,7 +59,7 @@ header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
 </style>
 </head>
 <body>
-<div class="container" data-report-id="{{REPORT_ID}}" data-task-id="{{TASK_ID}}" data-confirm-endpoint="{{PAY_CONFIRM_ENDPOINT}}">
+<div class="container" data-report-id="{{REPORT_ID}}" data-task-id="{{TASK_ID}}" data-report-title="{{REPORT_TITLE}}" data-report-value="{{REPORT_VALUE}}" data-confirm-endpoint="{{PAY_CONFIRM_ENDPOINT}}">
   <header>
     <div class="title">哨兵任务付费</div>
     <div class="nav">
@@ -145,6 +145,8 @@ header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
   const container = document.querySelector(".container");
   const reportId = container ? container.dataset.reportId : "";
   const taskId = container ? container.dataset.taskId : "";
+  const reportTitle = container ? container.dataset.reportTitle : "";
+  const reportValue = container ? container.dataset.reportValue : "";
   const confirmEndpoint = container ? container.dataset.confirmEndpoint : "";
   const lang = "cn";
   const storageKey = `task_order_id:${taskId || reportId}`;
@@ -261,6 +263,8 @@ header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
           order_type: "task",
           task_id: taskId,
           report_id: reportId,
+          report_title: reportTitle,
+          report_value: reportValue,
           order_id: orderId,
           tier: `$${price}`,
           frequency: planFrequency(plan),
