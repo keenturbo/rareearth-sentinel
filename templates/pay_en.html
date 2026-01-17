@@ -51,6 +51,12 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
 .modal-close{position:absolute;top:10px;right:12px;border:0;background:transparent;font-size:20px;cursor:pointer;color:var(--muted)}
 .modal-close:hover{color:var(--ink)}
 .modal-backdrop{position:absolute;inset:0}
+.share-bar{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}
+.share-btn{width:28px;height:28px;border-radius:999px;border:1px solid #e5e7eb;display:inline-flex;align-items:center;justify-content:center;color:var(--muted);background:#fff;text-decoration:none;font-size:10px;font-weight:600}
+.share-btn:hover{color:var(--ink);border-color:#d1d5db}
+.share-icon{text-transform:uppercase;letter-spacing:.2px}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#111827;color:#fff;font-size:12px;padding:6px 10px;border-radius:999px;opacity:0;pointer-events:none;transition:opacity .2s, transform .2s;z-index:90}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
 @media (max-width:720px){
   .modal{align-items:stretch}
   .modal-card{width:100%;height:100%;max-height:none;border-radius:0;padding:16px 14px 90px}
@@ -59,6 +65,7 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
   .pay-btn,.pay-open-btn{width:100%;padding:10px 0;font-size:14px}
 }
 </style>
+<!-- Cloudflare Web Analytics --><script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "e70b3b5596ee443690a85e4c19e6c15a"}'></script><!-- End Cloudflare Web Analytics -->
 </head>
 <body>
 <div class="container" data-report-id="{{REPORT_ID}}" data-confirm-endpoint="{{PAY_CONFIRM_ENDPOINT}}">
@@ -76,6 +83,15 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
     <div class="meta">Report ID: {{REPORT_ID}}</div>
     <div class="value">{{REPORT_TITLE}}</div>
     <div class="value">Why it matters: {{REPORT_VALUE}}</div>
+    <div class="share-bar" data-share-title="RareEarth Sentinel | {{REPORT_TITLE}}">
+      <a class="share-btn" data-share="x" aria-label="Share on X" href="#"><span class="share-icon">X</span></a>
+      <a class="share-btn" data-share="linkedin" aria-label="Share on LinkedIn" href="#"><span class="share-icon">in</span></a>
+      <a class="share-btn" data-share="reddit" aria-label="Share on Reddit" href="#"><span class="share-icon">rd</span></a>
+      <a class="share-btn" data-share="telegram" aria-label="Share on Telegram" href="#"><span class="share-icon">tg</span></a>
+      <a class="share-btn" data-share="weibo" aria-label="Share on Weibo" href="#"><span class="share-icon">wb</span></a>
+      <button class="share-btn" data-share="wechat" aria-label="Copy for WeChat" type="button"><span class="share-icon">wx</span></button>
+      <button class="share-btn" data-share="copy" aria-label="Copy link" type="button"><span class="share-icon">cpy</span></button>
+    </div>
   </section>
 
   <section class="section">
@@ -356,5 +372,77 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
   setInterval(pollStatus, 5000);
 })();
 </script>
+<script>
+(function(){
+  function copyText(text){
+    if (!text) return;
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).catch(function(){});
+      return;
+    }
+    var textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try { document.execCommand('copy'); } catch (err) {}
+    document.body.removeChild(textarea);
+  }
+
+  function setupShareBar(bar, toastText){
+    var url = bar.getAttribute('data-share-url') || window.location.href;
+    var title = bar.getAttribute('data-share-title') || document.title;
+    var encodedUrl = encodeURIComponent(url);
+    var encodedTitle = encodeURIComponent(title);
+    var toast = document.getElementById('share-toast');
+
+    function showToast(){
+      if (!toast) return;
+      toast.textContent = toastText;
+      toast.classList.add('show');
+      if (toast._timer) clearTimeout(toast._timer);
+      toast._timer = setTimeout(function(){ toast.classList.remove('show'); }, 1200);
+    }
+
+    bar.querySelectorAll('[data-share]').forEach(function(btn){
+      var kind = btn.getAttribute('data-share');
+      if (kind === 'copy' || kind === 'wechat') {
+        btn.addEventListener('click', function(event){
+          event.preventDefault();
+          copyText(url);
+          showToast();
+        });
+        return;
+      }
+      var shareUrl = '';
+      if (kind === 'x') {
+        shareUrl = 'https://twitter.com/intent/tweet?text=' + encodedTitle + '&url=' + encodedUrl;
+      } else if (kind === 'linkedin') {
+        shareUrl = 'https://www.linkedin.com/sharing/share-offsite/?url=' + encodedUrl;
+      } else if (kind === 'reddit') {
+        shareUrl = 'https://www.reddit.com/submit?url=' + encodedUrl + '&title=' + encodedTitle;
+      } else if (kind === 'telegram') {
+        shareUrl = 'https://t.me/share/url?url=' + encodedUrl + '&text=' + encodedTitle;
+      } else if (kind === 'weibo') {
+        shareUrl = 'https://service.weibo.com/share/share.php?url=' + encodedUrl + '&title=' + encodedTitle;
+      }
+      if (shareUrl) {
+        btn.setAttribute('href', shareUrl);
+        btn.setAttribute('target', '_blank');
+        btn.setAttribute('rel', 'noopener');
+      }
+    });
+  }
+
+  var bars = document.querySelectorAll('.share-bar');
+  if (!bars.length) return;
+  bars.forEach(function(bar){
+    setupShareBar(bar, 'Copied');
+  });
+})();
+</script>
+<div class="toast" id="share-toast">Copied</div>
 </body>
 </html>
