@@ -12,7 +12,7 @@
   name: China Customs
   mode: site_search
   domain: customs.gov.cn
-  query_terms: '稀土 OR "rare earth" OR 出口管制 OR 关键矿产'
+  query_terms: '稀土 OR "rare earth" OR "critical minerals" OR 出口管制 OR 关键矿产'
   news_lang: zh-CN
   news_region: CN
   news_edition: CN:zh-Hans
@@ -106,4 +106,24 @@
   news_lang: en-US
   news_region: US
   news_edition: US:en
+  max_items: 6
+
+- id: dw_zh
+  name: Deutsche Welle (ZH)
+  mode: site_search
+  domain: dw.com/zh
+  query_terms: '稀土 OR "rare earth" OR "critical minerals" OR 关键矿产'
+  news_lang: zh-CN
+  news_region: CN
+  news_edition: CN:zh-Hans
+  max_items: 6
+
+- id: dw_zh_hant
+  name: Deutsche Welle (ZH-Hant)
+  mode: site_search
+  domain: dw.com/zh-hant
+  query_terms: '稀土 OR "rare earth" OR "critical minerals" OR 关键矿产'
+  news_lang: zh-TW
+  news_region: TW
+  news_edition: TW:zh-Hant
   max_items: 6
