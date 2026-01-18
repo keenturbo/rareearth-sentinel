@@ -10,6 +10,7 @@ Global rare earth intelligence sentinel (focus on non-China). Multi-source crawl
 - Appends to JSONL history and generates static pages
 - Generates premium briefs and pay/unlock flow
 - Builds index watch signals from price sources
+- Runs task execution for paid recommendations
 
 ## Architecture
 Sources -> Fetcher -> Extractor -> Normalizer -> JSONL storage -> Reporter (static site)
@@ -65,7 +66,7 @@ python main.py --rebuild
 - `registry.py` - source registry
 
 ## templates/
-CN/EN templates for index, premium, pay, admin, about, subscribe, rank, task pay.
+CN/EN templates for index, premium, pay, admin, about, subscribe, rank, task pay, task page, and task report.
 
 ## scripts/
 - `collect_indices.py` - fetch price sources
@@ -73,10 +74,11 @@ CN/EN templates for index, premium, pay, admin, about, subscribe, rank, task pay
 - `build_index_signals.py` - build index signals
 - `pay_confirm_server.py` - pay confirmation API (Bark notify)
 - `confirm_payment.py` - CLI confirm to generate unlock
-- `build_admin_orders.py` - render admin orders page
+- `build_admin_orders.py` - render admin orders and task orders pages
 - `premium_backfill.py` - backfill premium briefs
 - `official_backfill.py` - backfill official source ids
 - `clean_invalid_official_links.py` - cleanup broken official links
+- `run_tasks.py` - execute paid tasks and generate reports
 
 ## Payment flow (reports)
 1) User visits `/cn/pay/<report_id>.html` or `/en/pay/<report_id>.html`
@@ -87,7 +89,8 @@ CN/EN templates for index, premium, pay, admin, about, subscribe, rank, task pay
 
 ## Task pay (T2.x)
 - T2.1/T2.2 done: task pay templates exist
-- T2.3 in progress: generate `/cn/task/pay/<report_id>.html` and `/en/task/pay/<report_id>.html` and link CTA to them
+- T2.3 done: generate `/cn/task/pay/<report_id>.html` and `/en/task/pay/<report_id>.html` and link CTA to them
+- T2.4 done: task orders, task pages, and task reports (`/cn|en/task/<task_id>.html` + `/cn|en/task/<task_id>/reports/<date>.html`)
 - TASK_ID format: `task-<report_id>` (current default)
 
 ## Configuration
@@ -102,6 +105,7 @@ Typical keys:
 - Primary domain: https://sentinel.dataspices.com
 - CN/EN: `/cn/` and `/en/`
 - Admin: `/cn/admin/premium/` (protected via NPM auth)
+- Task admin: `/cn/admin/task-orders/`
 - `pay_confirm_server.py` runs on port 8112
 - Static site is generated under `static/` and served by Nginx Proxy Manager
 
@@ -112,6 +116,11 @@ Example cron:
 CRON_TZ=Asia/Shanghai
 0 9 * * * cd /path/to/rareearth-sentinel && /usr/bin/python3 main.py >> cron.log 2>&1
 ```
+
+### Task runner schedule
+- Daily tasks: 11:00 CST
+- Weekly tasks: Monday 09:00 CST
+- Event trigger: keyword match (title + summary) + related report keywords
 
 ### Index update (manual)
 1) Upload Excel to `data/indices/raw/manual/` (see config)
@@ -125,6 +134,8 @@ CRON_TZ=Asia/Shanghai
 - Make small, incremental edits and verify diff size
 
 ## Current status / todo
-- Implement T2.3 task pay page generation + CTA link
+- Prompt optimization for premium report quality
+- Prompt optimization for task execution outputs
+- Prompt optimization for news extraction quality
 - Ranking data source and script still TBD
 - $99/$999 tiers remain hidden (reserved for later)
