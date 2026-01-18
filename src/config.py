@@ -54,6 +54,7 @@ class Config:
     data_dir: str
     static_dir: str
     templates_dir: str
+    site_base_url: str
     keywords_file: str
     sources: list
     google_news_lang: str
@@ -124,6 +125,9 @@ class Config:
             data_dir=_get_env("DATA_DIR", "data"),
             static_dir=_get_env("STATIC_DIR", "static"),
             templates_dir=_get_env("TEMPLATES_DIR", "templates"),
+            site_base_url=_get_env(
+                "SITE_BASE_URL", "https://sentinel.dataspices.com"
+            ),
             keywords_file=_get_env("KEYWORDS_FILE", "config/keywords.txt"),
             sources=_get_list("SOURCES", ["google_news"]),
             google_news_lang=_get_env("GOOGLE_NEWS_LANG", "en-US"),

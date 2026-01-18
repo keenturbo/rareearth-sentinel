@@ -17,6 +17,7 @@ from src.normalizer import Normalizer
 from src.utils import clean_text, isoformat, now_cst, is_homepage_url
 from src.datasets import build_datasets
 from src.premium import generate_daily_briefs, backfill_daily_briefs
+from src.telegram import post_telegram_records
 
 
 def _context_lines(context_summary, limit=0):
@@ -94,6 +95,7 @@ def run_pipeline(config):
     started_at = isoformat(now_cst())
     processed_items = 0
     current_info = {}
+    new_records = []
 
     def write_status(running, finished=False, error=""):
         if running and processed_items < total_items:
@@ -229,6 +231,7 @@ def run_pipeline(config):
                     normalizer.add_record(record)
                     seen_ids.add(record["id"])
                     stats["saved"] += 1
+                    new_records.append(record)
                     print("  + saved (zh + en)")
 
                     if config.analyze_delay_seconds > 0:
@@ -241,6 +244,12 @@ def run_pipeline(config):
             generate_daily_briefs(config, list(storage.iter_records()))
 
         reporter.rebuild(storage)
+        try:
+            posted, total = post_telegram_records(new_records, config)
+            if total:
+                print(f"[telegram] posted {posted}/{total}")
+        except Exception as exc:
+            print(f"[telegram] error: {exc}")
         write_status(running=False, finished=True)
         return stats
     except Exception as exc:
