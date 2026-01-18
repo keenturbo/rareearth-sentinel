@@ -15,7 +15,8 @@ header.topbar{display:flex;justify-content:space-between;align-items:center;marg
 .brand .title{margin:0;font-size:24px;font-family:"Noto Serif SC",serif;letter-spacing:.3px;font-weight:600}
 .positioning{font-size:13px;color:var(--ink);opacity:.85;margin-top:2px}
 .subtitle{font-size:12px;color:var(--muted)}
-.subrow{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:4px 0 8px}
+.subtitle-group{display:flex;flex-direction:column;gap:2px}
+.subrow{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin:4px 0 8px}
 .meta-group{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .meta-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:4px 0 12px}
 .meta{font-size:12px;color:var(--muted)}
@@ -96,7 +97,7 @@ header.topbar{display:flex;justify-content:space-between;align-items:center;marg
 .sentinel-cta-wrap{margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .sentinel-cta{background:var(--warn);color:#fff;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:600;display:inline-flex;gap:6px;align-items:center;text-decoration:none}
 .sentinel-cta .premium-badge{background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:6px;font-size:10px;font-weight:700;letter-spacing:.2px}
-.share-bar{display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap}
+.share-bar{display:flex;gap:8px;align-items:center;margin:0;flex-wrap:wrap}
 .share-btn{width:28px;height:28px;border-radius:999px;border:1px solid #e5e7eb;display:inline-flex;align-items:center;justify-content:center;color:transparent;background:#fff;text-decoration:none;font-size:0;font-weight:600;background-repeat:no-repeat;background-position:center;background-size:14px 14px}
 .share-btn:hover{border-color:#d1d5db}
 .share-btn[data-share="x"]{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23111827'%3E%3Cpath d='M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z'/%3E%3C/svg%3E")}
@@ -109,7 +110,7 @@ header.topbar{display:flex;justify-content:space-between;align-items:center;marg
 .share-icon{display:none}
 .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#111827;color:#fff;font-size:12px;padding:6px 10px;border-radius:999px;opacity:0;pointer-events:none;transition:opacity .2s, transform .2s;z-index:90}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
-@media(max-width:720px){.sentinel-cta-wrap{flex-direction:column;align-items:flex-start}}
+@media(max-width:720px){.sentinel-cta-wrap{flex-direction:column;align-items:flex-start}.subrow{flex-direction:column;align-items:flex-start}.share-bar{margin-top:4px}}
 .logo-mark{width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center}
 .logo-mark svg{width:100%;height:100%}
 .brand{display:flex;align-items:center;gap:8px}
@@ -122,26 +123,16 @@ header.topbar{display:flex;justify-content:space-between;align-items:center;marg
   <header class="topbar">
     <div class="brand">
       <span class="logo-mark" aria-hidden="true">
-  <svg viewBox="80 120 340 260" xmlns="http://www.w3.org/2000/svg" focusable="false">
-    <path d="M250 280L220 250L250 220L280 250L250 280Z" fill="currentColor"/>
-    <path d="M250 180L190 250L250 320L310 250L250 180ZM250 205L288 250L250 295L212 250L250 205Z" fill="currentColor" fill-rule="evenodd"/>
-    <path d="M250 120C180 120 115 160 80 250C115 340 180 380 250 380C320 120 385 340 420 250C385 160 320 120 250 120ZM250 150C305 150 355 185 385 250C355 315 305 350 250 350C195 350 145 315 115 250C145 185 195 150 250 150Z" fill="currentColor" fill-rule="evenodd"/>
-    <path d="M130 250H190" stroke="currentColor" stroke-width="8" stroke-linecap="round"/>
-    <path d="M310 250H370" stroke="currentColor" stroke-width="8" stroke-linecap="round"/>
-  </svg>
-</span>
+        <svg viewBox="80 120 340 260" xmlns="http://www.w3.org/2000/svg" focusable="false">
+          <path d="M250 280L220 250L250 220L280 250L250 280Z" fill="currentColor"/>
+          <path d="M250 180L190 250L250 320L310 250L250 180ZM250 205L288 250L250 295L212 250L250 205Z" fill="currentColor" fill-rule="evenodd"/>
+          <path d="M250 120C180 120 115 160 80 250C115 340 180 380 250 380C320 380 385 340 420 250C385 160 320 120 250 120ZM250 150C305 150 355 185 385 250C355 315 305 350 250 350C195 350 145 315 115 250C145 185 195 150 250 150Z" fill="currentColor" fill-rule="evenodd"/>
+          <path d="M130 250H190" stroke="currentColor" stroke-width="8" stroke-linecap="round"/>
+          <path d="M310 250H370" stroke="currentColor" stroke-width="8" stroke-linecap="round"/>
+        </svg>
+      </span>
       <div class="brand-text">
         <div class="title">稀土情报哨兵</div>
-        <div class="positioning">从证据到行动建议</div>
-      </div>
-      <div class="share-bar" data-share-title="稀土情报哨兵">
-        <a class="share-btn" data-share="x" aria-label="Share on X" href="#"><span class="share-icon">X</span></a>
-        <a class="share-btn" data-share="linkedin" aria-label="Share on LinkedIn" href="#"><span class="share-icon">in</span></a>
-        <a class="share-btn" data-share="reddit" aria-label="Share on Reddit" href="#"><span class="share-icon">rd</span></a>
-        <a class="share-btn" data-share="telegram" aria-label="Share on Telegram" href="#"><span class="share-icon">tg</span></a>
-        <a class="share-btn" data-share="weibo" aria-label="Share on Weibo" href="#"><span class="share-icon">wb</span></a>
-        <button class="share-btn" data-share="wechat" aria-label="Copy for WeChat" type="button"><span class="share-icon">wx</span></button>
-        <button class="share-btn" data-share="copy" aria-label="Copy link" type="button"><span class="share-icon">cpy</span></button>
       </div>
     </div>
     <nav class="nav">
@@ -155,10 +146,21 @@ header.topbar{display:flex;justify-content:space-between;align-items:center;marg
     </nav>
   </header>
   <div class="subrow">
-    <div class="subtitle">面向投资/产业/政策的稀土与关键矿产情报服务</div>
+    <div class="subtitle-group">
+      <div class="subtitle">面向投资/产业/政策的稀土与关键矿产情报服务</div>
+    </div>
     <div class="meta-group">
       <div class="meta">{{PAGE_NOTE}}</div>
       <div class="meta">更新：{{LAST_UPDATE}}</div>
+      <div class="share-bar" data-share-title="稀土情报哨兵">
+        <a class="share-btn" data-share="x" aria-label="Share on X" href="#"><span class="share-icon">X</span></a>
+        <a class="share-btn" data-share="linkedin" aria-label="Share on LinkedIn" href="#"><span class="share-icon">in</span></a>
+        <a class="share-btn" data-share="reddit" aria-label="Share on Reddit" href="#"><span class="share-icon">rd</span></a>
+        <a class="share-btn" data-share="telegram" aria-label="Share on Telegram" href="#"><span class="share-icon">tg</span></a>
+        <a class="share-btn" data-share="weibo" aria-label="Share on Weibo" href="#"><span class="share-icon">wb</span></a>
+        <button class="share-btn" data-share="wechat" aria-label="Copy for WeChat" type="button"><span class="share-icon">wx</span></button>
+        <button class="share-btn" data-share="copy" aria-label="Copy link" type="button"><span class="share-icon">cpy</span></button>
+      </div>
     </div>
   </div>
   <div class="kpis">
