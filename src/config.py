@@ -110,6 +110,8 @@ class Config:
     pay_admin_base_url_en: str
     pay_admin_orders_url: str
     pay_admin_orders_url_en: str
+    telegram_bot_token: str
+    telegram_channel: str
     unlock_expires_days: int
     show_related_context: bool
 
@@ -196,6 +198,8 @@ class Config:
             pay_admin_base_url_en=_get_env("PAY_ADMIN_BASE_URL_EN", ""),
             pay_admin_orders_url=_get_env("PAY_ADMIN_ORDERS_URL", ""),
             pay_admin_orders_url_en=_get_env("PAY_ADMIN_ORDERS_URL_EN", ""),
+            telegram_bot_token=_get_env("TELEGRAM_BOT_TOKEN", ""),
+            telegram_channel=_get_env("TELEGRAM_CHANNEL", ""),
             unlock_expires_days=_get_int("UNLOCK_EXPIRES_DAYS", 7),
             show_related_context=_get_bool("SHOW_RELATED_CONTEXT", False),
         )
