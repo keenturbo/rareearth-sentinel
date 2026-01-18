@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>稀土情报哨兵</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=Noto+Sans+SC:wght@400;600&display=swap" rel="stylesheet">
 <style>
 :root{--ink:#111827;--muted:#6b7280;--bg:#f8f6f2;--card:#ffffff;--accent:#1e3a8a;--warn:#b45309;--risk:#b91c1c;--soft:#f3f4f6}
@@ -109,6 +110,9 @@ header.topbar{display:flex;justify-content:space-between;align-items:center;marg
 .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#111827;color:#fff;font-size:12px;padding:6px 10px;border-radius:999px;opacity:0;pointer-events:none;transition:opacity .2s, transform .2s;z-index:90}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
 @media(max-width:720px){.sentinel-cta-wrap{flex-direction:column;align-items:flex-start}}
+.logo-mark{width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center}
+.logo-mark svg{width:100%;height:100%}
+.brand{display:flex;align-items:center;gap:8px}
 </style>
 <!-- Cloudflare Web Analytics --><script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "e70b3b5596ee443690a85e4c19e6c15a"}'></script><!-- End Cloudflare Web Analytics -->
 </head>
@@ -116,6 +120,15 @@ header.topbar{display:flex;justify-content:space-between;align-items:center;marg
 <div class="container">
   <header class="topbar">
     <div class="brand">
+      <span class="logo-mark" aria-hidden="true">
+  <svg viewBox="80 120 340 260" xmlns="http://www.w3.org/2000/svg" focusable="false">
+    <path d="M250 280L220 250L250 220L280 250L250 280Z" fill="currentColor"/>
+    <path d="M250 180L190 250L250 320L310 250L250 180ZM250 205L288 250L250 295L212 250L250 205Z" fill="currentColor" fill-rule="evenodd"/>
+    <path d="M250 120C180 120 115 160 80 250C115 340 180 380 250 380C320 380 385 340 420 250C385 160 320 120 250 120ZM250 150C305 150 355 185 385 250C355 315 305 350 250 350C195 350 145 315 115 250C145 185 195 150 250 150Z" fill="currentColor" fill-rule="evenodd"/>
+    <path d="M130 250H190" stroke="currentColor" stroke-width="8" stroke-linecap="round"/>
+    <path d="M310 250H370" stroke="currentColor" stroke-width="8" stroke-linecap="round"/>
+  </svg>
+</span>
       <div class="title">稀土情报哨兵</div>
       <div class="positioning">从证据到行动建议</div>
       <div class="share-bar" data-share-title="稀土情报哨兵">
