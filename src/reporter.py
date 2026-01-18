@@ -1736,7 +1736,9 @@ class Reporter:
         bullets = daily_report.get("bullets") or []
 
         headline_html = (
-            f'<div class="daily-headline">{headline}</div>' if headline else ""
+            f'<div class="daily-headline">{headline}</div>'
+            if headline
+            else ""
         )
         body_html = f'<div class="daily-body">{body}</div>' if body else ""
 
@@ -1809,11 +1811,13 @@ class Reporter:
             reason_label = "价值" if lang == "zh" else "Why it matters"
             reason_label_html = f'<span class="label-gray">{reason_label}</span>'
             btn_label = "解锁深度报告" if lang == "zh" else "Unlock Deep Report"
+            report_id = str(item.get("id", "")).strip()
+            unlock = self._pay_link(lang, report_id) if report_id else "mailto:sentinel@dataspices.com"
             block = (
                 '<div class="premium-item">'
                 f'<div class="premium-topic">{title}</div>'
                 f'<div class="premium-reason">{reason_label_html}：{reason}</div>'
-                f'<a class="premium-btn" href="mailto:sentinel@dataspices.com">{btn_label}</a>'
+                f'<a class="premium-btn" href="{html.escape(unlock)}">{btn_label}</a>'
                 '</div>'
             )
             blocks.append(block)
