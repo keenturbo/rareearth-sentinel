@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import threading
 import argparse
 import html
 import json
@@ -172,10 +173,13 @@ def _send_bark(config, payload):
     url = f"{bark_base}/{quote(title)}/{quote(body)}"
     if orders_link:
         url = f"{url}?url={quote(orders_link)}"
+def _fire(u):
     try:
-        requests.get(url, timeout=6)
+        requests.get(u, timeout=(3, 5))
     except Exception:
         pass
+
+    threading.Thread(target=_fire, args=(url,), daemon=True).start()
 
 
 def _load_report_entry(premium_dir, report_id):
