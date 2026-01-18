@@ -28,6 +28,19 @@ ion-adsorption clay
 rare earth carbonate
 rare earth chloride
 
+# Precision expansions (high-signal)
+heavy rare earth
+light rare earth
+REE
+REO
+NdPr
+NdPr oxide
+rare earth separation plant
+solvent extraction rare earth
+rare earth magnet recycling
+rare earth export control
+critical raw materials act
+
 # LREE/HREE specific minerals
 lanthanum project
 cerium project
@@ -45,6 +58,28 @@ thulium project
 ytterbium project
 lutetium project
 scandium project
+
+# Company-specific (precision)
+MP Materials rare earth
+Lynas rare earth
+China Northern Rare Earth
+China Rare Earth Group
+Shenghe Resources rare earth
+Energy Fuels rare earth
+Neo Performance Materials rare earth
+Iluka rare earth
+Arafura rare earth
+Hastings rare earth
+Northern Minerals rare earth
+USA Rare Earth
+
+# Project-specific (precision)
+Mountain Pass rare earth
+Mt Weld rare earth
+Nolans rare earth
+Yangibana rare earth
+Browns Range rare earth
+Nechalacho rare earth
 
 # Critical materials & policy (DOE/USGS aligned)
 critical minerals policy
