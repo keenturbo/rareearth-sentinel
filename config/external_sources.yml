@@ -127,3 +127,13 @@
   news_region: TW
   news_edition: TW:zh-Hant
   max_items: 6
+
+- id: kyodo_zh
+  name: Kyodo News (ZH)
+  mode: site_search
+  domain: china.kyodonews.net/articles
+  query_terms: '稀土 OR "rare earth" OR "critical minerals" OR 稀有金属 OR 出口管制 OR 关键矿产'
+  news_lang: zh-CN
+  news_region: CN
+  news_edition: CN:zh-Hans
+  max_items: 6
