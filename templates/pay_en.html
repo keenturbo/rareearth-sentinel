@@ -40,6 +40,8 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
 .pay-field{margin-top:10px;font-size:12px}
 .pay-field label{display:block;margin-bottom:4px;color:var(--muted)}
 .pay-input{width:100%;padding:6px 8px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;background:#fff}
+.pay-input.is-invalid{border-color:#dc2626;background:#fef2f2}
+.pay-note strong{color:var(--ink);font-weight:600}
 .report-body h1,.report-body h2,.report-body h3{font-family:"Source Serif 4",serif;margin:12px 0 6px}
 .report-body p{margin:6px 0}
 .report-body ul{margin:6px 0 6px 16px}
@@ -124,14 +126,14 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
 
         <div class="pay-field">
           <label for="buyer-email">Email (for contact)</label>
-          <input id="buyer-email" class="pay-input" placeholder="Enter your email" />
+          <input id="buyer-email" class="pay-input" placeholder="Enter your email" required />
         </div>
 
         <div class="order-box">
           <div>Order ID: <span id="order-id" class="mono">--</span><button class="copy-btn" data-copy="order-id">Copy</button></div>
           <div>Payment memo: <span id="pay-memo" class="mono">report_id={{REPORT_ID}} tier=$9 order_id=-- email=your@email</span><button class="copy-btn" data-copy="pay-memo">Copy</button></div>
         </div>
-        <div class="pay-note">Please include the memo in your payment remark so we can match your order.</div>
+        <div class="pay-note">Please include your <strong>email</strong> in the payment remark to enable confirmation.</div>
         <button class="pay-btn" id="paid-btn">I have paid</button>
         <div class="unlock-box notice-gold" id="unlock-box">Unlock link: pending confirmation (usually 10–30 minutes)</div>
       </section>
@@ -182,7 +184,12 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
 
   updateMemo();
   if (emailInput) {
-    emailInput.addEventListener("input", updateMemo);
+    emailInput.addEventListener("input", () => {
+      updateMemo();
+      if (emailInput.value.trim()) {
+        emailInput.classList.remove("is-invalid");
+      }
+    });
   }
 
   document.querySelectorAll(".copy-btn").forEach(btn => {
@@ -320,6 +327,17 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
 
   if (paidBtn) {
     paidBtn.addEventListener("click", async () => {
+      const emailVal = (emailInput && emailInput.value.trim()) || "";
+      if (!emailVal) {
+        if (emailInput) {
+          emailInput.classList.add("is-invalid");
+          emailInput.focus();
+        }
+        if (unlockBox) {
+          unlockBox.textContent = "Please enter your email";
+        }
+        return;
+      }
       if (unlockBox) {
         unlockBox.textContent = "Payment submitted. Awaiting confirmation…";
       }
@@ -332,7 +350,7 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
           order_id: orderId,
           tier: "$9",
           lang: "en",
-          email: (emailInput && emailInput.value.trim()) || "",
+          email: emailVal,
           payment_method: methodSelect ? methodSelect.value : "",
           payment_token: (tokenInput && tokenInput.value.trim()) || "",
           memo: memoEl ? memoEl.textContent : "",
