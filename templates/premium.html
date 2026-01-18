@@ -24,9 +24,16 @@ header{display:flex;justify-content:space-between;align-items:center;margin-bott
 .btn:hover{background:#d97706}
 .empty{font-size:13px;color:var(--muted)}
 .share-bar{display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap}
-.share-btn{width:28px;height:28px;border-radius:999px;border:1px solid #e5e7eb;display:inline-flex;align-items:center;justify-content:center;color:var(--muted);background:#fff;text-decoration:none;font-size:10px;font-weight:600}
-.share-btn:hover{color:var(--ink);border-color:#d1d5db}
-.share-icon{text-transform:uppercase;letter-spacing:.2px}
+.share-btn{width:28px;height:28px;border-radius:999px;border:1px solid #e5e7eb;display:inline-flex;align-items:center;justify-content:center;color:transparent;background:#fff;text-decoration:none;font-size:0;font-weight:600;background-repeat:no-repeat;background-position:center;background-size:14px 14px}
+.share-btn:hover{border-color:#d1d5db}
+.share-btn[data-share="x"]{background-image:url("https://simpleicons.org/icons/x.svg")}
+.share-btn[data-share="linkedin"]{background-image:url("https://www.svgrepo.com/download/360538/linkedin-circle.svg");background-size:16px 16px}
+.share-btn[data-share="reddit"]{background-image:url("https://simpleicons.org/icons/reddit.svg")}
+.share-btn[data-share="telegram"]{background-image:url("https://simpleicons.org/icons/telegram.svg")}
+.share-btn[data-share="weibo"]{background-image:url("https://simpleicons.org/icons/sinaweibo.svg")}
+.share-btn[data-share="wechat"]{background-image:url("https://simpleicons.org/icons/wechat.svg")}
+.share-btn[data-share="copy"]{background-image:url("https://www.svgrepo.com/download/535325/copy.svg");background-size:16px 16px}
+.share-icon{display:none}
 .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#111827;color:#fff;font-size:12px;padding:6px 10px;border-radius:999px;opacity:0;pointer-events:none;transition:opacity .2s, transform .2s;z-index:90}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
 </style>
@@ -65,12 +72,7 @@ header{display:flex;justify-content:space-between;align-items:center;margin-bott
 </div>
 <script>
 (function(){
-  function copyText(text){
-    if (!text) return;
-    if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(text).catch(function(){});
-      return;
-    }
+  function fallbackCopy(text){
     var textarea = document.createElement('textarea');
     textarea.value = text;
     textarea.setAttribute('readonly', '');
@@ -80,6 +82,15 @@ header{display:flex;justify-content:space-between;align-items:center;margin-bott
     textarea.select();
     try { document.execCommand('copy'); } catch (err) {}
     document.body.removeChild(textarea);
+  }
+
+  function copyText(text){
+    if (!text) return;
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(function(){}, function(){ fallbackCopy(text); });
+      return;
+    }
+    fallbackCopy(text);
   }
 
   function setupShareBar(bar, toastText){
@@ -102,6 +113,7 @@ header{display:flex;justify-content:space-between;align-items:center;margin-bott
       if (kind === 'copy' || kind === 'wechat') {
         btn.addEventListener('click', function(event){
           event.preventDefault();
+          event.stopPropagation();
           copyText(url);
           showToast();
         });
