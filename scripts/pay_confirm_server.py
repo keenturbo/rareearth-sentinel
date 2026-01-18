@@ -173,11 +173,12 @@ def _send_bark(config, payload):
     url = f"{bark_base}/{quote(title)}/{quote(body)}"
     if orders_link:
         url = f"{url}?url={quote(orders_link)}"
-def _fire(u):
-    try:
-        requests.get(u, timeout=(3, 5))
-    except Exception:
-        pass
+
+    def _fire(u):
+        try:
+            requests.get(u, timeout=(3, 5))
+        except Exception:
+            pass
 
     threading.Thread(target=_fire, args=(url,), daemon=True).start()
 
