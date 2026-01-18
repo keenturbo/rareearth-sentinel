@@ -1,11 +1,14 @@
 import json
 import math
+import os
 from datetime import datetime
 from urllib.parse import urlparse
 
 import google.generativeai as genai
 
 from ..utils import extract_json
+
+AUDIENCE_FIT = {"investor", "industry", "policy", "mixed"}
 
 
 class PremiumBriefGenerator:
@@ -17,6 +20,7 @@ class PremiumBriefGenerator:
             config.gemini_model,
             generation_config={"temperature": 0.2},
         )
+        self.prompt_version = os.getenv("PROMPT_VERSION", "v1").strip().lower()
 
     def generate(self, record, lang="zh"):
         content = str(record.get("content", "")).strip()
@@ -52,7 +56,39 @@ class PremiumBriefGenerator:
 
         if lang == "en":
             summary = summary_en or summary_zh
-            prompt = f"""
+            if self.prompt_version == "v2":
+                prompt = f"""
+You are a rare earth intelligence verification analyst. Generate a paid brief (USD $9) for Western decision makers.
+Return ONLY JSON with fields:
+- conclusion (1 sentence)
+- fact_checks (array of 2-3 short items)
+- fact_sources (array of 2-4 sources or domains used in fact checks)
+- key_numbers (array of 2-4 items)
+- impact_score (1-10 integer)
+- tracking_nodes (array of 3 time-bound items)
+- confidence_notes (array of 1-2 items explaining evidence limits)
+- value_proposition (1 sentence explaining why this matters)
+- key_evidence (array of up to 3 evidence points)
+- assumptions (array of up to 3 evidence gaps)
+- audience_fit (one of investor, industry, policy, mixed)
+
+Constraints:
+- Be concise, factual, and actionable.
+- fact_checks must be verifiable; do not invent facts.
+- key_numbers must be supported by the article or summary; use "Unknown" if missing.
+- confidence_notes must explain evidence limits.
+- value_proposition should focus on decision value.
+
+Metadata:
+{meta_block}
+Summary:
+{summary}
+
+Article:
+{content}
+"""
+            else:
+                prompt = f"""
 You are a rare earth intelligence verification analyst. Generate a paid brief (USD $9) for Western decision makers.
 Return ONLY JSON with fields:
 - conclusion (1 sentence)
@@ -78,7 +114,38 @@ Article:
 """
         else:
             summary = summary_zh or summary_en
-            prompt = f"""
+            if self.prompt_version == "v2":
+                prompt = f"""
+你是一名稀土情报核查专家，请生成售价9美元的付费简报（给中国决策者）。
+只输出JSON，包含字段：
+- conclusion（一句话结论）
+- fact_checks（2-3条核查要点）
+- fact_sources（2-4条核查来源或域名）
+- key_numbers（2-4条关键数字）
+- impact_score（1-10分）
+- tracking_nodes（3条需追踪节点）
+- confidence_notes（1-2条证据局限说明）
+- value_proposition（一句话说明为什么值得跟踪）
+- key_evidence（最多3条关键证据）
+- assumptions（最多3条证据缺口/假设）
+- audience_fit（investor/industry/policy/mixed）
+
+要求：简洁、可执行，不要猜测。
+- fact_checks 必须可验证。
+- key_numbers 必须来自原文或摘要，缺失写“未知”。
+- confidence_notes 必须说明不确定性或证据缺口。
+- value_proposition 强调决策价值。
+
+元信息：
+{meta_block}
+摘要：
+{summary}
+
+正文：
+{content}
+"""
+            else:
+                prompt = f"""
 你是一名稀土情报核查专家，请生成售价9美元的付费简报（给中国决策者）。
 只输出JSON，包含字段：
 - conclusion（一句话结论）
@@ -137,6 +204,14 @@ def normalize_brief(data, lang="zh"):
             return 5
         return max(1, min(10, num))
 
+    def _audience_fit(value):
+        text = _as_str(value).lower()
+        if not text:
+            return "mixed"
+        if text in AUDIENCE_FIT:
+            return text
+        return "mixed"
+
     normalized = {
         "conclusion": _as_str(data.get("conclusion")),
         "fact_checks": _as_list(data.get("fact_checks"), limit=3),
@@ -146,6 +221,9 @@ def normalize_brief(data, lang="zh"):
         "tracking_nodes": _as_list(data.get("tracking_nodes"), limit=3),
         "confidence_notes": _as_list(data.get("confidence_notes"), limit=2),
         "value_proposition": _as_str(data.get("value_proposition")),
+        "key_evidence": _as_list(data.get("key_evidence"), limit=3),
+        "assumptions": _as_list(data.get("assumptions"), limit=3),
+        "audience_fit": _audience_fit(data.get("audience_fit")),
     }
 
     if not normalized["value_proposition"]:

@@ -241,6 +241,55 @@ def _build_prompt(entry, evidence, lang="cn", time_window=""):
         lines.append(f"- {date_label} | {title} | {summary} | {url}")
 
     evidence_block = "\n".join(lines) if lines else "(no evidence)"
+    prompt_version = os.getenv("PROMPT_VERSION", "v1").strip().lower()
+
+    if prompt_version == "v2":
+        if lang == "en":
+            return f"""
+You are a rare earths intelligence sentinel for Western decision makers.
+Generate a task monitoring report based on the task info and evidence list below.
+Return ONLY JSON with fields: summary, action_table, sources, conclusion, key_evidence, assumptions.
+- summary: 120-180 words, concise and analytical. State whether the recommendation is supported, weakened, or needs watch.
+- action_table: array of up to 5 items, each with action, path, evidence (evidence must come from the evidence list).
+- sources: array of up to 5 items, each with title and url.
+- conclusion: 1-2 sentences, avoid exaggerated claims.
+- key_evidence: up to 3 evidence points from the evidence list.
+- assumptions: up to 3 evidence gaps or assumptions.
+If evidence is weak, keep neutral and leave lists empty rather than guessing.
+
+Task info:
+- suggestion: {task_suggestion}
+- linked report: {report_title}
+- value: {report_value}
+- frequency: {frequency}
+- time window: {time_window}
+
+Evidence:
+{evidence_block}
+"""
+
+        return f"""
+你是中国视角的供应链风险情报哨兵。
+请基于任务信息与证据清单生成本期跟踪报告。
+仅返回 JSON，字段为：summary, action_table, sources, conclusion, key_evidence, assumptions。
+- summary：150-250字，必须回应任务建议“被支持/被削弱/需观察”，避免口号。
+- action_table：最多 5 行，每行包含 action, path, evidence（证据必须来自证据清单）。
+- sources：最多 5 行，每行包含 title, url。
+- conclusion：1-2 句，不要出现固定的“中国影响结论”句式。
+- key_evidence：最多 3 条，必须来自证据清单。
+- assumptions：最多 3 条证据缺口/假设。
+证据不足时保持中性，不要猜测。
+
+任务信息：
+- 操作建议：{task_suggestion}
+- 关联报告：{report_title}
+- 价值：{report_value}
+- 频率：{frequency}
+- 观察窗口：{time_window}
+
+证据清单：
+{evidence_block}
+"""
 
     if lang == "en":
         return f"""
@@ -302,7 +351,26 @@ def _generate_report(extractor, prompt):
 
 def _normalize_report(data):
     if not isinstance(data, dict):
-        return {"summary": "", "action_table": [], "sources": [], "conclusion": ""}
+        return {
+            "summary": "",
+            "action_table": [],
+            "sources": [],
+            "conclusion": "",
+            "key_evidence": [],
+            "assumptions": [],
+        }
+
+    def _as_list(value, limit=3):
+        if value is None:
+            return []
+        if isinstance(value, list):
+            items = [str(v).strip() for v in value if str(v).strip()]
+        elif isinstance(value, str):
+            items = [v.strip("- ").strip() for v in value.splitlines() if v.strip()]
+        else:
+            items = []
+        return items[:limit]
+
     summary = str(data.get("summary", "")).strip()
     conclusion = str(data.get("conclusion", "")).strip()
     if conclusion:
@@ -318,6 +386,8 @@ def _normalize_report(data):
         "action_table": action_table,
         "sources": sources,
         "conclusion": conclusion,
+        "key_evidence": _as_list(data.get("key_evidence"), limit=3),
+        "assumptions": _as_list(data.get("assumptions"), limit=3),
     }
 
 
@@ -590,12 +660,18 @@ def run_tasks(task_id="", force=False):
                 "summary": "本期暂无新增相关事件。",
                 "action_table": [],
                 "sources": [],
+                "conclusion": "",
+                "key_evidence": [],
+                "assumptions": [],
             }
         if report_data_en is None:
             report_data_en = {
                 "summary": "No new events in this period.",
                 "action_table": [],
                 "sources": [],
+                "conclusion": "",
+                "key_evidence": [],
+                "assumptions": [],
             }
 
         summary_cn = _render_summary(report_data_cn.get("summary", ""), lang="cn")
@@ -610,12 +686,16 @@ def run_tasks(task_id="", force=False):
             "report_date": report_date,
             "created_at": isoformat(now),
             "summary": report_data_cn.get("summary", ""),
+            "key_evidence": report_data_cn.get("key_evidence", []),
+            "assumptions": report_data_cn.get("assumptions", []),
         }
         report_entry_en = {
             "task_id": entry.get("task_id"),
             "report_date": report_date,
             "created_at": isoformat(now),
             "summary": report_data_en.get("summary", ""),
+            "key_evidence": report_data_en.get("key_evidence", []),
+            "assumptions": report_data_en.get("assumptions", []),
         }
 
         report_url_cn = _write_task_report_page(
