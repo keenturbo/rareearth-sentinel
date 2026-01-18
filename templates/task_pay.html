@@ -42,6 +42,8 @@ header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
 .pay-field{margin-top:10px;font-size:12px}
 .pay-field label{display:block;margin-bottom:4px;color:var(--muted)}
 .pay-input{width:100%;padding:6px 8px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;background:#fff}
+.pay-input.is-invalid{border-color:#dc2626;background:#fef2f2}
+.pay-note strong{color:var(--ink);font-weight:600}
 .pay-open-btn{display:inline-block;margin-top:10px;font-size:12px;color:#fff;background:var(--accent);padding:6px 14px;border-radius:999px;text-decoration:none;border:0;cursor:pointer}
 .pay-open-btn:hover{background:#1f3a8a}
 .modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(17,24,39,0.45);z-index:60}
@@ -127,14 +129,14 @@ header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
 
         <div class="pay-field">
           <label for="buyer-email">邮箱（用于联系）</label>
-          <input id="buyer-email" class="pay-input" placeholder="填写你的邮箱" />
+          <input id="buyer-email" class="pay-input" placeholder="填写你的邮箱" required />
         </div>
 
         <div class="order-box">
           <div>订单号：<span id="order-id" class="mono">--</span><button class="copy-btn" data-copy="order-id">复制</button></div>
           <div>付款备注：<span id="pay-memo" class="mono">task_id={{TASK_ID}} report_id={{REPORT_ID}} frequency=weekly tier=$9 order_id=-- email=你的邮箱</span><button class="copy-btn" data-copy="pay-memo">复制</button></div>
         </div>
-        <div class="pay-note">付款时请务必填写备注，否则无法自动确认。</div>
+        <div class="pay-note">付款时请务必填写<strong>邮箱</strong>，否则无法自动确认。</div>
         <button class="pay-btn" id="paid-btn">我已付款</button>
         <div class="unlock-box notice-gold" id="unlock-box">任务链接：等待确认（通常 10-30 分钟内释放任务链接）</div>
       </section>
@@ -214,7 +216,14 @@ header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
 
   updatePrice();
   if (planSelect) planSelect.addEventListener("change", updatePrice);
-  if (emailInput) emailInput.addEventListener("input", updateMemo);
+  if (emailInput) {
+    emailInput.addEventListener("input", () => {
+      updateMemo();
+      if (emailInput.value.trim()) {
+        emailInput.classList.remove("is-invalid");
+      }
+    });
+  }
 
   document.querySelectorAll(".copy-btn").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -251,6 +260,17 @@ header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
 
   if (paidBtn) {
     paidBtn.addEventListener("click", async () => {
+      const emailVal = (emailInput && emailInput.value.trim()) || "";
+      if (!emailVal) {
+        if (emailInput) {
+          emailInput.classList.add("is-invalid");
+          emailInput.focus();
+        }
+        if (unlockBox) {
+          unlockBox.textContent = "请先填写邮箱";
+        }
+        return;
+      }
       if (unlockBox) {
         unlockBox.textContent = "已提交付款信息，请等待确认…";
       }
@@ -271,7 +291,7 @@ header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
           frequency: planFrequency(plan),
           plan: plan,
           lang: lang,
-          email: (emailInput && emailInput.value.trim()) || "",
+          email: emailVal,
           payment_method: methodSelect ? methodSelect.value : "",
           payment_token: (tokenInput && tokenInput.value.trim()) || "",
           task_suggestion: selectedSuggestion(),
