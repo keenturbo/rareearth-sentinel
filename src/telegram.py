@@ -53,6 +53,10 @@ def _split_summary_lines(text, limit=2):
     return lines[:limit]
 
 
+def _normalize_line(text):
+    return re.sub(r"[。.!?！？]+$", "", (text or "").strip())
+
+
 def _build_message(record, base_url):
     record_id = str(record.get("id", "")).strip()
     if not record_id:
@@ -64,19 +68,39 @@ def _build_message(record, base_url):
         or record.get("expert_summary")
         or ""
     )
+    expert = record.get("expert_summary") or record.get("expert_summary_en") or ""
     summary = str(summary).strip()
+    expert = str(expert).strip()
     summary_lines = _split_summary_lines(summary, limit=2)
-    summary_lines = [_clip_text(line, 200) for line in summary_lines]
+    summary_lines = [_clip_text(line, 200) for line in summary_lines if line]
+    expert_line = _clip_text(expert, 200) if expert else ""
 
     link = f"{base_url.rstrip('/')}/cn/task/pay/{record_id}.html"
 
     parts = []
     if title:
         parts.append(_escape_markdown(title))
+
+    is_cn = bool(record.get("summary_zh") or record.get("expert_summary"))
+    summary_label = "摘要：" if is_cn else "Summary: "
+    expert_label = "专家结论：" if is_cn else "Expert: "
+
     if summary_lines:
-        parts.append(_escape_markdown(f"摘要：{summary_lines[0]}"))
-        if len(summary_lines) > 1:
-            parts.append(_escape_markdown(summary_lines[1]))
+        parts.append(_escape_markdown(f"{summary_label}{summary_lines[0]}"))
+
+    second_line = ""
+    if expert_line and _normalize_line(expert_line) != _normalize_line(
+        summary_lines[0] if summary_lines else ""
+    ):
+        second_line = f"{expert_label}{expert_line}"
+    elif len(summary_lines) > 1 and _normalize_line(summary_lines[1]) != _normalize_line(
+        summary_lines[0]
+    ):
+        second_line = summary_lines[1]
+
+    if second_line:
+        parts.append(_escape_markdown(second_line))
+
     parts.append(link)
     return "\n".join([part for part in parts if part])
 
