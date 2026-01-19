@@ -16,16 +16,19 @@ header.topbar{display:flex;justify-content:space-between;align-items:center;marg
 .positioning{font-size:13px;color:var(--ink);opacity:.85;margin-top:2px}
 .subtitle{font-size:12px;color:var(--muted)}
 .subtitle-group{display:flex;flex-direction:column;gap:2px}
-.subrow{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin:4px 0 8px}
+.subrow{display:flex;justify-content:flex-start;align-items:flex-start;gap:12px;flex-wrap:wrap;margin:4px 0 2px}
+.share-row{display:flex;justify-content:flex-end;align-items:center;margin:0 0 6px}
 .meta-group{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-.meta-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:4px 0 12px}
+.meta-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:4px 0 12px}
+.meta-row .kpis{margin:0}
+.update-time{white-space:nowrap}
 .meta{font-size:12px;color:var(--muted)}
 .nav{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
 .nav a{font-size:12px;color:var(--muted);text-decoration:none}
 .nav a:hover{color:var(--ink)}
 .nav .gear{font-size:16px;line-height:1}
 @media(max-width:720px){.nav{width:100%}}
-.kpis{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 12px}
+.kpis{display:flex;gap:10px;flex-wrap:wrap;margin:0}
 .kpi{background:#fff;border-radius:10px;padding:8px 12px;border:1px solid #e5e7eb;font-size:12px}
 .section{background:#fff;border-radius:10px;padding:14px;border:1px solid #e5e7eb;margin-bottom:12px}
 .section-title{font-weight:600;margin-bottom:8px;font-family:"Noto Serif SC",serif}
@@ -110,7 +113,7 @@ header.topbar{display:flex;justify-content:space-between;align-items:center;marg
 .share-icon{display:none}
 .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#111827;color:#fff;font-size:12px;padding:6px 10px;border-radius:999px;opacity:0;pointer-events:none;transition:opacity .2s, transform .2s;z-index:90}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
-@media(max-width:720px){.sentinel-cta-wrap{flex-direction:column;align-items:flex-start}.subrow{flex-direction:column;align-items:flex-start}.share-bar{margin-top:4px}}
+@media(max-width:720px){.sentinel-cta-wrap{flex-direction:column;align-items:flex-start}.subrow{flex-direction:column;align-items:flex-start}.share-row{justify-content:flex-start}.meta-row{flex-direction:column;align-items:flex-start}.share-bar{margin-top:4px}}
 .logo-mark{width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center}
 .logo-mark svg{width:100%;height:100%}
 .brand{display:flex;align-items:center;gap:8px}
@@ -148,25 +151,27 @@ header.topbar{display:flex;justify-content:space-between;align-items:center;marg
   <div class="subrow">
     <div class="subtitle-group">
       <div class="subtitle">面向投资/产业/政策的稀土与关键矿产情报服务</div>
-    </div>
-    <div class="meta-group">
       <div class="meta">{{PAGE_NOTE}}</div>
-      <div class="meta">更新：{{LAST_UPDATE}}</div>
-      <div class="share-bar" data-share-title="稀土情报哨兵">
-        <a class="share-btn" data-share="x" aria-label="Share on X" href="#"><span class="share-icon">X</span></a>
-        <a class="share-btn" data-share="linkedin" aria-label="Share on LinkedIn" href="#"><span class="share-icon">in</span></a>
-        <a class="share-btn" data-share="reddit" aria-label="Share on Reddit" href="#"><span class="share-icon">rd</span></a>
-        <a class="share-btn" data-share="telegram" aria-label="Share on Telegram" href="#"><span class="share-icon">tg</span></a>
-        <a class="share-btn" data-share="weibo" aria-label="Share on Weibo" href="#"><span class="share-icon">wb</span></a>
-        <button class="share-btn" data-share="wechat" aria-label="Copy for WeChat" type="button"><span class="share-icon">wx</span></button>
-        <button class="share-btn" data-share="copy" aria-label="Copy link" type="button"><span class="share-icon">cpy</span></button>
-      </div>
     </div>
   </div>
-  <div class="kpis">
-    <div class="kpi">累计情报 {{TOTAL_COUNT}}</div>
-    <div class="kpi">高风险 {{HIGH_RISK_COUNT}}</div>
-    <div class="kpi">今日新增 {{TODAY_COUNT}}</div>
+  <div class="share-row">
+    <div class="share-bar" data-share-title="稀土情报哨兵">
+      <a class="share-btn" data-share="x" aria-label="Share on X" href="#"><span class="share-icon">X</span></a>
+      <a class="share-btn" data-share="linkedin" aria-label="Share on LinkedIn" href="#"><span class="share-icon">in</span></a>
+      <a class="share-btn" data-share="reddit" aria-label="Share on Reddit" href="#"><span class="share-icon">rd</span></a>
+      <a class="share-btn" data-share="telegram" aria-label="Share on Telegram" href="#"><span class="share-icon">tg</span></a>
+      <a class="share-btn" data-share="weibo" aria-label="Share on Weibo" href="#"><span class="share-icon">wb</span></a>
+      <button class="share-btn" data-share="wechat" aria-label="Copy for WeChat" type="button"><span class="share-icon">wx</span></button>
+      <button class="share-btn" data-share="copy" aria-label="Copy link" type="button"><span class="share-icon">cpy</span></button>
+    </div>
+  </div>
+  <div class="meta-row">
+    <div class="kpis">
+      <div class="kpi">累计情报 {{TOTAL_COUNT}}</div>
+      <div class="kpi">高风险 {{HIGH_RISK_COUNT}}</div>
+      <div class="kpi">今日新增 {{TODAY_COUNT}}</div>
+    </div>
+    <div class="meta update-time">更新：<span id="last-update" data-iso="{{LAST_UPDATE}}">{{LAST_UPDATE}}</span></div>
   </div>
 
   <section class="section">
@@ -232,6 +237,24 @@ header.topbar{display:flex;justify-content:space-between;align-items:center;marg
 
 <script>
 (function(){
+  var updateEl = document.getElementById('last-update');
+  if (updateEl) {
+    var raw = updateEl.getAttribute('data-iso') || updateEl.textContent;
+    var formatted = raw;
+    if (raw) {
+      var match = raw.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})/);
+      if (match) {
+        formatted = match[1] + ' ' + match[2];
+      } else {
+        var parsed = new Date(raw);
+        if (!isNaN(parsed)) {
+          formatted = parsed.toLocaleString('sv-SE', {hour12:false});
+        }
+      }
+    }
+    updateEl.textContent = formatted;
+  }
+
   var buttons = document.querySelectorAll('.filter-btn');
   var rows = document.querySelectorAll('.row');
   buttons.forEach(function(btn){
