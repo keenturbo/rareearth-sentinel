@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import re
 import time
 from dataclasses import replace
 from urllib.parse import urlparse
@@ -19,6 +20,10 @@ from src.datasets import build_datasets
 from src.premium import generate_daily_briefs, backfill_daily_briefs
 from src.telegram import post_telegram_records
 
+CANDIDATE_CONFIDENCE_MIN = 60
+CANDIDATE_LEN_MIN = 2
+CANDIDATE_LEN_MAX = 80
+
 
 def _context_lines(context_summary, limit=0):
     if not context_summary:
@@ -35,6 +40,143 @@ def _context_lines(context_summary, limit=0):
         if limit and len(lines) >= limit:
             break
     return lines
+
+
+def _load_candidate_seen(path):
+    seen = set()
+    if not os.path.exists(path):
+        return seen
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                data = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            keyword = str(data.get("keyword", "")).strip().lower()
+            if keyword:
+                seen.add(keyword)
+    return seen
+
+
+def _has_keyword_chars(text):
+    return bool(re.search(r"[A-Za-z\u4e00-\u9fff]", text))
+
+
+def _guess_keyword_type(name):
+    lower = name.lower()
+    if any(
+        token in lower
+        for token in (
+            "project",
+            "mine",
+            "deposit",
+            "basin",
+            "plant",
+            "refinery",
+            "smelter",
+            "processing site",
+        )
+    ):
+        return "project"
+    if any(token in name for token in ("项目", "矿区", "矿床", "矿山")):
+        return "project"
+    if any(
+        token in lower
+        for token in (
+            "ministry",
+            "government",
+            "agency",
+            "bank",
+            "fund",
+            "commission",
+            "authority",
+            "institute",
+            "university",
+            "bureau",
+            "administration",
+            "council",
+            "department",
+        )
+    ):
+        return "institution"
+    if any(
+        token in name
+        for token in ("研究院", "大学", "学院", "基金", "银行", "政府", "委员会")
+    ):
+        return "institution"
+    return "company"
+
+
+def _append_keyword_candidates(
+    record,
+    config,
+    seen,
+    min_confidence=CANDIDATE_CONFIDENCE_MIN,
+):
+    try:
+        confidence = int(record.get("confidence", 0) or 0)
+    except (TypeError, ValueError):
+        confidence = 0
+    if confidence < min_confidence:
+        return 0
+
+    entities = record.get("entities") or []
+    if isinstance(entities, str):
+        entities = [
+            seg.strip()
+            for seg in re.split(r"[\n,;]+", entities)
+            if seg.strip()
+        ]
+    elif not isinstance(entities, list):
+        entities = []
+
+    cleaned = []
+    for item in entities:
+        text = str(item).strip()
+        if not text:
+            continue
+        if len(text) < CANDIDATE_LEN_MIN or len(text) > CANDIDATE_LEN_MAX:
+            continue
+        if not _has_keyword_chars(text):
+            continue
+        cleaned.append(text)
+
+    if not cleaned:
+        return 0
+
+    candidates = []
+    created_at = isoformat(now_cst())
+    for keyword in cleaned:
+        key = keyword.lower()
+        if key in seen:
+            continue
+        candidates.append(
+            {
+                "keyword": keyword,
+                "type": _guess_keyword_type(keyword),
+                "record_id": record.get("id", ""),
+                "title": record.get("title", ""),
+                "confidence": confidence,
+                "created_at": created_at,
+            }
+        )
+        seen.add(key)
+
+    if not candidates:
+        return 0
+
+    path = os.path.join(
+        config.data_dir, "keywords", "keyword_candidates.jsonl"
+    )
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        for entry in candidates:
+            f.write(json.dumps(entry, ensure_ascii=False))
+            f.write("\n")
+    return len(candidates)
 
 
 def _build_context_builder(config, records):
@@ -64,6 +206,10 @@ def _build_context_builder(config, records):
 def run_pipeline(config):
     storage = Storage(config)
     seen_ids = storage.load_existing_ids()
+    candidate_path = os.path.join(
+        config.data_dir, "keywords", "keyword_candidates.jsonl"
+    )
+    candidate_seen = _load_candidate_seen(candidate_path)
     sources = get_sources(config)
     fetcher = Fetcher(config)
     extractor = GeminiExtractor(config)
@@ -232,6 +378,7 @@ def run_pipeline(config):
                     seen_ids.add(record["id"])
                     stats["saved"] += 1
                     new_records.append(record)
+                    _append_keyword_candidates(record, config, candidate_seen)
                     print("  + saved (zh + en)")
 
                     if config.analyze_delay_seconds > 0:
