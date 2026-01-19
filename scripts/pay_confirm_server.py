@@ -174,6 +174,148 @@ def _write_custom_sources(path, sources):
         json.dump(sources, f, ensure_ascii=False, indent=2)
 
 
+def _custom_keywords_path(config):
+    path = os.getenv("CUSTOM_KEYWORDS_FILE", "")
+    if path:
+        return _resolve_path(path)
+    return os.path.join(config.data_dir, "keywords", "custom_keywords.json")
+
+
+def _candidate_keywords_path(config):
+    path = os.getenv("KEYWORD_CANDIDATES_FILE", "")
+    if path:
+        return _resolve_path(path)
+    return os.path.join(config.data_dir, "keywords", "keyword_candidates.jsonl")
+
+
+def _load_custom_keywords_entries(path):
+    if not path or not os.path.exists(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return []
+    if isinstance(data, dict):
+        data = data.get("keywords", [])
+    if not isinstance(data, list):
+        return []
+
+    entries = []
+    for entry in data:
+        if isinstance(entry, str):
+            keyword = entry.strip()
+            if not keyword:
+                continue
+            entries.append(
+                {
+                    "keyword": keyword,
+                    "type": "company",
+                    "source": "manual",
+                    "enabled": True,
+                    "include_in_rank": True,
+                    "created_at": "",
+                    "updated_at": "",
+                }
+            )
+        elif isinstance(entry, dict):
+            keyword = str(entry.get("keyword", "")).strip()
+            if not keyword:
+                continue
+            payload = dict(entry)
+            payload["keyword"] = keyword
+            payload["type"] = str(payload.get("type") or "company").strip().lower()
+            payload["source"] = str(payload.get("source") or "manual").strip()
+            payload["enabled"] = _normalize_bool(payload.get("enabled"), True)
+            payload["include_in_rank"] = _normalize_bool(
+                payload.get("include_in_rank"), True
+            )
+            payload.setdefault("created_at", "")
+            payload.setdefault("updated_at", "")
+            entries.append(payload)
+    return entries
+
+
+def _write_custom_keywords(path, entries):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(entries, f, ensure_ascii=False, indent=2)
+
+
+def _normalize_keyword_payload(data):
+    keyword = str(data.get("keyword", "")).strip()
+    payload = {
+        "keyword": keyword,
+        "type": str(data.get("type") or "company").strip().lower() or "company",
+        "source": str(data.get("source") or "manual").strip() or "manual",
+        "enabled": _normalize_bool(data.get("enabled"), True),
+        "include_in_rank": _normalize_bool(data.get("include_in_rank"), True),
+    }
+    return payload
+
+
+def _upsert_custom_keyword(entries, payload):
+    now = datetime.utcnow().isoformat() + "Z"
+    keyword = payload.get("keyword", "")
+    if not keyword:
+        return entries
+    key_lower = keyword.lower()
+    for idx, entry in enumerate(entries):
+        if str(entry.get("keyword", "")).strip().lower() == key_lower:
+            created_at = entry.get("created_at")
+            merged = dict(entry)
+            merged.update(payload)
+            if created_at:
+                merged["created_at"] = created_at
+            merged["updated_at"] = now
+            entries[idx] = merged
+            return entries
+
+    payload = dict(payload)
+    payload["created_at"] = now
+    payload["updated_at"] = now
+    entries.append(payload)
+    return entries
+
+
+def _candidate_id(entry):
+    base = str(entry.get("id", "")).strip()
+    if base:
+        return base
+    keyword = str(entry.get("keyword", "")).strip().lower()
+    record_id = str(entry.get("record_id", "")).strip()
+    return f"{record_id}:{keyword}"
+
+
+def _load_keyword_candidates(path):
+    if not path or not os.path.exists(path):
+        return []
+    items = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(entry, dict):
+                continue
+            entry_id = _candidate_id(entry)
+            entry["id"] = entry_id
+            items.append(entry)
+    return items
+
+
+def _write_keyword_candidates(path, items):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        for entry in items:
+            f.write(json.dumps(entry, ensure_ascii=False))
+            f.write("\n")
+
+
 def _resolve_path(path):
     if not path:
         return path
@@ -1005,6 +1147,10 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
             sources_delete_path = _normalize_path("/api/admin/sources/delete")
             sources_run_path = _normalize_path("/api/admin/sources/run")
             indices_upload_path = _normalize_path("/api/admin/indices/upload")
+            keywords_add_path = _normalize_path("/api/admin/keywords/add")
+            keywords_delete_path = _normalize_path("/api/admin/keywords/delete")
+            keywords_approve_path = _normalize_path("/api/admin/keywords/approve")
+            keywords_reject_path = _normalize_path("/api/admin/keywords/reject")
 
             if normalized_path == indices_upload_path:
                 self._handle_indices_upload()
@@ -1072,6 +1218,100 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
                 )
                 _spawn_source_run(source_id, self.config)
                 self._json_response(200, {"ok": True, "running": False})
+                return
+
+            if normalized_path == keywords_add_path:
+                payload = _normalize_keyword_payload(data or {})
+                if not payload.get("keyword"):
+                    self._json_response(400, {"ok": False, "error": "missing_fields"})
+                    return
+                custom_path = _custom_keywords_path(self.config)
+                entries = _load_custom_keywords_entries(custom_path)
+                entries = _upsert_custom_keyword(entries, payload)
+                _write_custom_keywords(custom_path, entries)
+                _refresh_admin_orders()
+                self._json_response(200, {"ok": True})
+                return
+
+            if normalized_path == keywords_delete_path:
+                keyword = str(data.get("keyword", "")).strip()
+                if not keyword:
+                    self._json_response(400, {"ok": False, "error": "missing_fields"})
+                    return
+                custom_path = _custom_keywords_path(self.config)
+                entries = _load_custom_keywords_entries(custom_path)
+                filtered = [
+                    entry
+                    for entry in entries
+                    if str(entry.get("keyword", "")).strip().lower() != keyword.lower()
+                ]
+                _write_custom_keywords(custom_path, filtered)
+                _refresh_admin_orders()
+                self._json_response(200, {"ok": True})
+                return
+
+            if normalized_path == keywords_approve_path:
+                candidate_id = str(data.get("id", "")).strip()
+                keyword = str(data.get("keyword", "")).strip()
+                candidates_path = _candidate_keywords_path(self.config)
+                candidates = _load_keyword_candidates(candidates_path)
+                approved = None
+                remaining = []
+                for entry in candidates:
+                    entry_id = _candidate_id(entry)
+                    if candidate_id and entry_id == candidate_id:
+                        approved = entry
+                        continue
+                    if not candidate_id and keyword and str(entry.get("keyword", "")).strip().lower() == keyword.lower():
+                        approved = entry
+                        continue
+                    remaining.append(entry)
+
+                if approved:
+                    kw = str(approved.get("keyword", "")).strip()
+                    kw_type = str(approved.get("type", "company")).strip().lower() or "company"
+                else:
+                    kw = keyword
+                    kw_type = str(data.get("type") or "company").strip().lower() or "company"
+
+                if not kw:
+                    self._json_response(400, {"ok": False, "error": "missing_fields"})
+                    return
+
+                enabled = kw_type in {"company", "ticker"}
+                include_in_rank = enabled
+
+                payload = {
+                    "keyword": kw,
+                    "type": kw_type,
+                    "source": "approved",
+                    "enabled": enabled,
+                    "include_in_rank": include_in_rank,
+                }
+                custom_path = _custom_keywords_path(self.config)
+                entries = _load_custom_keywords_entries(custom_path)
+                entries = _upsert_custom_keyword(entries, payload)
+                _write_custom_keywords(custom_path, entries)
+                _write_keyword_candidates(candidates_path, remaining)
+                _refresh_admin_orders()
+                self._json_response(200, {"ok": True})
+                return
+
+            if normalized_path == keywords_reject_path:
+                candidate_id = str(data.get("id", "")).strip()
+                keyword = str(data.get("keyword", "")).strip()
+                candidates_path = _candidate_keywords_path(self.config)
+                candidates = _load_keyword_candidates(candidates_path)
+                remaining = []
+                for entry in candidates:
+                    entry_id = _candidate_id(entry)
+                    if candidate_id and entry_id == candidate_id:
+                        continue
+                    if not candidate_id and keyword and str(entry.get("keyword", "")).strip().lower() == keyword.lower():
+                        continue
+                    remaining.append(entry)
+                _write_keyword_candidates(candidates_path, remaining)
+                self._json_response(200, {"ok": True})
                 return
 
             if normalized_path == admin_path:
@@ -1251,6 +1491,8 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
             admin_path = _normalize_path(self.config.pay_confirm_admin_endpoint)
             sources_list_path = _normalize_path("/api/admin/sources/list")
             indices_status_path = _normalize_path("/api/admin/indices/status")
+            keywords_list_path = _normalize_path("/api/admin/keywords/list")
+            keywords_candidates_path = _normalize_path("/api/admin/keywords/candidates")
 
             if normalized_path == sources_list_path:
                 base_sources = _load_yaml_sources(self.config.official_sources_file)
@@ -1263,6 +1505,18 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
             if normalized_path == indices_status_path:
                 status = _load_indices_status(_indices_status_path())
                 self._json_response(200, {"ok": True, "status": status})
+                return
+
+            if normalized_path == keywords_list_path:
+                entries = _load_custom_keywords_entries(_custom_keywords_path(self.config))
+                entries.sort(key=lambda e: str(e.get("keyword", "")).lower())
+                self._json_response(200, {"ok": True, "keywords": entries})
+                return
+
+            if normalized_path == keywords_candidates_path:
+                candidates = _load_keyword_candidates(_candidate_keywords_path(self.config))
+                candidates.sort(key=lambda e: e.get("created_at", ""), reverse=True)
+                self._json_response(200, {"ok": True, "candidates": candidates})
                 return
 
             if normalized_path != admin_path:
