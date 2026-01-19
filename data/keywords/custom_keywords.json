@@ -1,0 +1,596 @@
+[
+  {
+    "keyword": "Arafura Rare Earths",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "ARU",
+    "type": "ticker",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Atlantic Alumina",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "ATALCO",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "BMW",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Brazilian Rare Earths",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "BRE",
+    "type": "ticker",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Carester",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Chemaf",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "China Coal Energy",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "China Northern Rare Earth Group",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "China Shenhua Energy",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "CMOC",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Critical Metals Corp",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "CRML",
+    "type": "ticker",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Dalaroo Metals",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "DAL",
+    "type": "ticker",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Energy Fuels",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Gecamines",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "GreenMet",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "HyProMag",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Iluka Resources",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "ILU",
+    "type": "ticker",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Jiangxi Copper",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Lithium Americas",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Lynas Rare Earths",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "LYC",
+    "type": "ticker",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Mangrove Lithium",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "MP Materials",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "MRG Metals",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Namibia Critical Metals",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Niron Magnetics",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Noveon Magnetics",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Novonix",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Optris",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Shaanxi Coal Industry",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Shandong Gold Mining",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Siemens Gamesa Renewable Energy",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "St George Mining",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "SGQ",
+    "type": "ticker",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Traxys Europe",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Trilogy Metals",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "TQB",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "USA Rare Earth",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "USAR",
+    "type": "ticker",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Wolfspeed",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Yankuang Energy Group",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Zijin Mining",
+    "type": "company",
+    "source": "manual",
+    "include_in_rank": true,
+    "enabled": true,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Canada Growth Fund",
+    "type": "institution",
+    "source": "manual",
+    "include_in_rank": false,
+    "enabled": false,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "CGF",
+    "type": "institution",
+    "source": "manual",
+    "include_in_rank": false,
+    "enabled": false,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Export Finance Australia",
+    "type": "institution",
+    "source": "manual",
+    "include_in_rank": false,
+    "enabled": false,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "EFA",
+    "type": "institution",
+    "source": "manual",
+    "include_in_rank": false,
+    "enabled": false,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Export-Import Bank of the United States",
+    "type": "institution",
+    "source": "manual",
+    "include_in_rank": false,
+    "enabled": false,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "National Reconstruction Fund",
+    "type": "institution",
+    "source": "manual",
+    "include_in_rank": false,
+    "enabled": false,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "KIGAM",
+    "type": "institution",
+    "source": "manual",
+    "include_in_rank": false,
+    "enabled": false,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Sprott",
+    "type": "institution",
+    "source": "manual",
+    "include_in_rank": false,
+    "enabled": false,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Breakthrough Energy",
+    "type": "institution",
+    "source": "manual",
+    "include_in_rank": false,
+    "enabled": false,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Nolans",
+    "type": "project",
+    "source": "manual",
+    "include_in_rank": false,
+    "enabled": false,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Tanbreez",
+    "type": "project",
+    "source": "manual",
+    "include_in_rank": false,
+    "enabled": false,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Round Top",
+    "type": "project",
+    "source": "manual",
+    "include_in_rank": false,
+    "enabled": false,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Mountain Pass",
+    "type": "project",
+    "source": "manual",
+    "include_in_rank": false,
+    "enabled": false,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Mt Weld",
+    "type": "project",
+    "source": "manual",
+    "include_in_rank": false,
+    "enabled": false,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Kvanefjeld",
+    "type": "project",
+    "source": "manual",
+    "include_in_rank": false,
+    "enabled": false,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Blue Lagoon",
+    "type": "project",
+    "source": "manual",
+    "include_in_rank": false,
+    "enabled": false,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "Vara Mada",
+    "type": "project",
+    "source": "manual",
+    "include_in_rank": false,
+    "enabled": false,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  },
+  {
+    "keyword": "White Mesa",
+    "type": "project",
+    "source": "manual",
+    "include_in_rank": false,
+    "enabled": false,
+    "created_at": "2026-01-20T00:00:00Z",
+    "updated_at": "2026-01-20T00:00:00Z"
+  }
+]
