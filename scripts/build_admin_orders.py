@@ -239,6 +239,27 @@ def _build_indices_page(template_path, output_path):
         f.write(html)
 
 
+def _build_keywords_page(template_path, output_path):
+    if not os.path.exists(template_path):
+        return
+    with open(template_path, "r", encoding="utf-8") as f:
+        template = f.read()
+
+    html = (
+        template.replace("{{LAST_UPDATE}}", isoformat(now_cst()))
+        .replace("{{KEYWORDS_ENDPOINT}}", "/api/admin/keywords/list")
+        .replace("{{CANDIDATES_ENDPOINT}}", "/api/admin/keywords/candidates")
+        .replace("{{KEYWORDS_ADD_ENDPOINT}}", "/api/admin/keywords/add")
+        .replace("{{KEYWORDS_DELETE_ENDPOINT}}", "/api/admin/keywords/delete")
+        .replace("{{KEYWORDS_APPROVE_ENDPOINT}}", "/api/admin/keywords/approve")
+        .replace("{{KEYWORDS_REJECT_ENDPOINT}}", "/api/admin/keywords/reject")
+    )
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(html)
+
+
 def main():
     config = Config.from_env()
     orders_path = os.path.join(config.data_dir, "pay", "orders.jsonl")
@@ -310,6 +331,10 @@ def main():
     cn_indices_template = os.path.join(config.templates_dir, "admin_indices.html")
     cn_indices_output = os.path.join(config.static_dir, "cn", "admin", "indices", "index.html")
     _build_indices_page(cn_indices_template, cn_indices_output)
+
+    cn_keywords_template = os.path.join(config.templates_dir, "admin_keywords.html")
+    cn_keywords_output = os.path.join(config.static_dir, "cn", "admin", "keywords", "index.html")
+    _build_keywords_page(cn_keywords_template, cn_keywords_output)
 
     print("Admin orders pages built")
     return 0
