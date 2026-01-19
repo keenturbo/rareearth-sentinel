@@ -288,15 +288,6 @@
     "updated_at": "2026-01-20T00:00:00Z"
   },
   {
-    "keyword": "Noveon Magnetics",
-    "type": "company",
-    "source": "manual",
-    "include_in_rank": true,
-    "enabled": true,
-    "created_at": "2026-01-20T00:00:00Z",
-    "updated_at": "2026-01-20T00:00:00Z"
-  },
-  {
     "keyword": "Novonix",
     "type": "company",
     "source": "manual",
