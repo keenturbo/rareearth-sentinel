@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>管理员 · 价格行情</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=Noto+Sans+SC:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#111827;--muted:#6b7280;--bg:#f8f6f2;--card:#ffffff;--accent:#1e3a8a;--good:#065f46;--danger:#b91c1c}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink)}
+.container{max-width:980px;margin:0 auto;padding:24px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:12px;flex-wrap:wrap}
+header h1{font-family:"Noto Serif SC",serif;margin:0;font-size:22px}
+header .meta{font-size:12px;color:var(--muted)}
+.section{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px}
+.status{font-size:12px;color:var(--muted);margin-bottom:12px}
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+input[type="file"]{font-size:12px}
+.btn{font-size:12px;border:1px solid #d1d5db;background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn:disabled{opacity:0.6;cursor:not-allowed}
+.badge{display:inline-block;font-size:11px;padding:2px 6px;border-radius:999px;background:#f3f4f6;color:var(--muted)}
+.row{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:6px}
+.row span{padding:2px 6px;border-radius:999px;background:#f3f4f6;font-size:11px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>管理员 · 价格行情</h1>
+      <div class="meta">更新 {{LAST_UPDATE}}</div>
+    </div>
+    <div class="meta"><a href="/cn/admin/premium/">报告列表</a> · <a href="/cn/admin/orders/">订单</a> · <a href="/cn/admin/task-orders/">任务订单</a> · <a href="/cn/admin/sources/">信源管理</a></div>
+  </header>
+
+  <section class="section" data-upload-endpoint="{{UPLOAD_ENDPOINT}}" data-status-endpoint="{{STATUS_ENDPOINT}}">
+    <div class="status" id="status">等待加载状态...</div>
+    <div class="row" id="status-badges"></div>
+    <div class="field">
+      <label>上传 Excel（仅 .xls，会覆盖当前文件）</label>
+      <input id="file" type="file" accept=".xls" />
+    </div>
+    <button class="btn primary" id="upload-btn">上传并更新首页</button>
+  </section>
+</div>
+<script>
+(function(){
+  const section = document.querySelector('.section');
+  if (!section) return;
+  const uploadEndpoint = section.dataset.uploadEndpoint || '';
+  const statusEndpoint = section.dataset.statusEndpoint || '';
+  const statusEl = document.getElementById('status');
+  const badgesEl = document.getElementById('status-badges');
+  const fileInput = document.getElementById('file');
+  const uploadBtn = document.getElementById('upload-btn');
+
+  const fmtTime = (text) => {
+    if (!text) return '-';
+    return String(text).replace('T', ' ').replace('Z', '');
+  };
+
+  const setStatus = (text) => {
+    if (statusEl) statusEl.textContent = text;
+  };
+
+  const renderBadges = (status) => {
+    if (!badgesEl) return;
+    const lastUpload = fmtTime(status.last_upload_at);
+    const lastParse = fmtTime(status.last_parse_at);
+    const lastTrade = status.last_trade_date || '-';
+    const result = status.last_result || '-';
+    const log = status.last_log || '-';
+    const duration = status.last_duration_sec ? `${status.last_duration_sec}s` : '-';
+
+    badgesEl.innerHTML = [
+      `<span>上传: ${lastUpload}</span>`,
+      `<span>解析: ${lastParse}</span>`,
+      `<span>成交日: ${lastTrade}</span>`,
+      `<span>结果: ${result}</span>`,
+      `<span>耗时: ${duration}</span>`,
+      `<span>日志: ${log}</span>`
+    ].join('');
+  };
+
+  const loadStatus = async () => {
+    if (!statusEndpoint) return;
+    try {
+      const res = await fetch(statusEndpoint, { method: 'GET' });
+      const data = res.ok ? await res.json() : null;
+      if (data && data.ok && data.status) {
+        renderBadges(data.status);
+        setStatus('状态已更新');
+      } else {
+        setStatus('状态加载失败');
+      }
+    } catch (err) {
+      setStatus('状态加载失败');
+    }
+  };
+
+  const upload = async () => {
+    if (!uploadEndpoint) return;
+    const file = fileInput.files[0];
+    if (!file) {
+      setStatus('请先选择 .xls 文件');
+      return;
+    }
+    if (!file.name.toLowerCase().endsWith('.xls')) {
+      setStatus('只支持 .xls 文件');
+      return;
+    }
+    uploadBtn.disabled = true;
+    setStatus('上传中，请稍候...');
+    const form = new FormData();
+    form.append('file', file, file.name);
+    try {
+      const res = await fetch(uploadEndpoint, { method: 'POST', body: form });
+      const data = res.ok ? await res.json() : null;
+      if (data && data.ok) {
+        setStatus('处理完成');
+        if (data.status) {
+          renderBadges(data.status);
+        }
+      } else {
+        setStatus(data && data.log ? `失败: ${data.log}` : '处理失败');
+      }
+    } catch (err) {
+      setStatus('处理失败');
+    } finally {
+      uploadBtn.disabled = false;
+    }
+  };
+
+  uploadBtn.addEventListener('click', upload);
+  loadStatus();
+})();
+</script>
+</body>
+</html>
