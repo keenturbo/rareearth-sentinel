@@ -12,6 +12,10 @@ body{margin:0;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-se
 h1,h2{font-family:"Noto Serif SC","Noto Sans SC",sans-serif;}
 .container{max-width:980px;margin:0 auto;padding:32px 20px;}
 .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
+.brand{display:flex;align-items:center;gap:10px;}
+.brand-text{display:flex;flex-direction:column;}
+.logo-mark{width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center}
+.logo-mark svg{width:100%;height:100%}
 .nav a{color:var(--muted);text-decoration:none;margin-left:12px;font-size:13px;}
 .nav a:hover{color:var(--accent)}
 .block{background:var(--card);border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px;margin:14px 0;line-height:1.7;}
@@ -22,9 +26,20 @@ h1,h2{font-family:"Noto Serif SC","Noto Sans SC",sans-serif;}
 <body>
   <main class="container">
     <header class="header">
-      <div>
-        <h1>稀土情报哨兵</h1>
-        <div class="subtitle">把新闻转化为可执行的供应链风险预警</div>
+      <div class="brand">
+        <span class="logo-mark" aria-hidden="true">
+          <svg viewBox="80 120 340 260" xmlns="http://www.w3.org/2000/svg" focusable="false">
+            <path d="M250 280L220 250L250 220L280 250L250 280Z" fill="currentColor"/>
+            <path d="M250 180L190 250L250 320L310 250L250 180ZM250 205L288 250L250 295L212 250L250 205Z" fill="currentColor" fill-rule="evenodd"/>
+            <path d="M250 120C180 120 115 160 80 250C115 340 180 380 250 380C320 380 385 340 420 250C385 160 320 120 250 120ZM250 150C305 150 355 185 385 250C355 315 305 350 250 350C195 350 145 315 115 250C145 185 195 150 250 150Z" fill="currentColor" fill-rule="evenodd"/>
+            <path d="M130 250H190" stroke="currentColor" stroke-width="8" stroke-linecap="round"/>
+            <path d="M310 250H370" stroke="currentColor" stroke-width="8" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <div class="brand-text">
+          <h1>稀土情报哨兵</h1>
+          <div class="subtitle">把新闻转化为可执行的供应链风险预警</div>
+        </div>
       </div>
       <nav class="nav">
         <a href="/cn/">首页</a>
