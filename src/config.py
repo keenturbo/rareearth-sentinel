@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import json
 import os
 
 from dotenv import load_dotenv
@@ -45,6 +46,35 @@ def _get_list(key, default):
     if value is None:
         return default
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _load_custom_keywords(path):
+    items = []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return items
+    except json.JSONDecodeError:
+        return items
+
+    if isinstance(data, dict):
+        data = data.get("keywords", [])
+    if not isinstance(data, list):
+        return items
+
+    for entry in data:
+        keyword = ""
+        enabled = True
+        if isinstance(entry, str):
+            keyword = entry.strip()
+        elif isinstance(entry, dict):
+            enabled = entry.get("enabled", True)
+            keyword = str(entry.get("keyword", "")).strip()
+        if not enabled or not keyword:
+            continue
+        items.append(keyword)
+    return items
 
 
 @dataclass(frozen=True)
@@ -215,7 +245,7 @@ class Config:
         )
 
 
-def load_keywords(path):
+def load_keywords(path, custom_path=None):
     keywords = []
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -226,4 +256,18 @@ def load_keywords(path):
                 keywords.append(line)
     except FileNotFoundError:
         pass
-    return keywords
+
+    if custom_path is None:
+        custom_path = _get_env(
+            "CUSTOM_KEYWORDS_FILE", "data/keywords/custom_keywords.json"
+        )
+    keywords.extend(_load_custom_keywords(custom_path))
+
+    seen = set()
+    merged = []
+    for keyword in keywords:
+        if keyword in seen:
+            continue
+        merged.append(keyword)
+        seen.add(keyword)
+    return merged
