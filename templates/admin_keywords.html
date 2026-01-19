@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>管理员 · 关键词管理</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=Noto+Sans+SC:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#111827;--muted:#6b7280;--bg:#f8f6f2;--card:#ffffff;--accent:#1e3a8a;--good:#065f46;--danger:#b91c1c}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink)}
+.container{max-width:980px;margin:0 auto;padding:24px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:10px;flex-wrap:wrap}
+header h1{font-family:"Noto Serif SC",serif;margin:0;font-size:22px}
+header .meta{font-size:12px;color:var(--muted)}
+.header-links{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.header-links a{text-decoration:none;color:var(--muted)}
+.header-links a:hover{color:var(--accent)}
+.section{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-top:14px}
+.section h2{margin:0 0 10px;font-size:14px}
+.form-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:10px}
+.form-grid label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+.form-grid input,.form-grid select{font-size:12px;padding:6px 8px;border:1px solid #e5e7eb;border-radius:8px}
+.actions{display:flex;gap:8px;margin-bottom:8px}
+.btn{font-size:12px;border:1px solid #d1d5db;background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.danger{border-color:#fecaca;color:var(--danger)}
+.btn:disabled{opacity:0.6;cursor:not-allowed}
+.status{font-size:12px;color:var(--muted);margin-bottom:10px}
+.card{border-top:1px solid #eef2f7;padding-top:12px;margin-top:12px}
+.card-title{font-weight:600;margin-bottom:4px}
+.card-meta{font-size:12px;color:var(--muted);margin-bottom:4px;word-break:break-all}
+.card-actions{display:flex;gap:8px;margin-top:6px}
+.badge{display:inline-block;font-size:11px;padding:2px 6px;border-radius:999px;background:#eef2ff;color:#1e3a8a;margin-left:6px}
+.tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.tags span{font-size:11px;padding:2px 6px;border-radius:999px;background:#f3f4f6;color:#4b5563}
+@media(max-width:720px){.form-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>管理员 · 关键词管理</h1>
+      <div class="meta">更新 {{LAST_UPDATE}}</div>
+    </div>
+    <div class="meta header-links">
+      <a href="/cn/admin/premium/">报告列表</a>
+      <span>·</span>
+      <a href="/cn/admin/orders/">订单</a>
+      <span>·</span>
+      <a href="/cn/admin/task-orders/">任务订单</a>
+      <span>·</span>
+      <a href="/cn/admin/sources/">信源管理</a>
+      <span>·</span>
+      <a href="/cn/admin/indices/">价格行情</a>
+    </div>
+  </header>
+
+  <section class="section" data-list-endpoint="{{KEYWORDS_ENDPOINT}}" data-candidates-endpoint="{{CANDIDATES_ENDPOINT}}" data-add-endpoint="{{KEYWORDS_ADD_ENDPOINT}}" data-delete-endpoint="{{KEYWORDS_DELETE_ENDPOINT}}" data-approve-endpoint="{{KEYWORDS_APPROVE_ENDPOINT}}" data-reject-endpoint="{{KEYWORDS_REJECT_ENDPOINT}}">
+    <h2>新增关键词</h2>
+    <div class="form-grid">
+      <label>关键词
+        <input id="kw-text" placeholder="MP Materials" />
+      </label>
+      <label>类型
+        <select id="kw-type">
+          <option value="company">company</option>
+          <option value="ticker">ticker</option>
+          <option value="institution">institution</option>
+          <option value="project">project</option>
+        </select>
+      </label>
+      <label>启用
+        <select id="kw-enabled">
+          <option value="true">是</option>
+          <option value="false">否</option>
+        </select>
+      </label>
+      <label>参与排名
+        <select id="kw-rank">
+          <option value="true">是</option>
+          <option value="false">否</option>
+        </select>
+      </label>
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="kw-save">保存</button>
+      <button class="btn" id="kw-reset">清空</button>
+    </div>
+    <div class="status" id="status">等待加载...</div>
+  </section>
+
+  <section class="section">
+    <h2>已启用关键词</h2>
+    <div id="keywords-list"></div>
+  </section>
+
+  <section class="section">
+    <h2>候选关键词</h2>
+    <div id="candidates-list"></div>
+  </section>
+</div>
+<script>
+(function(){
+  const section = document.querySelector('.section');
+  if (!section) return;
+  const listEndpoint = section.dataset.listEndpoint || '';
+  const candidatesEndpoint = section.dataset.candidatesEndpoint || '';
+  const addEndpoint = section.dataset.addEndpoint || '';
+  const deleteEndpoint = section.dataset.deleteEndpoint || '';
+  const approveEndpoint = section.dataset.approveEndpoint || '';
+  const rejectEndpoint = section.dataset.rejectEndpoint || '';
+
+  const statusEl = document.getElementById('status');
+  const listEl = document.getElementById('keywords-list');
+  const candidatesEl = document.getElementById('candidates-list');
+
+  const form = {
+    text: document.getElementById('kw-text'),
+    type: document.getElementById('kw-type'),
+    enabled: document.getElementById('kw-enabled'),
+    rank: document.getElementById('kw-rank'),
+  };
+
+  const escapeHtml = (text) => {
+    if (text === null || text === undefined) return '';
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  };
+
+  const setStatus = (text) => {
+    if (statusEl) statusEl.textContent = text;
+  };
+
+  const resetForm = () => {
+    form.text.value = '';
+    form.type.value = 'company';
+    form.enabled.value = 'true';
+    form.rank.value = 'true';
+  };
+
+  const readForm = () => {
+    return {
+      keyword: form.text.value.trim(),
+      type: form.type.value.trim(),
+      enabled: form.enabled.value === 'true',
+      include_in_rank: form.rank.value === 'true',
+    };
+  };
+
+  const renderKeywords = (keywords) => {
+    if (!listEl) return;
+    if (!keywords || !keywords.length) {
+      listEl.innerHTML = '<div class="card-meta">暂无关键词</div>';
+      return;
+    }
+    listEl.innerHTML = keywords.map((item) => {
+      const keyword = escapeHtml(item.keyword || '-');
+      const type = escapeHtml(item.type || '-');
+      const source = escapeHtml(item.source || '-');
+      const enabled = item.enabled ? '启用' : '停用';
+      const rank = item.include_in_rank ? '参与排名' : '不参与排名';
+      const created = escapeHtml(item.created_at || '');
+      const updated = escapeHtml(item.updated_at || '');
+      return (
+        '<div class="card" data-keyword="' + keyword + '">' +
+          '<div class="card-title">' + keyword + '<span class="badge">' + type + '</span></div>' +
+          '<div class="card-meta">' + source + ' · ' + enabled + ' · ' + rank + '</div>' +
+          '<div class="card-meta">created: ' + created + ' · updated: ' + updated + '</div>' +
+          '<div class="card-actions">' +
+            '<button class="btn danger delete-btn" data-keyword="' + keyword + '">删除</button>' +
+          '</div>' +
+        '</div>'
+      );
+    }).join('');
+  };
+
+  const renderCandidates = (items) => {
+    if (!candidatesEl) return;
+    if (!items || !items.length) {
+      candidatesEl.innerHTML = '<div class="card-meta">暂无候选</div>';
+      return;
+    }
+    candidatesEl.innerHTML = items.map((item) => {
+      const keyword = escapeHtml(item.keyword || '-');
+      const type = escapeHtml(item.type || '-');
+      const title = escapeHtml(item.title || '-');
+      const recordId = escapeHtml(item.record_id || '-');
+      const confidence = escapeHtml(item.confidence || '-');
+      const created = escapeHtml(item.created_at || '');
+      const entryId = escapeHtml(item.id || '');
+      return (
+        '<div class="card" data-id="' + entryId + '">' +
+          '<div class="card-title">' + keyword + '<span class="badge">' + type + '</span></div>' +
+          '<div class="card-meta">' + title + '</div>' +
+          '<div class="tags"><span>record: ' + recordId + '</span><span>confidence: ' + confidence + '</span><span>' + created + '</span></div>' +
+          '<div class="card-actions">' +
+            '<button class="btn primary approve-btn" data-id="' + entryId + '" data-keyword="' + keyword + '">采纳</button>' +
+            '<button class="btn danger reject-btn" data-id="' + entryId + '" data-keyword="' + keyword + '">忽略</button>' +
+          '</div>' +
+        '</div>'
+      );
+    }).join('');
+  };
+
+  const loadKeywords = async () => {
+    if (!listEndpoint) return;
+    setStatus('加载中...');
+    try {
+      const res = await fetch(listEndpoint, { method: 'GET' });
+      const data = res.ok ? await res.json() : null;
+      if (!data || !data.ok) {
+        setStatus('加载失败');
+        return;
+      }
+      renderKeywords(data.keywords || []);
+      setStatus('已加载');
+    } catch (err) {
+      setStatus('加载失败');
+    }
+  };
+
+  const loadCandidates = async () => {
+    if (!candidatesEndpoint) return;
+    try {
+      const res = await fetch(candidatesEndpoint, { method: 'GET' });
+      const data = res.ok ? await res.json() : null;
+      if (!data || !data.ok) return;
+      renderCandidates(data.candidates || []);
+    } catch (err) {
+      return;
+    }
+  };
+
+  const addKeyword = async () => {
+    if (!addEndpoint) return;
+    const payload = readForm();
+    if (!payload.keyword) {
+      setStatus('关键词必填');
+      return;
+    }
+    setStatus('保存中...');
+    try {
+      const res = await fetch(addEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = res.ok ? await res.json() : null;
+      if (data && data.ok) {
+        setStatus('已保存');
+        resetForm();
+        loadKeywords();
+      } else {
+        setStatus('保存失败');
+      }
+    } catch (err) {
+      setStatus('保存失败');
+    }
+  };
+
+  const deleteKeyword = async (keyword) => {
+    if (!deleteEndpoint || !keyword) return;
+    setStatus('删除中...');
+    try {
+      const res = await fetch(deleteEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyword }),
+      });
+      const data = res.ok ? await res.json() : null;
+      if (data && data.ok) {
+        setStatus('已删除');
+        loadKeywords();
+      } else {
+        setStatus('删除失败');
+      }
+    } catch (err) {
+      setStatus('删除失败');
+    }
+  };
+
+  const approveCandidate = async (payload) => {
+    if (!approveEndpoint) return;
+    setStatus('采纳中...');
+    try {
+      const res = await fetch(approveEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = res.ok ? await res.json() : null;
+      if (data && data.ok) {
+        setStatus('已采纳');
+        loadCandidates();
+        loadKeywords();
+      } else {
+        setStatus('采纳失败');
+      }
+    } catch (err) {
+      setStatus('采纳失败');
+    }
+  };
+
+  const rejectCandidate = async (payload) => {
+    if (!rejectEndpoint) return;
+    setStatus('已忽略');
+    try {
+      const res = await fetch(rejectEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = res.ok ? await res.json() : null;
+      if (data && data.ok) {
+        setStatus('已忽略');
+        loadCandidates();
+      } else {
+        setStatus('忽略失败');
+      }
+    } catch (err) {
+      setStatus('忽略失败');
+    }
+  };
+
+  document.getElementById('kw-save').addEventListener('click', addKeyword);
+  document.getElementById('kw-reset').addEventListener('click', resetForm);
+
+  listEl.addEventListener('click', (e) => {
+    const delBtn = e.target.closest('.delete-btn');
+    if (delBtn) {
+      const keyword = delBtn.dataset.keyword;
+      if (keyword && confirm('确认删除该关键词？')) {
+        deleteKeyword(keyword);
+      }
+    }
+  });
+
+  candidatesEl.addEventListener('click', (e) => {
+    const approveBtn = e.target.closest('.approve-btn');
+    const rejectBtn = e.target.closest('.reject-btn');
+    if (approveBtn) {
+      approveCandidate({ id: approveBtn.dataset.id || '', keyword: approveBtn.dataset.keyword || '' });
+    }
+    if (rejectBtn) {
+      rejectCandidate({ id: rejectBtn.dataset.id || '', keyword: rejectBtn.dataset.keyword || '' });
+    }
+  });
+
+  loadKeywords();
+  loadCandidates();
+})();
+</script>
+</body>
+</html>
