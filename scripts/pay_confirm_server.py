@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 import threading
 import argparse
+import cgi
 import html
 import json
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -170,6 +172,99 @@ def _write_custom_sources(path, sources):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(sources, f, ensure_ascii=False, indent=2)
+
+
+def _resolve_path(path):
+    if not path:
+        return path
+    return path if os.path.isabs(path) else os.path.join(ROOT, path)
+
+
+def _indices_status_path():
+    return os.path.join(ROOT, "data", "status", "indices_upload.json")
+
+
+def _load_indices_status(path):
+    if not path or not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_indices_status(path, payload):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def _last_non_empty(text):
+    if not text:
+        return ""
+    for line in reversed(text.splitlines()):
+        line = line.strip()
+        if line:
+            return line
+    return ""
+
+
+def _run_command(cmd, cwd):
+    try:
+        result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+    except Exception as exc:
+        return 1, str(exc)
+    output = (result.stdout or "") + "\n" + (result.stderr or "")
+    return result.returncode, _last_non_empty(output)
+
+
+def _parse_date_value(value):
+    if not value:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if len(text) >= 10:
+        text = text[:10]
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _max_date_in_jsonl(path, key):
+    if not os.path.exists(path):
+        return ""
+    latest = None
+    latest_str = ""
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            dt = _parse_date_value(entry.get(key))
+            if not dt:
+                continue
+            if latest is None or dt > latest:
+                latest = dt
+                latest_str = dt.strftime("%Y-%m-%d")
+    return latest_str
+
+
+def _latest_trade_date(normalized_dir):
+    normalized_dir = _resolve_path(normalized_dir)
+    signals_path = os.path.join(normalized_dir, "index_signals.jsonl")
+    date = _max_date_in_jsonl(signals_path, "date")
+    if date:
+        return date
+    timeseries_path = os.path.join(normalized_dir, "index_timeseries.jsonl")
+    return _max_date_in_jsonl(timeseries_path, "published_at")
 
 
 def _source_runs_path():
@@ -798,6 +893,107 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _handle_indices_upload(self):
+        content_type = self.headers.get("Content-Type", "")
+        if "multipart/form-data" not in content_type:
+            self._json_response(400, {"ok": False, "error": "invalid_content_type"})
+            return
+
+        form = cgi.FieldStorage(
+            fp=self.rfile,
+            headers=self.headers,
+            environ={"REQUEST_METHOD": "POST", "CONTENT_TYPE": content_type},
+        )
+        file_item = form["file"] if "file" in form else None
+        if not file_item or not getattr(file_item, "filename", ""):
+            self._json_response(400, {"ok": False, "error": "missing_file"})
+            return
+
+        filename = os.path.basename(file_item.filename)
+        if not filename.lower().endswith(".xls"):
+            self._json_response(400, {"ok": False, "error": "invalid_file_type"})
+            return
+
+        try:
+            content = file_item.file.read()
+        except Exception:
+            content = b""
+        if not content:
+            self._json_response(400, {"ok": False, "error": "empty_file"})
+            return
+
+        raw_dir = _resolve_path(self.config.index_raw_dir)
+        manual_dir = os.path.join(raw_dir, "manual")
+        os.makedirs(manual_dir, exist_ok=True)
+        target_path = os.path.join(manual_dir, "repe.xls")
+        with open(target_path, "wb") as f:
+            f.write(content)
+
+        now = datetime.utcnow().isoformat() + "Z"
+        status = {
+            "last_upload_at": now,
+            "last_parse_at": "",
+            "last_trade_date": "",
+            "last_result": "failed",
+            "last_log": "",
+            "last_filename": filename,
+            "last_filesize_bytes": len(content),
+        }
+        log_parts = []
+        start = time.time()
+
+        normalize_cmd = [
+            sys.executable,
+            os.path.join(ROOT, "scripts", "normalize_indices.py"),
+            "--once",
+            "--manual",
+        ]
+        code, line = _run_command(normalize_cmd, ROOT)
+        if code != 0:
+            log_parts.append("normalize failed" + (f": {line}" if line else ""))
+            status["last_log"] = "; ".join(log_parts)[:200]
+            _write_indices_status(_indices_status_path(), status)
+            self._json_response(500, {"ok": False, "error": "normalize_failed", "log": status["last_log"]})
+            return
+        status["last_parse_at"] = datetime.utcnow().isoformat() + "Z"
+        log_parts.append("normalize ok")
+
+        signals_cmd = [
+            sys.executable,
+            os.path.join(ROOT, "scripts", "build_index_signals.py"),
+            "--once",
+        ]
+        code, line = _run_command(signals_cmd, ROOT)
+        if code != 0:
+            log_parts.append("signals failed" + (f": {line}" if line else ""))
+            status["last_log"] = "; ".join(log_parts)[:200]
+            _write_indices_status(_indices_status_path(), status)
+            self._json_response(500, {"ok": False, "error": "signals_failed", "log": status["last_log"]})
+            return
+        log_parts.append("signals ok")
+
+        rebuild_cmd = [
+            sys.executable,
+            os.path.join(ROOT, "main.py"),
+            "--rebuild",
+        ]
+        code, line = _run_command(rebuild_cmd, ROOT)
+        if code != 0:
+            log_parts.append("rebuild failed" + (f": {line}" if line else ""))
+            status["last_log"] = "; ".join(log_parts)[:200]
+            _write_indices_status(_indices_status_path(), status)
+            self._json_response(500, {"ok": False, "error": "rebuild_failed", "log": status["last_log"]})
+            return
+        log_parts.append("rebuild ok")
+
+        status["last_trade_date"] = _latest_trade_date(self.config.index_normalized_dir)
+        status["last_result"] = "success"
+        status["last_log"] = "; ".join(log_parts)[:200]
+        status["last_duration_sec"] = int(time.time() - start)
+
+        _write_indices_status(_indices_status_path(), status)
+        self._json_response(200, {"ok": True, "status": status})
+
     def do_POST(self):
         try:
             parsed = urlparse(self.path)
@@ -808,6 +1004,11 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
             sources_save_path = _normalize_path("/api/admin/sources/save")
             sources_delete_path = _normalize_path("/api/admin/sources/delete")
             sources_run_path = _normalize_path("/api/admin/sources/run")
+            indices_upload_path = _normalize_path("/api/admin/indices/upload")
+
+            if normalized_path == indices_upload_path:
+                self._handle_indices_upload()
+                return
 
             content_len = int(self.headers.get("Content-Length", 0))
             raw = self.rfile.read(content_len) if content_len else b"{}"
@@ -1049,6 +1250,7 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
             normalized_path = _normalize_path(parsed.path)
             admin_path = _normalize_path(self.config.pay_confirm_admin_endpoint)
             sources_list_path = _normalize_path("/api/admin/sources/list")
+            indices_status_path = _normalize_path("/api/admin/indices/status")
 
             if normalized_path == sources_list_path:
                 base_sources = _load_yaml_sources(self.config.official_sources_file)
@@ -1056,6 +1258,11 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
                 run_status = _normalize_source_runs(_load_source_runs(_source_runs_path()))
                 merged = _merge_sources_for_admin(base_sources, custom_sources, run_status=run_status)
                 self._json_response(200, {"ok": True, "sources": merged})
+                return
+
+            if normalized_path == indices_status_path:
+                status = _load_indices_status(_indices_status_path())
+                self._json_response(200, {"ok": True, "status": status})
                 return
 
             if normalized_path != admin_path:
