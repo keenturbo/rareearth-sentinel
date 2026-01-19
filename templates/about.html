@@ -11,15 +11,16 @@
 body{margin:0;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--bg);}
 h1,h2{font-family:"Noto Serif SC","Noto Sans SC",sans-serif;}
 .container{max-width:980px;margin:0 auto;padding:32px 20px;}
-.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
+.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
 .brand{display:flex;align-items:center;gap:10px;}
-.brand-text{display:flex;flex-direction:column;}
+.brand-text{display:flex;align-items:center;}
+.brand h1{margin:0;font-size:24px;line-height:1.1;}
 .logo-mark{width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center}
 .logo-mark svg{width:100%;height:100%}
 .nav a{color:var(--muted);text-decoration:none;margin-left:12px;font-size:13px;}
 .nav a:hover{color:var(--accent)}
 .block{background:var(--card);border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px;margin:14px 0;line-height:1.7;}
-.subtitle{color:var(--muted);margin-top:6px;font-size:14px;}
+.subtitle{color:var(--muted);margin:4px 0 14px;font-size:14px;}
 </style>
 <!-- Cloudflare Web Analytics --><script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "e70b3b5596ee443690a85e4c19e6c15a"}'></script><!-- End Cloudflare Web Analytics -->
 </head>
@@ -38,7 +39,6 @@ h1,h2{font-family:"Noto Serif SC","Noto Sans SC",sans-serif;}
         </span>
         <div class="brand-text">
           <h1>稀土情报哨兵</h1>
-          <div class="subtitle">把新闻转化为可执行的供应链风险预警</div>
         </div>
       </div>
       <nav class="nav">
@@ -51,6 +51,8 @@ h1,h2{font-family:"Noto Serif SC","Noto Sans SC",sans-serif;}
         <a class="gear" href="/cn/admin/premium/">⚙️</a>
       </nav>
     </header>
+
+    <div class="subtitle">把新闻转化为可执行的供应链风险预警</div>
 
     <section class="block">
       <h2>About Us</h2>
