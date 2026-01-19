@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import re
+import signal
 import time
 from dataclasses import replace
 from urllib.parse import urlparse
@@ -242,6 +243,7 @@ def run_pipeline(config):
     processed_items = 0
     current_info = {}
     new_records = []
+    exit_error = {"message": ""}
 
     def write_status(running, finished=False, error=""):
         if running and processed_items < total_items:
@@ -262,6 +264,19 @@ def run_pipeline(config):
             "error": error,
         }
         storage.write_status_json(status)
+
+    def handle_signal(signum, _frame):
+        exit_error["message"] = f"signal:{signum}"
+        raise SystemExit(1)
+
+    handled_signals = [signal.SIGTERM, signal.SIGINT]
+    if hasattr(signal, "SIGHUP"):
+        handled_signals.append(signal.SIGHUP)
+    for sig in handled_signals:
+        try:
+            signal.signal(sig, handle_signal)
+        except Exception:
+            continue
 
     write_status(running=True)
 
@@ -399,8 +414,9 @@ def run_pipeline(config):
             print(f"[telegram] error: {exc}")
         write_status(running=False, finished=True)
         return stats
-    except Exception as exc:
-        write_status(running=False, finished=True, error=str(exc))
+    except BaseException as exc:
+        error = exit_error["message"] or str(exc)
+        write_status(running=False, finished=True, error=error)
         raise
 
 
