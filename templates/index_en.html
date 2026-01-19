@@ -5,22 +5,30 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 <title>Rare Earth Sentinel</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
 <style>
 :root{--ink:#111827;--muted:#6b7280;--bg:#f8f6f2;--card:#ffffff;--accent:#1e3a8a;--warn:#b45309;--risk:#b91c1c;--soft:#f3f4f6}
 *{box-sizing:border-box}
 body{margin:0;font-family:"Source Sans 3",system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.55}
 .container{max-width:1100px;margin:0 auto;padding:24px}
-.topbar{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:6px}
-.brand h1{margin:0;font-size:24px;font-family:"Source Serif 4",serif;letter-spacing:.3px}
-.brand .positioning{font-size:13px;color:var(--ink);opacity:.85;margin-top:2px}
-.brand .subtitle{font-size:12px;color:var(--muted)}
-.brand .note{font-size:12px;color:var(--muted)}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:4px}
+.brand{display:flex;align-items:center;gap:8px}
+.brand .title{margin:0;font-size:24px;font-family:"Source Serif 4",serif;letter-spacing:.3px}
+.brand-text{display:flex;flex-direction:column;line-height:1.1}
+.logo-mark{width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center}
+.logo-mark svg{width:100%;height:100%}
+.subtitle{font-size:12px;color:var(--muted)}
+.subtitle-group{display:flex;flex-direction:column;gap:2px}
+.subrow{display:flex;justify-content:flex-start;align-items:flex-start;gap:12px;flex-wrap:wrap;margin:4px 0 2px}
+.share-row{display:flex;justify-content:flex-end;align-items:center;margin:0 0 6px}
 .nav{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .nav a{font-size:12px;color:var(--muted);text-decoration:none}
 .nav a:hover{color:var(--ink)}
 .nav .gear{font-size:16px;line-height:1}
-.meta-row{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+@media(max-width:720px){.nav{width:100%}}
+.meta-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:4px 0 12px}
+.update-time{white-space:nowrap}
 .meta{font-size:12px;color:var(--muted)}
 .kpis{display:flex;gap:10px;flex-wrap:wrap}
 .kpi{background:#fff;border-radius:10px;padding:8px 12px;border:1px solid #e5e7eb;font-size:12px}
@@ -91,7 +99,7 @@ body{margin:0;font-family:"Source Sans 3",system-ui,Segoe UI,Roboto,Helvetica,Ar
 .sentinel-cta-wrap{margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .sentinel-cta{background:var(--warn);color:#fff;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:600;display:inline-flex;gap:6px;align-items:center;text-decoration:none}
 .sentinel-cta .premium-badge{background:#fef3c7;color:#92400e}
-.share-bar{display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap}
+.share-bar{display:flex;gap:8px;align-items:center;margin:0;flex-wrap:wrap}
 .share-btn{width:28px;height:28px;border-radius:999px;border:1px solid #e5e7eb;display:inline-flex;align-items:center;justify-content:center;color:transparent;background:#fff;text-decoration:none;font-size:0;font-weight:600;background-repeat:no-repeat;background-position:center;background-size:14px 14px}
 .share-btn:hover{border-color:#d1d5db}
 .share-btn[data-share="x"]{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23111827'%3E%3Cpath d='M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z'/%3E%3C/svg%3E")}
@@ -104,7 +112,7 @@ body{margin:0;font-family:"Source Sans 3",system-ui,Segoe UI,Roboto,Helvetica,Ar
 .share-icon{display:none}
 .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#111827;color:#fff;font-size:12px;padding:6px 10px;border-radius:999px;opacity:0;pointer-events:none;transition:opacity .2s, transform .2s;z-index:90}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
-@media(max-width:720px){.sentinel-cta-wrap{flex-direction:column;align-items:flex-start}}
+@media(max-width:720px){.sentinel-cta-wrap{flex-direction:column;align-items:flex-start}.subrow{flex-direction:column;align-items:flex-start}.share-row{justify-content:flex-start}.meta-row{flex-direction:column;align-items:flex-start}.share-bar{margin-top:4px}}
 .legend-box{background:#f8fafc;border-left:none;padding:10px 12px;border-radius:8px;font-size:12px;line-height:1.6}
 .legend-box div:first-child{font-weight:600;color:#111}
 </style>
@@ -114,19 +122,18 @@ body{margin:0;font-family:"Source Sans 3",system-ui,Segoe UI,Roboto,Helvetica,Ar
 <div class="container">
   <header class="topbar">
     <div class="brand">
-      <h1>Rare Earth Sentinel</h1>
-      <div class="positioning">From Evidence to Action</div>
-      <div class="share-bar" data-share-title="Rare Earth Sentinel">
-        <a class="share-btn" data-share="x" aria-label="Share on X" href="#"><span class="share-icon">X</span></a>
-        <a class="share-btn" data-share="linkedin" aria-label="Share on LinkedIn" href="#"><span class="share-icon">in</span></a>
-        <a class="share-btn" data-share="reddit" aria-label="Share on Reddit" href="#"><span class="share-icon">rd</span></a>
-        <a class="share-btn" data-share="telegram" aria-label="Share on Telegram" href="#"><span class="share-icon">tg</span></a>
-        <a class="share-btn" data-share="weibo" aria-label="Share on Weibo" href="#"><span class="share-icon">wb</span></a>
-        <button class="share-btn" data-share="wechat" aria-label="Copy for WeChat" type="button"><span class="share-icon">wx</span></button>
-        <button class="share-btn" data-share="copy" aria-label="Copy link" type="button"><span class="share-icon">cpy</span></button>
+      <span class="logo-mark" aria-hidden="true">
+        <svg viewBox="80 120 340 260" xmlns="http://www.w3.org/2000/svg" focusable="false">
+          <path d="M250 280L220 250L250 220L280 250L250 280Z" fill="currentColor"/>
+          <path d="M250 180L190 250L250 320L310 250L250 180ZM250 205L288 250L250 295L212 250L250 205Z" fill="currentColor" fill-rule="evenodd"/>
+          <path d="M250 120C180 120 115 160 80 250C115 340 180 380 250 380C320 380 385 340 420 250C385 160 320 120 250 120ZM250 150C305 150 355 185 385 250C355 315 305 350 250 350C195 350 145 315 115 250C145 185 195 150 250 150Z" fill="currentColor" fill-rule="evenodd"/>
+          <path d="M130 250H190" stroke="currentColor" stroke-width="8" stroke-linecap="round"/>
+          <path d="M310 250H370" stroke="currentColor" stroke-width="8" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <div class="brand-text">
+        <div class="title">Rare Earth Sentinel</div>
       </div>
-      <div class="subtitle">Risk intelligence for investors, industry, and policy</div>
-      <div class="note">{{PAGE_NOTE}}</div>
     </div>
     <nav class="nav">
       <a href="/en/">Home</a>
@@ -139,13 +146,31 @@ body{margin:0;font-family:"Source Sans 3",system-ui,Segoe UI,Roboto,Helvetica,Ar
     </nav>
   </header>
 
+  <div class="subrow">
+    <div class="subtitle-group">
+      <div class="subtitle">Risk intelligence for investors, industry, and policy</div>
+      <div class="meta">{{PAGE_NOTE}}</div>
+    </div>
+  </div>
+  <div class="share-row">
+    <div class="share-bar" data-share-title="Rare Earth Sentinel">
+      <a class="share-btn" data-share="x" aria-label="Share on X" href="#"><span class="share-icon">X</span></a>
+      <a class="share-btn" data-share="linkedin" aria-label="Share on LinkedIn" href="#"><span class="share-icon">in</span></a>
+      <a class="share-btn" data-share="reddit" aria-label="Share on Reddit" href="#"><span class="share-icon">rd</span></a>
+      <a class="share-btn" data-share="telegram" aria-label="Share on Telegram" href="#"><span class="share-icon">tg</span></a>
+      <a class="share-btn" data-share="weibo" aria-label="Share on Weibo" href="#"><span class="share-icon">wb</span></a>
+      <button class="share-btn" data-share="wechat" aria-label="Copy for WeChat" type="button"><span class="share-icon">wx</span></button>
+      <button class="share-btn" data-share="copy" aria-label="Copy link" type="button"><span class="share-icon">cpy</span></button>
+    </div>
+  </div>
+
   <div class="meta-row">
-    <div class="meta">Updated: {{LAST_UPDATE}}</div>
     <div class="kpis">
       <div class="kpi">Total {{TOTAL_COUNT}}</div>
       <div class="kpi">High Risk {{HIGH_RISK_COUNT}}</div>
       <div class="kpi">Today {{TODAY_COUNT}}</div>
     </div>
+    <div class="meta update-time">Updated: <span id="last-update" data-iso="{{LAST_UPDATE}}">{{LAST_UPDATE}}</span></div>
   </div>
 
   <section class="section">
@@ -214,6 +239,24 @@ body{margin:0;font-family:"Source Sans 3",system-ui,Segoe UI,Roboto,Helvetica,Ar
 
 <script>
 (function(){
+  var updateEl = document.getElementById('last-update');
+  if (updateEl) {
+    var raw = updateEl.getAttribute('data-iso') || updateEl.textContent;
+    var formatted = raw;
+    if (raw) {
+      var match = raw.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})/);
+      if (match) {
+        formatted = match[1] + ' ' + match[2];
+      } else {
+        var parsed = new Date(raw);
+        if (!isNaN(parsed)) {
+          formatted = parsed.toLocaleString('sv-SE', {hour12:false});
+        }
+      }
+    }
+    updateEl.textContent = formatted;
+  }
+
   var buttons = document.querySelectorAll('.filter-btn');
   var rows = document.querySelectorAll('.row');
   buttons.forEach(function(btn){
