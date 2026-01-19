@@ -203,6 +203,25 @@ def _build_page(template_path, output_path, entries, reports, lang="zh", confirm
         f.write(html)
 
 
+def _build_sources_page(template_path, output_path, lang="zh"):
+    if not os.path.exists(template_path):
+        return
+    with open(template_path, "r", encoding="utf-8") as f:
+        template = f.read()
+
+    html = (
+        template.replace("{{LAST_UPDATE}}", isoformat(now_cst()))
+        .replace("{{SOURCES_ENDPOINT}}", "/api/admin/sources/list")
+        .replace("{{SOURCES_SAVE_ENDPOINT}}", "/api/admin/sources/save")
+        .replace("{{SOURCES_DELETE_ENDPOINT}}", "/api/admin/sources/delete")
+        .replace("{{SOURCES_RUN_ENDPOINT}}", "/api/admin/sources/run")
+    )
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(html)
+
+
 def main():
     config = Config.from_env()
     orders_path = os.path.join(config.data_dir, "pay", "orders.jsonl")
@@ -262,6 +281,14 @@ def main():
         confirm_endpoint=config.pay_confirm_admin_endpoint,
         renderer=_render_task_orders,
     )
+
+    cn_sources_template = os.path.join(config.templates_dir, "admin_sources.html")
+    en_sources_template = os.path.join(config.templates_dir, "admin_sources_en.html")
+    cn_sources_output = os.path.join(config.static_dir, "cn", "admin", "sources", "index.html")
+    en_sources_output = os.path.join(config.static_dir, "en", "admin", "sources", "index.html")
+
+    _build_sources_page(cn_sources_template, cn_sources_output, lang="zh")
+    _build_sources_page(en_sources_template, en_sources_output, lang="en")
 
     print("Admin orders pages built")
     return 0

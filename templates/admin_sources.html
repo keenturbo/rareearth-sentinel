@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>管理员 · 信源管理</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=Noto+Sans+SC:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#111827;--muted:#6b7280;--bg:#f8f6f2;--card:#ffffff;--accent:#1e3a8a;--good:#065f46;--danger:#b91c1c}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink)}
+.container{max-width:980px;margin:0 auto;padding:24px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+header h1{font-family:"Noto Serif SC",serif;margin:0;font-size:22px}
+header .meta{font-size:12px;color:var(--muted)}
+.section{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px}
+.form-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:10px}
+.form-grid label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+.form-grid input,.form-grid select,.form-grid textarea{font-size:12px;padding:6px 8px;border:1px solid #e5e7eb;border-radius:8px}
+.form-grid textarea{min-height:64px;resize:vertical}
+.actions{display:flex;gap:8px;margin-bottom:8px}
+.btn{font-size:12px;border:1px solid #d1d5db;background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.danger{border-color:#fecaca;color:var(--danger)}
+.btn:disabled{opacity:0.6;cursor:not-allowed}
+.status{font-size:12px;color:var(--muted);margin-bottom:10px}
+.card{border-top:1px solid #eef2f7;padding-top:12px;margin-top:12px}
+.card-title{font-weight:600;margin-bottom:4px}
+.card-meta{font-size:12px;color:var(--muted);margin-bottom:4px;word-break:break-all}
+.card-actions{display:flex;gap:8px;margin-top:6px}
+.badge{display:inline-block;font-size:11px;padding:2px 6px;border-radius:999px;background:#eef2ff;color:#1e3a8a;margin-left:6px}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>管理员 · 信源管理</h1>
+      <div class="meta">更新 {{LAST_UPDATE}}</div>
+    </div>
+    <div class="meta"><a href="/cn/admin/premium/">报告列表</a> · <a href="/cn/admin/orders/">订单</a> · <a href="/cn/admin/task-orders/">任务订单</a></div>
+  </header>
+
+  <section class="section" data-list-endpoint="{{SOURCES_ENDPOINT}}" data-save-endpoint="{{SOURCES_SAVE_ENDPOINT}}" data-delete-endpoint="{{SOURCES_DELETE_ENDPOINT}}" data-run-endpoint="{{SOURCES_RUN_ENDPOINT}}">
+    <div class="form-grid">
+      <label>ID
+        <input id="src-id" placeholder="unique_id" />
+      </label>
+      <label>名称
+        <input id="src-name" placeholder="Source Name" />
+      </label>
+      <label>模式
+        <select id="src-mode">
+          <option value="site_search">site_search</option>
+          <option value="rss">rss</option>
+          <option value="html">html</option>
+          <option value="telegram_channel">telegram_channel</option>
+        </select>
+      </label>
+      <label>Domain / URL
+        <input id="src-domain" placeholder="example.com" />
+      </label>
+      <label>语言 news_lang
+        <input id="src-lang" placeholder="zh-CN" />
+      </label>
+      <label>区域 news_region
+        <input id="src-region" placeholder="CN" />
+      </label>
+      <label>Edition news_edition
+        <input id="src-edition" placeholder="CN:zh-Hans" />
+      </label>
+      <label>max_items
+        <input id="src-max" placeholder="6" />
+      </label>
+      <label>启用
+        <select id="src-enabled">
+          <option value="true">是</option>
+          <option value="false">否</option>
+        </select>
+      </label>
+      <label>query_terms
+        <textarea id="src-query" placeholder='稀土 OR "rare earth"'></textarea>
+      </label>
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" id="save-btn">保存</button>
+      <button class="btn" id="reset-btn">清空</button>
+    </div>
+    <div class="status" id="status">等待加载...</div>
+
+    <div id="sources-list"></div>
+  </section>
+</div>
+<script>
+(function(){
+  const section = document.querySelector('.section');
+  if (!section) return;
+  const listEndpoint = section.dataset.listEndpoint || '';
+  const saveEndpoint = section.dataset.saveEndpoint || '';
+  const deleteEndpoint = section.dataset.deleteEndpoint || '';
+  const runEndpoint = section.dataset.runEndpoint || '';
+
+  const statusEl = document.getElementById('status');
+  const listEl = document.getElementById('sources-list');
+  const form = {
+    id: document.getElementById('src-id'),
+    name: document.getElementById('src-name'),
+    mode: document.getElementById('src-mode'),
+    domain: document.getElementById('src-domain'),
+    lang: document.getElementById('src-lang'),
+    region: document.getElementById('src-region'),
+    edition: document.getElementById('src-edition'),
+    maxItems: document.getElementById('src-max'),
+    enabled: document.getElementById('src-enabled'),
+    query: document.getElementById('src-query'),
+  };
+
+  let sources = [];
+
+  const escapeHtml = (text) => {
+    if (text === null || text === undefined) return '';
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  };
+
+  const setStatus = (text) => {
+    if (statusEl) statusEl.textContent = text;
+  };
+
+  const resetForm = () => {
+    form.id.value = '';
+    form.name.value = '';
+    form.mode.value = 'site_search';
+    form.domain.value = '';
+    form.lang.value = '';
+    form.region.value = '';
+    form.edition.value = '';
+    form.maxItems.value = '';
+    form.enabled.value = 'true';
+    form.query.value = '';
+  };
+
+  const fillForm = (source) => {
+    form.id.value = source.id || '';
+    form.name.value = source.name || '';
+    form.mode.value = source.mode || 'site_search';
+    form.domain.value = source.domain || '';
+    form.lang.value = source.news_lang || '';
+    form.region.value = source.news_region || '';
+    form.edition.value = source.news_edition || '';
+    form.maxItems.value = source.max_items || '';
+    form.enabled.value = source.enabled ? 'true' : 'false';
+    form.query.value = source.query_terms || '';
+  };
+
+  const readForm = () => {
+    return {
+      id: form.id.value.trim(),
+      name: form.name.value.trim(),
+      mode: form.mode.value.trim(),
+      domain: form.domain.value.trim(),
+      news_lang: form.lang.value.trim(),
+      news_region: form.region.value.trim(),
+      news_edition: form.edition.value.trim(),
+      max_items: form.maxItems.value.trim(),
+      enabled: form.enabled.value === 'true',
+      query_terms: form.query.value.trim(),
+    };
+  };
+
+  const renderList = () => {
+    if (!listEl) return;
+    if (!sources.length) {
+      listEl.innerHTML = '<div class="card-meta">暂无信源</div>';
+      return;
+    }
+    listEl.innerHTML = sources.map((src) => {
+      const title = escapeHtml(src.name || src.id || '-');
+      const origin = escapeHtml(src.origin || '-');
+      const enabled = src.enabled ? '启用' : '停用';
+      const mode = escapeHtml(src.mode || '-');
+      const domain = escapeHtml(src.domain || '-');
+      const lang = escapeHtml(src.news_lang || '-');
+      const region = escapeHtml(src.news_region || '-');
+      const edition = escapeHtml(src.news_edition || '-');
+      const maxItems = escapeHtml(src.max_items || '-');
+      const query = escapeHtml(src.query_terms || '-');
+      const sid = escapeHtml(src.id || '');
+      return (
+        '<div class="card" data-id="' + sid + '">' +
+          '<div class="card-title">' + title + '<span class="badge">' + mode + '</span></div>' +
+          '<div class="card-meta">' + domain + '</div>' +
+          '<div class="card-meta">lang=' + lang + ' · region=' + region + ' · edition=' + edition + ' · max=' + maxItems + '</div>' +
+          '<div class="card-meta">id=' + sid + ' · ' + origin + ' · ' + enabled + '</div>' +
+          '<div class="card-meta">' + query + '</div>' +
+          '<div class="card-actions">' +
+            '<button class="btn edit-btn" data-id="' + sid + '">编辑</button>' +
+            '<button class="btn danger delete-btn" data-id="' + sid + '">删除</button>' +
+            '<button class="btn run-btn" data-id="' + sid + '">更新</button>' +
+          '</div>' +
+        '</div>'
+      );
+    }).join('');
+  };
+
+  const loadSources = async () => {
+    if (!listEndpoint) return;
+    setStatus('加载中...');
+    try {
+      const res = await fetch(listEndpoint, { method: 'GET' });
+      const data = res.ok ? await res.json() : null;
+      if (!data || !data.ok) {
+        setStatus('加载失败');
+        return;
+      }
+      sources = Array.isArray(data.sources) ? data.sources : [];
+      renderList();
+      setStatus('已加载 ' + sources.length + ' 条');
+    } catch (err) {
+      setStatus('加载失败');
+    }
+  };
+
+  const saveSource = async () => {
+    if (!saveEndpoint) return;
+    const payload = readForm();
+    if (!payload.id || !payload.domain) {
+      setStatus('ID 和 Domain 必填');
+      return;
+    }
+    setStatus('保存中...');
+    try {
+      const res = await fetch(saveEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = res.ok ? await res.json() : null;
+      if (data && data.ok) {
+        setStatus('已保存');
+        resetForm();
+        loadSources();
+      } else {
+        setStatus('保存失败');
+      }
+    } catch (err) {
+      setStatus('保存失败');
+    }
+  };
+
+  const deleteSource = async (sourceId) => {
+    if (!deleteEndpoint || !sourceId) return;
+    setStatus('删除中...');
+    try {
+      const res = await fetch(deleteEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: sourceId }),
+      });
+      const data = res.ok ? await res.json() : null;
+      if (data && data.ok) {
+        setStatus('已删除');
+        loadSources();
+      } else {
+        setStatus('删除失败');
+      }
+    } catch (err) {
+      setStatus('删除失败');
+    }
+  };
+
+  const runSource = async (sourceId) => {
+    if (!runEndpoint || !sourceId) return;
+    setStatus('已提交运行');
+    try {
+      const res = await fetch(runEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: sourceId }),
+      });
+      const data = res.ok ? await res.json() : null;
+      if (!data || !data.ok) {
+        setStatus('运行提交失败');
+      }
+    } catch (err) {
+      setStatus('运行提交失败');
+    }
+  };
+
+  document.getElementById('save-btn').addEventListener('click', saveSource);
+  document.getElementById('reset-btn').addEventListener('click', resetForm);
+
+  listEl.addEventListener('click', (e) => {
+    const editBtn = e.target.closest('.edit-btn');
+    const deleteBtn = e.target.closest('.delete-btn');
+    const runBtn = e.target.closest('.run-btn');
+    if (editBtn) {
+      const sourceId = editBtn.dataset.id;
+      const source = sources.find((s) => s.id === sourceId);
+      if (source) {
+        fillForm(source);
+        setStatus('已加载到表单');
+      }
+      return;
+    }
+    if (deleteBtn) {
+      const sourceId = deleteBtn.dataset.id;
+      if (sourceId && confirm('确认删除该信源？')) {
+        deleteSource(sourceId);
+      }
+      return;
+    }
+    if (runBtn) {
+      const sourceId = runBtn.dataset.id;
+      if (sourceId) {
+        runSource(sourceId);
+      }
+    }
+  });
+
+  loadSources();
+})();
+</script>
+</body>
+</html>

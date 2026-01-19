@@ -69,6 +69,8 @@ class Config:
     summary_min_chars: int
     index_limit: int
     official_sources_file: str
+    custom_sources_file: str
+    official_source_ids: list
     official_max_items: int
     index_enabled: bool
     index_sources_file: str
@@ -144,6 +146,10 @@ class Config:
             official_sources_file=_get_env(
                 "OFFICIAL_SOURCES_FILE", "config/external_sources.yml"
             ),
+            custom_sources_file=_get_env(
+                "CUSTOM_SOURCES_FILE", "data/sources/custom_sources.json"
+            ),
+            official_source_ids=_get_list("OFFICIAL_SOURCE_IDS", []),
             official_max_items=_get_int("OFFICIAL_MAX_ITEMS", 6),
             index_enabled=_get_bool("INDEX_ENABLED", True),
             index_sources_file=_get_env(
