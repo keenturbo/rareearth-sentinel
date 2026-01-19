@@ -29,6 +29,9 @@ header .meta{font-size:12px;color:var(--muted)}
 .card-meta{font-size:12px;color:var(--muted);margin-bottom:4px;word-break:break-all}
 .card-actions{display:flex;gap:8px;margin-top:6px}
 .badge{display:inline-block;font-size:11px;padding:2px 6px;border-radius:999px;background:#eef2ff;color:#1e3a8a;margin-left:6px}
+.run-meta{display:flex;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--muted);margin-top:4px}
+.run-meta span{padding:2px 6px;border-radius:999px;background:#f3f4f6}
+.run-meta .running{background:#ecfdf3;color:#065f46}
 </style>
 </head>
 <body>
@@ -128,6 +131,11 @@ header .meta{font-size:12px;color:var(--muted)}
       .replace(/'/g, '&#039;');
   };
 
+  const fmtTime = (text) => {
+    if (!text) return '-';
+    return String(text).replace('T', ' ').replace('Z', '');
+  };
+
   const setStatus = (text) => {
     if (statusEl) statusEl.textContent = text;
   };
@@ -191,6 +199,12 @@ header .meta{font-size:12px;color:var(--muted)}
       const maxItems = escapeHtml(src.max_items || '-');
       const query = escapeHtml(src.query_terms || '-');
       const sid = escapeHtml(src.id || '');
+      const runStart = fmtTime(src.run_start_time);
+      const runLast = fmtTime(src.run_last_update);
+      const runNew = src.run_last_new !== undefined && src.run_last_new !== '' ? src.run_last_new : '-';
+      const runCount = src.run_last_count !== undefined && src.run_last_count !== '' ? src.run_last_count : '-';
+      const runBadge = src.run_running ? '<span class="running">Running</span>' : '<span>Idle</span>';
+
       return (
         '<div class="card" data-id="' + sid + '">' +
           '<div class="card-title">' + title + '<span class="badge">' + mode + '</span></div>' +
@@ -198,6 +212,13 @@ header .meta{font-size:12px;color:var(--muted)}
           '<div class="card-meta">lang=' + lang + ' · region=' + region + ' · edition=' + edition + ' · max=' + maxItems + '</div>' +
           '<div class="card-meta">id=' + sid + ' · ' + origin + ' · ' + enabled + '</div>' +
           '<div class="card-meta">' + query + '</div>' +
+          '<div class="run-meta">' +
+            runBadge +
+            '<span>Start: ' + runStart + '</span>' +
+            '<span>Last: ' + runLast + '</span>' +
+            '<span>New: ' + runNew + '</span>' +
+            '<span>Total: ' + runCount + '</span>' +
+          '</div>' +
           '<div class="card-actions">' +
             '<button class="btn edit-btn" data-id="' + sid + '">Edit</button>' +
             '<button class="btn danger delete-btn" data-id="' + sid + '">Delete</button>' +
@@ -284,8 +305,12 @@ header .meta{font-size:12px;color:var(--muted)}
         body: JSON.stringify({ id: sourceId }),
       });
       const data = res.ok ? await res.json() : null;
-      if (!data || !data.ok) {
+      if (data && data.running) {
+        setStatus('Already running');
+      } else if (!data || !data.ok) {
         setStatus('Run request failed');
+      } else {
+        setStatus('Run submitted');
       }
     } catch (err) {
       setStatus('Run request failed');
