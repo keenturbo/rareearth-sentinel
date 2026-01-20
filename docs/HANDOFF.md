@@ -36,6 +36,7 @@ Key components:
 Server: GCP VM, Ubuntu
 Reverse proxy: Nginx Proxy Manager (NPM) -> 172.17.0.1:8112
 Pay confirm service: rareearth-pay-confirm-20260111n (port 8112)
+Do not restart dataspices-api (different project)
 
 Systemd timers:
 - rareearth-sentinel.timer -> rareearth-sentinel.service (daily 09:00 CST)
@@ -45,6 +46,8 @@ Systemd timers:
 - data/intel.jsonl: main intelligence store
 - data/pay/orders.jsonl: report orders
 - data/pay/task_orders.jsonl: task orders
+- static/pay/status/: order status files
+- static/unlocks/: report unlock tokens
 - data/keywords/custom_keywords.json: approved keywords (admin-managed)
 - data/keywords/keyword_candidates.jsonl: candidate keywords (auto-extracted)
 - data/status/indices_upload.json: index upload status
@@ -55,8 +58,8 @@ Indices upload file:
 
 ## 5) Task Module (T2.3/T2.4)
 - Task pay pages: /cn/task/pay/<report_id>.html and /en/task/pay/<report_id>.html
-- Task pages: /cn/task/task-<report_id>.html
-- Task report pages: /cn/task/task-<report_id>/reports/YYYY-MM-DD.html
+- Task pages: /cn/task/task-<report_id>.html and /en/task/task-<report_id>.html
+- Task report pages: /cn/task/task-<report_id>/reports/YYYY-MM-DD.html and /en/task/task-<report_id>/reports/YYYY-MM-DD.html
 - Task status flow: pending -> active -> paused -> completed
 - Task orders stored in data/pay/task_orders.jsonl
 
@@ -68,6 +71,11 @@ Report and task payments share pay_confirm_server but are stored separately.
 Unlock flow:
 - pay page -> pay_confirm_server -> admin confirm -> status/unlock JSON
 
+Pay page notes:
+- Email is required and used for confirmation
+- Task orders are routed by order_type=task and memo task_id fallback
+- Bark notify is sent asynchronously with timeout to avoid blocking
+
 ## 7) Admin Pages
 - /cn/admin/premium/ : report list
 - /cn/admin/orders/ : report orders
@@ -76,48 +84,62 @@ Unlock flow:
 - /cn/admin/keywords/ : keyword management (list + candidates + approve/reject)
 - /cn/admin/indices/ : price index upload (.xls -> pipeline)
 
-## 8) Sources
+## 8) UI & Analytics
+- Share buttons are icon-only with inline SVG (no external SVG dependencies)
+- WeChat/Copy are enabled; copy shows toast (CN: "Copied" equivalent)
+- Cloudflare Web Analytics injected on visitor pages only (no admin pages)
+- About pages include a Contact block (email, domain, subscribe link)
+
+## 9) Sources
 Configured in config/external_sources.yml + custom sources (admin).
 Notable sources:
 - Zaobao via Telegram: t.me/s/zaobao_news (tag #稀土 priority)
 - caus.com (site search + Jina full text)
 - Kyodo (china.kyodonews.net/articles)
+- DW Chinese: dw.com/zh and dw.com/zh-hant (full text used for analysis only)
 
-## 9) Telegram Push
+## 10) Telegram Push
 - New intel cards auto-posted after each run
 - Format: title + 2 lines summary + CTA
 - CTA links to /cn/task/pay/<report_id>.html
 - Bot token in .env (never commit)
+- Channel: https://t.me/rare_earth_intelligence
 
-## 10) Prompt Versioning
+## 11) Prompt Versioning
 PROMPT_VERSION env var:
 - v1 (default)
 - v2 (enhanced, adds key_evidence/assumptions/audience_fit)
 
-## 11) Common Commands
+## 12) Common Commands
 - Update code: `cd /root/rareearth-sentinel && git pull`
 - Full pipeline: `python3 main.py`
 - Rebuild static only: `python3 main.py --rebuild`
 - Run tasks manually: `python3 scripts/run_tasks.py`
 - Build admin pages: `python3 scripts/build_admin_orders.py`
 - Restart pay_confirm: `sudo systemctl restart rareearth-pay-confirm-20260111n`
+- Check 8112: `sudo ss -lptn | grep ':8112'`
+- Pay confirm logs: `journalctl -u rareearth-pay-confirm-20260111n --since "5 minutes ago" --no-pager`
+- Use grep (not rg) for server searches
 
-## 12) Operational Pitfalls (Must Avoid)
+## 13) Operational Pitfalls (Must Avoid)
 - Never truncate src/reporter.py or pay_confirm_server.py
 - Do not use placeholder lines like "# ... remaining methods unchanged ..."
 - SSH disconnect can kill manual main.py; use nohup for long runs
 - NPM must forward new admin API paths (/api/admin/*)
 - cgi.FieldStorage cannot be used in boolean checks; use "is None" instead
 - Jina/remote fetch can hang; keep timeouts in config
+- pay_confirm_server is single-threaded; external calls must use timeouts or async
+- Always restart rareearth-pay-confirm-20260111n (not dataspices-api)
 
-## 13) Recent Fixes (Summary)
+## 14) Recent Fixes (Summary)
 - Task order routing fixed (task vs report orders)
-- Telegram summary de-dup + expert summary line
-- Admin sources run: lock + status + auto rebuild
-- Admin indices upload: error logging + status
-- Keywords: custom store + candidates + admin page
+- Bark notify made async with timeout to avoid blocking
+- Share bars icon-only with WeChat/Copy + toast
+- Cloudflare Web Analytics added to visitor pages
+- About pages contact block added
+- DW Chinese sources added
 
-## 14) Next ToDo
+## 15) Next ToDo
 P0:
 - Monitor daily 09:00 and weekday 11:00 timers
 - Watch noise after keyword expansion
@@ -129,7 +151,7 @@ P1:
 P2:
 - Professional payment system (deferred)
 
-## 15) Daily Maintenance Checklist
+## 16) Daily Maintenance Checklist
 - Verify 09:00 run completed (status.json + journalctl)
 - Verify 11:00 run_tasks output (journalctl)
 - Check indices upload status after manual upload
