@@ -1081,7 +1081,9 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
                 environ={"REQUEST_METHOD": "POST", "CONTENT_TYPE": content_type},
             )
             file_item = form["file"] if "file" in form else None
-            if not file_item or not getattr(file_item, "filename", ""):
+            if isinstance(file_item, list):
+                file_item = file_item[0] if file_item else None
+            if file_item is None or not getattr(file_item, "filename", ""):
                 _fail("missing_file", "missing file", http_code=400)
                 return
 
