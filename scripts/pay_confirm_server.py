@@ -326,6 +326,20 @@ def _indices_status_path():
     return os.path.join(ROOT, "data", "status", "indices_upload.json")
 
 
+def _indices_log_path():
+    return os.path.join(ROOT, "logs", "indices_upload.log")
+
+
+def _append_indices_log(message):
+    if not message:
+        return
+    log_path = _indices_log_path()
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    ts = datetime.utcnow().isoformat() + "Z"
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(f"{ts} {message}\n")
+
+
 def _load_indices_status(path):
     if not path or not os.path.exists(path):
         return {}
@@ -1036,105 +1050,118 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def _handle_indices_upload(self):
-        content_type = self.headers.get("Content-Type", "")
-        if "multipart/form-data" not in content_type:
-            self._json_response(400, {"ok": False, "error": "invalid_content_type"})
-            return
-
-        form = cgi.FieldStorage(
-            fp=self.rfile,
-            headers=self.headers,
-            environ={"REQUEST_METHOD": "POST", "CONTENT_TYPE": content_type},
-        )
-        file_item = form["file"] if "file" in form else None
-        if not file_item or not getattr(file_item, "filename", ""):
-            self._json_response(400, {"ok": False, "error": "missing_file"})
-            return
-
-        filename = os.path.basename(file_item.filename)
-        if not filename.lower().endswith(".xls"):
-            self._json_response(400, {"ok": False, "error": "invalid_file_type"})
-            return
-
-        try:
-            content = file_item.file.read()
-        except Exception:
-            content = b""
-        if not content:
-            self._json_response(400, {"ok": False, "error": "empty_file"})
-            return
-
-        raw_dir = _resolve_path(self.config.index_raw_dir)
-        manual_dir = os.path.join(raw_dir, "manual")
-        os.makedirs(manual_dir, exist_ok=True)
-        target_path = os.path.join(manual_dir, "repe.xls")
-        with open(target_path, "wb") as f:
-            f.write(content)
-
-        now = datetime.utcnow().isoformat() + "Z"
+        status_path = _indices_status_path()
+        start = time.time()
         status = {
-            "last_upload_at": now,
+            "last_upload_at": "",
             "last_parse_at": "",
             "last_trade_date": "",
             "last_result": "failed",
             "last_log": "",
-            "last_filename": filename,
-            "last_filesize_bytes": len(content),
+            "last_filename": "",
+            "last_filesize_bytes": 0,
         }
-        log_parts = []
-        start = time.time()
 
-        normalize_cmd = [
-            sys.executable,
-            os.path.join(ROOT, "scripts", "normalize_indices.py"),
-            "--once",
-            "--manual",
-        ]
-        code, line = _run_command(normalize_cmd, ROOT)
-        if code != 0:
-            log_parts.append("normalize failed" + (f": {line}" if line else ""))
+        def _fail(error_code, message, http_code=500):
+            status["last_log"] = (message or "")[:200]
+            status["last_duration_sec"] = int(time.time() - start)
+            _write_indices_status(status_path, status)
+            _append_indices_log(f"{error_code}: {message}".strip())
+            self._json_response(http_code, {"ok": False, "error": error_code, "log": status["last_log"]})
+
+        try:
+            content_type = self.headers.get("Content-Type", "")
+            if "multipart/form-data" not in content_type:
+                _fail("invalid_content_type", "invalid content type", http_code=400)
+                return
+
+            form = cgi.FieldStorage(
+                fp=self.rfile,
+                headers=self.headers,
+                environ={"REQUEST_METHOD": "POST", "CONTENT_TYPE": content_type},
+            )
+            file_item = form["file"] if "file" in form else None
+            if not file_item or not getattr(file_item, "filename", ""):
+                _fail("missing_file", "missing file", http_code=400)
+                return
+
+            filename = os.path.basename(file_item.filename)
+            status["last_filename"] = filename
+            if not filename.lower().endswith(".xls"):
+                _fail("invalid_file_type", "invalid file type", http_code=400)
+                return
+
+            try:
+                content = file_item.file.read()
+            except Exception as exc:
+                _fail("read_failed", str(exc))
+                return
+            if not content:
+                _fail("empty_file", "empty file", http_code=400)
+                return
+            status["last_filesize_bytes"] = len(content)
+
+            raw_dir = _resolve_path(self.config.index_raw_dir)
+            manual_dir = os.path.join(raw_dir, "manual")
+            os.makedirs(manual_dir, exist_ok=True)
+            target_path = os.path.join(manual_dir, "repe.xls")
+            tmp_path = os.path.join("/tmp", f"indices_upload_{uuid4().hex}.xls")
+            try:
+                with open(tmp_path, "wb") as f:
+                    f.write(content)
+                os.replace(tmp_path, target_path)
+            except Exception as exc:
+                _fail("save_failed", str(exc))
+                return
+
+            status["last_upload_at"] = datetime.utcnow().isoformat() + "Z"
+            log_parts = []
+
+            normalize_cmd = [
+                sys.executable,
+                os.path.join(ROOT, "scripts", "normalize_indices.py"),
+                "--once",
+                "--manual",
+            ]
+            code, line = _run_command(normalize_cmd, ROOT)
+            if code != 0:
+                _fail("normalize_failed", f"normalize failed: {line}" if line else "normalize failed")
+                return
+            status["last_parse_at"] = datetime.utcnow().isoformat() + "Z"
+            log_parts.append("normalize ok")
+
+            signals_cmd = [
+                sys.executable,
+                os.path.join(ROOT, "scripts", "build_index_signals.py"),
+                "--once",
+            ]
+            code, line = _run_command(signals_cmd, ROOT)
+            if code != 0:
+                _fail("signals_failed", f"signals failed: {line}" if line else "signals failed")
+                return
+            log_parts.append("signals ok")
+
+            rebuild_cmd = [
+                sys.executable,
+                os.path.join(ROOT, "main.py"),
+                "--rebuild",
+            ]
+            code, line = _run_command(rebuild_cmd, ROOT)
+            if code != 0:
+                _fail("rebuild_failed", f"rebuild failed: {line}" if line else "rebuild failed")
+                return
+            log_parts.append("rebuild ok")
+
+            status["last_trade_date"] = _latest_trade_date(self.config.index_normalized_dir)
+            status["last_result"] = "success"
             status["last_log"] = "; ".join(log_parts)[:200]
-            _write_indices_status(_indices_status_path(), status)
-            self._json_response(500, {"ok": False, "error": "normalize_failed", "log": status["last_log"]})
-            return
-        status["last_parse_at"] = datetime.utcnow().isoformat() + "Z"
-        log_parts.append("normalize ok")
+            status["last_duration_sec"] = int(time.time() - start)
 
-        signals_cmd = [
-            sys.executable,
-            os.path.join(ROOT, "scripts", "build_index_signals.py"),
-            "--once",
-        ]
-        code, line = _run_command(signals_cmd, ROOT)
-        if code != 0:
-            log_parts.append("signals failed" + (f": {line}" if line else ""))
-            status["last_log"] = "; ".join(log_parts)[:200]
-            _write_indices_status(_indices_status_path(), status)
-            self._json_response(500, {"ok": False, "error": "signals_failed", "log": status["last_log"]})
-            return
-        log_parts.append("signals ok")
-
-        rebuild_cmd = [
-            sys.executable,
-            os.path.join(ROOT, "main.py"),
-            "--rebuild",
-        ]
-        code, line = _run_command(rebuild_cmd, ROOT)
-        if code != 0:
-            log_parts.append("rebuild failed" + (f": {line}" if line else ""))
-            status["last_log"] = "; ".join(log_parts)[:200]
-            _write_indices_status(_indices_status_path(), status)
-            self._json_response(500, {"ok": False, "error": "rebuild_failed", "log": status["last_log"]})
-            return
-        log_parts.append("rebuild ok")
-
-        status["last_trade_date"] = _latest_trade_date(self.config.index_normalized_dir)
-        status["last_result"] = "success"
-        status["last_log"] = "; ".join(log_parts)[:200]
-        status["last_duration_sec"] = int(time.time() - start)
-
-        _write_indices_status(_indices_status_path(), status)
-        self._json_response(200, {"ok": True, "status": status})
+            _write_indices_status(status_path, status)
+            _append_indices_log(f"success: {status['last_log']}")
+            self._json_response(200, {"ok": True, "status": status})
+        except Exception as exc:
+            _fail("exception", str(exc))
 
     def do_POST(self):
         try:
@@ -1509,7 +1536,7 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
 
             if normalized_path == keywords_list_path:
                 entries = _load_custom_keywords_entries(_custom_keywords_path(self.config))
-                entries.sort(key=lambda e: str(e.get("keyword", "")).lower())
+                entries.sort(key=lambda e: str(entry.get("keyword", "")).lower())
                 self._json_response(200, {"ok": True, "keywords": entries})
                 return
 
