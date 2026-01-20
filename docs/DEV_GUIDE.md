@@ -3,9 +3,7 @@
 Last updated: 2026-01-20
 
 ## 1) Project Summary
-RareEarth Sentinel is a CN/EN rare earth intelligence platform: global source aggregation, Gemini extraction, structured JSONL storage, and static site generation. It sells two paid products:
-- Paid reports (one-off unlock)
-- Task execution (ongoing monitoring, paid task pages + periodic reports)
+RareEarth Sentinel is a CN/EN rare earth intelligence platform: global source aggregation, Gemini extraction, structured JSONL storage, and static site generation. It sells paid reports (one-off unlock). Task execution is planned but not fully wired in the current main branch.
 
 Primary domain: https://sentinel.dataspices.com
 CN: https://sentinel.dataspices.com/cn/
@@ -14,7 +12,7 @@ EN: https://sentinel.dataspices.com/en/
 Admin (NPM Basic Auth):
 - /cn/admin/premium/
 - /cn/admin/orders/
-- /cn/admin/task-orders/
+- /cn/admin/task-orders/ (legacy)
 - /cn/admin/sources/
 - /cn/admin/keywords/
 - /cn/admin/indices/
@@ -32,91 +30,75 @@ Key components:
 - src/reporter.py: static site generation (do not truncate)
 - scripts/pay_confirm_server.py: payment + admin APIs (do not truncate)
 
-## 3) Data Paths
+## 3) Current Pages & UX (Main)
+- Home shows 5 cards; full list at /cn/news/ and /en/news/ (200 items)
+- Premium list: /cn/premium/ and /en/premium/
+- Pay pages: /cn/pay/<report_id>.html and /en/pay/<report_id>.html
+- Admin report pages: /cn/admin/premium/ and /en/admin/premium/
+- Admin orders pages: /cn/admin/orders/ and /en/admin/orders/
+- About/Subscribe/Rank pages exist for CN/EN
+
+Index Watch:
+- Table rendering with ↑/↓ color
+- EN mineral names are mapped to English
+- Display count capped by INDEX_WATCH_MAX (default 6)
+
+Menus:
+- Top nav includes Home/About/Subscribe/Ranking/Premium/Language/⚙️
+
+## 4) Pay & Unlock Flow (Reports)
+- Pay page generates order_id; buyer must include report_id + tier + order_id + email in memo
+- Buyer clicks "I have paid" -> /api/pay/confirm (Bark notify)
+- Admin confirms -> /api/pay/confirm_admin -> status + unlock token generated
+- Unlock link: /cn/pay/<report_id>.html?unlock=<token> (7 days)
+- CN pay shows WeChat/Alipay/token; EN pay shows USDT + email
+- $99/$999 tiers are hidden by default
+
+## 5) Data Paths
 - data/intel.jsonl: main intelligence store
 - data/pay/orders.jsonl: report orders
-- data/pay/task_orders.jsonl: task orders
 - static/pay/status/: order status files
 - static/unlocks/: report unlock tokens
-- data/keywords/custom_keywords.json: approved keywords (admin-managed)
-- data/keywords/keyword_candidates.jsonl: candidate keywords (auto-extracted)
+- data/indices/raw/manual/repe.xls: manual index source
+- data/indices/normalized/index_timeseries.jsonl
+- data/indices/normalized/index_signals.jsonl
 
-## 4) Task Module (T2.3/T2.4)
-- Task pay pages: /cn/task/pay/<report_id>.html and /en/task/pay/<report_id>.html
-- Task pages: /cn/task/task-<report_id>.html and /en/task/task-<report_id>.html
-- Task report pages: /cn/task/task-<report_id>/reports/YYYY-MM-DD.html and /en/task/task-<report_id>/reports/YYYY-MM-DD.html
-- Task status flow: pending -> active -> paused -> completed
-- Task orders stored in data/pay/task_orders.jsonl
+## 6) Task Module (Status)
+- Templates exist: templates/task_pay.html and templates/task_pay_en.html
+- Task pay page generation + task links are not yet wired (T2.3 pending)
+- CTA copy is unified: “哨兵执行操作建议” / English counterpart
 
-## 5) Payments
-Report and task payments share pay_confirm_server but are stored separately.
-- Report orders: data/pay/orders.jsonl
-- Task orders: data/pay/task_orders.jsonl
-
-Unlock flow:
-- pay page -> pay_confirm_server -> admin confirm -> status/unlock JSON
-
-Pay page notes:
-- Email is required and used for confirmation
-- Task orders are routed by order_type=task and memo task_id fallback
-- Bark notify is sent asynchronously with timeout to avoid blocking
-
-## 6) Admin Pages
+## 7) Admin Pages
 - /cn/admin/premium/ : report list
 - /cn/admin/orders/ : report orders
-- /cn/admin/task-orders/ : task orders
 - /cn/admin/sources/ : external sources (add/edit/delete + single source run)
-- /cn/admin/keywords/ : keyword management (list + candidates + approve/reject)
+- /cn/admin/keywords/ : keyword management
 - /cn/admin/indices/ : price index upload (.xls -> pipeline)
 
-## 7) UI & Analytics
-- Share buttons are icon-only with inline SVG (no external SVG dependencies)
-- WeChat/Copy are enabled; copy shows toast (CN: "Copied" equivalent)
-- Cloudflare Web Analytics injected on visitor pages only (no admin pages)
-- About pages include a Contact block (email, domain, subscribe link)
+## 8) UI & Analytics
+- Share buttons icon-only with inline SVG (no external SVG dependencies)
+- Cloudflare Web Analytics on visitor pages only (no admin pages)
+- About pages include a Contact block
 
-## 8) Sources
+## 9) Sources
 Configured in config/external_sources.yml + custom sources (admin).
-Notable sources:
-- Zaobao via Telegram: t.me/s/zaobao_news (tag #稀土 priority)
-- caus.com (site search + Jina full text)
-- Kyodo (china.kyodonews.net/articles)
-- DW Chinese: dw.com/zh and dw.com/zh-hant (full text used for analysis only)
-
-## 9) Telegram Push
-- New intel cards auto-posted after each run
-- Format: title + 2 lines summary + CTA
-- CTA links to /cn/task/pay/<report_id>.html
-- Bot token in .env (never commit)
-- Channel: https://t.me/rare_earth_intelligence
+Notable sources include Zaobao (Telegram), caus.com, Kyodo, DW Chinese, and REEx site_search.
 
 ## 10) Prompt Versioning
 PROMPT_VERSION env var:
 - v1 (default)
 - v2 (enhanced, adds key_evidence/assumptions/audience_fit)
 
-## 11) Recent Fixes (Summary)
-- Task order routing fixed (task vs report orders)
-- Bark notify made async with timeout to avoid blocking
-- Share bars icon-only with WeChat/Copy + toast
-- Cloudflare Web Analytics added to visitor pages
-- About pages contact block added
-- DW Chinese sources added
+## 11) Index Update (Manual)
+When REPE Excel is updated manually:
+1) Copy to data/indices/raw/manual/repe.xls
+2) python3 scripts/normalize_indices.py --once --manual
+3) python3 scripts/build_index_signals.py --once
+4) python3 main.py --rebuild
 
-## 12) Next ToDo
-P0:
-- Monitor daily 09:00 and weekday 11:00 timers
-- Watch noise after keyword expansion
-
-P1:
-- Prompt optimization (report/task/extraction)
-- Ranking data script (TBD)
-
-P2:
-- Professional payment system (deferred)
-
-## 13) Dev Pitfalls (Must Avoid)
+## 12) Dev Pitfalls (Must Avoid)
 - Never truncate src/reporter.py or pay_confirm_server.py
 - Do not use placeholder lines like "# ... remaining methods unchanged ..."
-- Jina/remote fetch can hang; keep timeouts in config
+- Always check wc -l before/after reporter edits
+- Avoid large template replacements; small, focused edits only
 - pay_confirm_server is single-threaded; external calls must use timeouts or async
