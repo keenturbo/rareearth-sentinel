@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
-
+load_dotenv(os.path.join(ROOT, ".env"))
 from src.config import Config
 
 
@@ -1350,7 +1350,6 @@ def _paypal_capture_and_fulfill(config, order_id, paypal_order_id):
 
     return result_payload, None
 
-load_dotenv(os.path.join(ROOT, ".env"))
 class PayConfirmHandler(BaseHTTPRequestHandler):
     config = Config.from_env()
 
@@ -2059,7 +2058,7 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
 
             if normalized_path == keywords_list_path:
                 entries = _load_custom_keywords_entries(_custom_keywords_path(self.config))
-                entries.sort(key=lambda e: str(entry.get("keyword", "")).lower())
+                entries.sort(key=lambda e: str(e.get("keyword", "")).lower())
                 self._json_response(200, {"ok": True, "keywords": entries})
                 return
 
