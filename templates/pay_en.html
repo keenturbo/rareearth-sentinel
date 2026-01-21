@@ -119,6 +119,12 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
         {{PAYMENT_SECTION}}
 
         <div class="pay-field">
+          <label>PayPal</label>
+          <button class="pay-btn" id="paypal-btn">Pay with PayPal</button>
+          <div class="pay-note" id="paypal-status">Pay securely with PayPal (USD).</div>
+        </div>
+
+        <div class="pay-field">
           <label>Payment method</label>
           <input id="pay-method" type="hidden" value="usdt" />
           <div class="copy">USDT (TRC20)</div>
@@ -174,8 +180,14 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
   const payClose = document.getElementById("pay-close");
   const payCloseBtn = document.getElementById("pay-close-btn");
   const paymentSection = document.getElementById("payment-section");
+  const paypalBtn = document.getElementById("paypal-btn");
+  const paypalStatus = document.getElementById("paypal-status");
 
   if (orderEl) orderEl.textContent = orderId;
+
+  function setPayPalStatus(text){
+    if (paypalStatus) paypalStatus.textContent = text;
+  }
 
   function updateMemo(){
     const emailVal = (emailInput && emailInput.value.trim()) || "your@email";
@@ -325,6 +337,71 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
     }
   }
 
+  async function createPayPalOrder(){
+    const emailVal = (emailInput && emailInput.value.trim()) || "";
+    setPayPalStatus("Creating PayPal order...");
+    try {
+      const payload = {
+        order_type: "report",
+        report_id: reportId,
+        order_id: orderId,
+        tier: "$9",
+        lang: "en",
+        email: emailVal,
+        payment_method: "paypal"
+      };
+      const res = await fetch("/api/paypal/create-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        setPayPalStatus("Failed to create PayPal order.");
+        return;
+      }
+      const data = await res.json();
+      if (data && data.approve_url) {
+        window.location.href = data.approve_url;
+        return;
+      }
+      setPayPalStatus("PayPal approval URL missing.");
+    } catch (err) {
+      setPayPalStatus("Failed to create PayPal order.");
+    }
+  }
+
+  async function capturePayPal(token){
+    if (!token) return;
+    setPayPalStatus("Capturing PayPal payment...");
+    try {
+      const payload = {
+        paypal_order_id: token,
+        order_type: "report",
+        report_id: reportId,
+        order_id: orderId
+      };
+      const res = await fetch("/api/paypal/capture-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        setPayPalStatus("PayPal capture failed.");
+        return;
+      }
+      setPayPalStatus("Payment captured. Unlocking...");
+      await pollStatus();
+    } catch (err) {
+      setPayPalStatus("PayPal capture failed.");
+    }
+  }
+
+  if (paypalBtn) {
+    paypalBtn.addEventListener("click", () => {
+      createPayPalOrder();
+    });
+  }
+
   if (paidBtn) {
     paidBtn.addEventListener("click", async () => {
       const emailVal = (emailInput && emailInput.value.trim()) || "";
@@ -389,6 +466,11 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
 
   const params = new URLSearchParams(window.location.search);
   const unlockToken = params.get("unlock");
+  const paypalToken = params.get("token");
+  if (paypalToken) {
+    openModal();
+    capturePayPal(paypalToken);
+  }
   if (unlockToken) {
     fetchUnlock(unlockToken);
   }
