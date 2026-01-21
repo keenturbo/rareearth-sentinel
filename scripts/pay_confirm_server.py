@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import threading
 import argparse
+import base64
 import cgi
 import html
 import json
@@ -49,6 +50,242 @@ def _normalize_path(path):
     if path == "/":
         return "/"
     return path.rstrip("/")
+
+
+def _paypal_env():
+    return {
+        "client_id": os.getenv("PAYPAL_CLIENT_ID", "").strip(),
+        "secret": os.getenv("PAYPAL_CLIENT_SECRET", "").strip(),
+        "webhook_id": os.getenv("PAYPAL_WEBHOOK_ID", "").strip(),
+        "api_base": _normalize_base(
+            os.getenv("PAYPAL_API_BASE", "https://api-m.paypal.com")
+        ),
+    }
+
+
+def _paypal_enabled(env):
+    return bool(env.get("client_id") and env.get("secret") and env.get("api_base"))
+
+
+def _paypal_money(value):
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return "0.00"
+
+
+def _parse_price(value):
+    if value is None:
+        return None
+    text = str(value).strip().replace("$", "")
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _plan_frequency(plan):
+    plan = str(plan or "").strip()
+    if plan.startswith("daily"):
+        return "daily"
+    if plan.startswith("weekly"):
+        return "weekly"
+    if plan.startswith("trigger"):
+        return "event"
+    return plan or "weekly"
+
+
+def _paypal_amount_for(order_type, plan, tier):
+    order_type = str(order_type or "report").strip().lower()
+    if order_type == "task":
+        mapping = {
+            "weekly": 9,
+            "weekly_4": 29,
+            "daily_30": 30,
+            "daily_60": 60,
+            "daily_180": 180,
+            "daily_365": 365,
+            "trigger": 29,
+        }
+        plan_key = str(plan or "").strip()
+        amount = mapping.get(plan_key)
+        if amount is None and plan_key.startswith("daily"):
+            amount = mapping.get(plan_key, mapping.get("daily_30"))
+        if amount is None and plan_key.startswith("weekly"):
+            amount = mapping.get(plan_key, mapping.get("weekly"))
+        if amount is None and plan_key.startswith("trigger"):
+            amount = mapping.get("trigger")
+        if amount is None:
+            amount = _parse_price(tier) or 9
+        return float(amount)
+    return float(_parse_price(tier) or 9)
+
+
+def _format_tier(amount):
+    try:
+        value = float(amount)
+    except (TypeError, ValueError):
+        return "$9"
+    if value.is_integer():
+        return f"${int(value)}"
+    return f"${value}"
+
+
+def _paypal_return_urls(config, order_type, report_id):
+    base = _normalize_base(getattr(config, "site_base_url", ""))
+    if not base:
+        base = "https://sentinel.dataspices.com"
+    if str(order_type) == "task":
+        path = f"/en/task/pay/{report_id}.html"
+    else:
+        path = f"/en/pay/{report_id}.html"
+    return {
+        "return_url": f"{base}{path}?paypal=success",
+        "cancel_url": f"{base}{path}?paypal=cancel",
+    }
+
+
+def _paypal_get_token(env):
+    if not _paypal_enabled(env):
+        return None, "missing_credentials"
+    auth_raw = f"{env['client_id']}:{env['secret']}"
+    auth = base64.b64encode(auth_raw.encode("utf-8")).decode("utf-8")
+    headers = {
+        "Authorization": f"Basic {auth}",
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+    try:
+        res = requests.post(
+            f"{env['api_base']}/v1/oauth2/token",
+            headers=headers,
+            data="grant_type=client_credentials",
+            timeout=(5, 15),
+        )
+    except Exception as exc:
+        return None, str(exc)
+    if res.status_code >= 400:
+        return None, f"{res.status_code} {res.text[:200]}"
+    try:
+        data = res.json()
+    except ValueError:
+        return None, "invalid_token_response"
+    return data.get("access_token"), None
+
+
+def _paypal_request(env, method, path, token, payload=None, headers=None):
+    url = f"{env['api_base']}{path}"
+    req_headers = {"Authorization": f"Bearer {token}"}
+    if payload is not None:
+        req_headers["Content-Type"] = "application/json"
+    if headers:
+        req_headers.update(headers)
+    try:
+        res = requests.request(
+            method,
+            url,
+            headers=req_headers,
+            json=payload,
+            timeout=(5, 20),
+        )
+    except Exception as exc:
+        return None, str(exc)
+    if res.status_code >= 400:
+        return None, f"{res.status_code} {res.text[:200]}"
+    try:
+        return res.json(), None
+    except ValueError:
+        return None, "invalid_json"
+
+
+def _paypal_verify_webhook(env, token, headers, event):
+    payload = {
+        "auth_algo": headers.get("PAYPAL-AUTH-ALGO"),
+        "cert_url": headers.get("PAYPAL-CERT-URL"),
+        "transmission_id": headers.get("PAYPAL-TRANSMISSION-ID"),
+        "transmission_sig": headers.get("PAYPAL-TRANSMISSION-SIG"),
+        "transmission_time": headers.get("PAYPAL-TRANSMISSION-TIME"),
+        "webhook_id": env.get("webhook_id"),
+        "webhook_event": event,
+    }
+    if not payload.get("webhook_id"):
+        return False
+    data, err = _paypal_request(
+        env,
+        "POST",
+        "/v1/notifications/verify-webhook-signature",
+        token,
+        payload=payload,
+    )
+    if err or not data:
+        return False
+    return data.get("verification_status") == "SUCCESS"
+
+
+def _paypal_capture_details(data):
+    capture_id = ""
+    amount = ""
+    currency = ""
+    purchase_units = data.get("purchase_units") or []
+    if purchase_units:
+        payments = purchase_units[0].get("payments", {})
+        captures = payments.get("captures") or []
+        if captures:
+            capture = captures[0]
+            capture_id = capture.get("id", "")
+            amt = capture.get("amount") or {}
+            amount = amt.get("value", "")
+            currency = amt.get("currency_code", "")
+    return capture_id, amount, currency
+
+
+def _paypal_extract_order_id(event):
+    resource = event.get("resource") or {}
+    related = resource.get("supplementary_data", {}).get("related_ids", {})
+    order_id = related.get("order_id") or resource.get("id")
+    return order_id or ""
+
+
+def _pay_status_path(config, order_id):
+    return os.path.join(config.static_dir, "pay", "status", f"{order_id}.json")
+
+
+def _load_pay_status(config, order_id):
+    path = _pay_status_path(config, order_id)
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _update_pay_status(config, order_id, updates):
+    status = _load_pay_status(config, order_id)
+    status.update(updates or {})
+    _write_json(_pay_status_path(config, order_id), status)
+    return status
+
+
+def _find_status_by_paypal_order(config, paypal_order_id):
+    status_dir = os.path.join(config.static_dir, "pay", "status")
+    if not paypal_order_id or not os.path.exists(status_dir):
+        return {}
+    for name in os.listdir(status_dir):
+        if not name.endswith(".json"):
+            continue
+        path = os.path.join(status_dir, name)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict) and data.get("paypal_order_id") == paypal_order_id:
+            return data
+    return {}
 
 
 def _normalize_bool(value, default=True):
@@ -1035,6 +1272,84 @@ def _issue_task_link(config, order_id, report_id, task_id, tier, lang, task_entr
     return status_payload
 
 
+def _paypal_capture_and_fulfill(config, order_id, paypal_order_id):
+    status = _load_pay_status(config, order_id)
+    if not status:
+        return None, "order_not_found"
+    if status.get("status") == "confirmed":
+        return status, None
+
+    env = _paypal_env()
+    if not _paypal_enabled(env):
+        return None, "paypal_not_configured"
+
+    token, err = _paypal_get_token(env)
+    if err:
+        return None, err
+
+    data, err = _paypal_request(
+        env, "POST", f"/v2/checkout/orders/{paypal_order_id}/capture", token
+    )
+    if err:
+        return None, err
+
+    status_value = str(data.get("status", "")).upper()
+    if status_value not in {"COMPLETED", "APPROVED"}:
+        return None, f"capture_status_{status_value or 'unknown'}"
+
+    capture_id, amount, currency = _paypal_capture_details(data)
+    expected_amount = _paypal_money(
+        status.get("amount")
+        or _paypal_amount_for(status.get("order_type"), status.get("plan"), status.get("tier"))
+    )
+    if amount and _paypal_money(amount) != expected_amount:
+        return None, "amount_mismatch"
+
+    payer_email = (data.get("payer") or {}).get("email_address", "")
+    order_type = status.get("order_type") or "report"
+    lang = status.get("lang") or "en"
+    report_id = status.get("report_id") or ""
+    tier = status.get("tier") or _format_tier(expected_amount)
+
+    result_payload = {}
+    if order_type == "task":
+        task_id = status.get("task_id") or ""
+        if not task_id:
+            return None, "missing_task_id"
+        task_entry = dict(status)
+        task_entry["email"] = status.get("email", "")
+        status_payload = _issue_task_link(
+            config,
+            order_id,
+            report_id,
+            task_id,
+            tier,
+            lang,
+            task_entry=task_entry,
+        )
+        result_payload["task_url"] = status_payload.get("task_url")
+    else:
+        status_payload = _issue_unlock(config, report_id, order_id, tier, lang)
+        if not status_payload:
+            return None, "report_not_found"
+        _mark_order_confirmed(config.data_dir, order_id, status_payload.get("unlock_url"))
+        result_payload["unlock_url"] = status_payload.get("unlock_url")
+
+    updates = {
+        "status": "confirmed",
+        "payment_method": "paypal",
+        "paypal_order_id": paypal_order_id,
+        "paypal_capture_id": capture_id,
+        "payer_email": payer_email,
+        "amount": expected_amount,
+        "currency": currency or "USD",
+    }
+    _update_pay_status(config, order_id, updates)
+    result_payload.update(updates)
+
+    return result_payload, None
+
+
 class PayConfirmHandler(BaseHTTPRequestHandler):
     config = Config.from_env()
 
@@ -1165,6 +1480,196 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             _fail("exception", str(exc))
 
+    def _handle_paypal_create(self, data):
+        env = _paypal_env()
+        if not _paypal_enabled(env):
+            self._json_response(500, {"ok": False, "error": "paypal_not_configured"})
+            return
+
+        order_type = str(data.get("order_type") or "report").strip().lower()
+        if order_type not in {"report", "task"}:
+            order_type = "report"
+
+        report_id = str(data.get("report_id", "")).strip()
+        order_id = str(data.get("order_id", "")).strip()
+        lang = _normalize_lang(data.get("lang", "en"))
+        email = str(data.get("email", "")).strip()
+
+        if not report_id or not order_id:
+            self._json_response(400, {"ok": False, "error": "missing_fields"})
+            return
+
+        task_id = str(data.get("task_id", "")).strip()
+        task_suggestion = str(data.get("task_suggestion", "")).strip()
+        report_title = str(data.get("report_title", "")).strip()
+        report_value = str(data.get("report_value", "")).strip()
+        plan = str(data.get("plan", "")).strip()
+        frequency = str(data.get("frequency", "")).strip() or _plan_frequency(plan)
+        tier = str(data.get("tier", "")).strip()
+
+        amount_value = _paypal_amount_for(order_type, plan, tier)
+        amount = _paypal_money(amount_value)
+        tier = _format_tier(amount_value)
+
+        urls = _paypal_return_urls(self.config, order_type, report_id)
+
+        token, err = _paypal_get_token(env)
+        if err:
+            self._json_response(500, {"ok": False, "error": "paypal_auth_failed"})
+            return
+
+        description = "Rare Earth Sentinel Report" if order_type == "report" else "Rare Earth Sentinel Task"
+        payload = {
+            "intent": "CAPTURE",
+            "purchase_units": [
+                {
+                    "reference_id": report_id,
+                    "custom_id": order_id,
+                    "invoice_id": order_id[:127],
+                    "amount": {"currency_code": "USD", "value": amount},
+                    "description": description,
+                }
+            ],
+            "application_context": {
+                "brand_name": "Rare Earth Sentinel",
+                "landing_page": "LOGIN",
+                "user_action": "PAY_NOW",
+                "return_url": urls["return_url"],
+                "cancel_url": urls["cancel_url"],
+            },
+        }
+
+        response, err = _paypal_request(env, "POST", "/v2/checkout/orders", token, payload)
+        if err or not response:
+            self._json_response(500, {"ok": False, "error": "paypal_create_failed"})
+            return
+
+        paypal_order_id = str(response.get("id", "")).strip()
+        approve_url = ""
+        for link in response.get("links", []) or []:
+            if link.get("rel") == "approve":
+                approve_url = link.get("href", "")
+                break
+
+        if not paypal_order_id or not approve_url:
+            self._json_response(500, {"ok": False, "error": "paypal_create_failed"})
+            return
+
+        now = datetime.utcnow().isoformat() + "Z"
+        status_payload = {
+            "order_type": order_type,
+            "report_id": report_id,
+            "order_id": order_id,
+            "tier": tier,
+            "lang": lang,
+            "status": "paypal_created",
+            "email": email,
+            "payment_method": "paypal",
+            "payment_token": paypal_order_id,
+            "paypal_order_id": paypal_order_id,
+            "amount": amount,
+            "currency": "USD",
+            "created_at": now,
+        }
+
+        if order_type == "task":
+            status_payload.update(
+                {
+                    "task_id": task_id,
+                    "task_status": "pending",
+                    "frequency": frequency,
+                    "plan": plan,
+                    "task_suggestion": task_suggestion,
+                    "report_title": report_title,
+                    "report_value": report_value,
+                }
+            )
+
+        _write_json(_pay_status_path(self.config, order_id), status_payload)
+
+        log_payload = dict(status_payload)
+        log_payload["ip"] = self.client_address[0]
+        if order_type == "task":
+            _append_jsonl(_task_orders_path(self.config.data_dir), log_payload)
+        else:
+            _append_jsonl(os.path.join(self.config.data_dir, "pay", "orders.jsonl"), log_payload)
+
+        self._json_response(
+            200,
+            {
+                "ok": True,
+                "paypal_order_id": paypal_order_id,
+                "approve_url": approve_url,
+            },
+        )
+
+    def _handle_paypal_capture(self, data):
+        order_id = str(data.get("order_id", "")).strip()
+        paypal_order_id = str(data.get("paypal_order_id", "")).strip()
+        if not order_id or not paypal_order_id:
+            self._json_response(400, {"ok": False, "error": "missing_fields"})
+            return
+
+        result, err = _paypal_capture_and_fulfill(self.config, order_id, paypal_order_id)
+        if err:
+            self._json_response(400, {"ok": False, "error": err})
+            return
+        self._json_response(200, {"ok": True, **(result or {})})
+
+    def _handle_paypal_webhook(self):
+        env = _paypal_env()
+        if not _paypal_enabled(env) or not env.get("webhook_id"):
+            self._json_response(400, {"ok": False, "error": "paypal_not_configured"})
+            return
+
+        content_len = int(self.headers.get("Content-Length", 0))
+        raw = self.rfile.read(content_len) if content_len else b"{}"
+        try:
+            event = json.loads(raw.decode("utf-8"))
+        except json.JSONDecodeError:
+            self._json_response(400, {"ok": False, "error": "bad_json"})
+            return
+
+        token, err = _paypal_get_token(env)
+        if err:
+            self._json_response(200, {"ok": False})
+            return
+
+        if not _paypal_verify_webhook(env, token, self.headers, event):
+            self._json_response(400, {"ok": False, "error": "invalid_signature"})
+            return
+
+        event_type = str(event.get("event_type", "")).strip()
+        if event_type in {"PAYMENT.CAPTURE.DENIED", "PAYMENT.CAPTURE.REFUNDED"}:
+            paypal_order_id = _paypal_extract_order_id(event)
+            status = _find_status_by_paypal_order(self.config, paypal_order_id)
+            if status:
+                order_id = status.get("order_id")
+                if order_id:
+                    _update_pay_status(
+                        self.config,
+                        order_id,
+                        {"status": "refunded" if "REFUNDED" in event_type else "failed"},
+                    )
+            self._json_response(200, {"ok": True})
+            return
+
+        if event_type not in {"CHECKOUT.ORDER.APPROVED", "PAYMENT.CAPTURE.COMPLETED"}:
+            self._json_response(200, {"ok": True})
+            return
+
+        paypal_order_id = _paypal_extract_order_id(event)
+        if not paypal_order_id:
+            self._json_response(200, {"ok": True})
+            return
+
+        status = _find_status_by_paypal_order(self.config, paypal_order_id)
+        order_id = status.get("order_id") if status else ""
+        if order_id:
+            _paypal_capture_and_fulfill(self.config, order_id, paypal_order_id)
+
+        self._json_response(200, {"ok": True})
+
     def do_POST(self):
         try:
             parsed = urlparse(self.path)
@@ -1180,6 +1685,13 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
             keywords_delete_path = _normalize_path("/api/admin/keywords/delete")
             keywords_approve_path = _normalize_path("/api/admin/keywords/approve")
             keywords_reject_path = _normalize_path("/api/admin/keywords/reject")
+            paypal_create_path = _normalize_path("/api/paypal/create-order")
+            paypal_capture_path = _normalize_path("/api/paypal/capture-order")
+            paypal_webhook_path = _normalize_path("/api/paypal/webhook")
+
+            if normalized_path == paypal_webhook_path:
+                self._handle_paypal_webhook()
+                return
 
             if normalized_path == indices_upload_path:
                 self._handle_indices_upload()
@@ -1191,6 +1703,14 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
                 data = json.loads(raw.decode("utf-8"))
             except json.JSONDecodeError:
                 self._json_response(400, {"ok": False, "error": "bad_json"})
+                return
+
+            if normalized_path == paypal_create_path:
+                self._handle_paypal_create(data or {})
+                return
+
+            if normalized_path == paypal_capture_path:
+                self._handle_paypal_capture(data or {})
                 return
 
             if normalized_path == sources_save_path:
