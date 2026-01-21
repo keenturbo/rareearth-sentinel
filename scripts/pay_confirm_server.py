@@ -1350,7 +1350,7 @@ def _paypal_capture_and_fulfill(config, order_id, paypal_order_id):
 
     return result_payload, None
 
-
+load_dotenv(os.path.join(ROOT, ".env"))
 class PayConfirmHandler(BaseHTTPRequestHandler):
     config = Config.from_env()
 
