@@ -143,6 +143,11 @@ class Config:
     pay_admin_base_url_en: str
     pay_admin_orders_url: str
     pay_admin_orders_url_en: str
+    paypal_client_id: str
+    paypal_client_secret: str
+    paypal_webhook_id: str
+    paypal_env: str
+    paypal_api_base: str
     telegram_bot_token: str
     telegram_channel: str
     unlock_expires_days: int
@@ -238,6 +243,11 @@ class Config:
             pay_admin_base_url_en=_get_env("PAY_ADMIN_BASE_URL_EN", ""),
             pay_admin_orders_url=_get_env("PAY_ADMIN_ORDERS_URL", ""),
             pay_admin_orders_url_en=_get_env("PAY_ADMIN_ORDERS_URL_EN", ""),
+            paypal_client_id=_get_env("PAYPAL_CLIENT_ID", ""),
+            paypal_client_secret=_get_env("PAYPAL_CLIENT_SECRET", ""),
+            paypal_webhook_id=_get_env("PAYPAL_WEBHOOK_ID", ""),
+            paypal_env=_get_env("PAYPAL_ENV", "live"),
+            paypal_api_base=_get_env("PAYPAL_API_BASE", "https://api-m.paypal.com"),
             telegram_bot_token=_get_env("TELEGRAM_BOT_TOKEN", ""),
             telegram_channel=_get_env("TELEGRAM_CHANNEL", ""),
             unlock_expires_days=_get_int("UNLOCK_EXPIRES_DAYS", 7),
