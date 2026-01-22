@@ -188,23 +188,61 @@ def _build_top3_items(entries, record_map):
         if not event_id or not report_id:
             continue
         record = record_map.get(event_id)
-        if not record:
-            continue
+        if record:
+            title = record.get("title", "")
+            summary_zh = record.get("summary_zh", "")
+            summary_en = record.get("summary_en", "")
+            expert_summary = record.get("expert_summary", "")
+            expert_summary_en = record.get("expert_summary_en", "")
+            country = record.get("country_primary", "")
+            action_type = record.get("action_type", "")
+            risk_level = record.get("risk_level", "")
+            risk_score = record.get("risk_score", "")
+            published_at = record.get("published_at", "")
+            collected_at = record.get("collected_at", "")
+        else:
+            preview_zh = entry.get("preview_zh") or {}
+            preview_en = entry.get("preview_en") or {}
+            title = (
+                preview_zh.get("title")
+                or preview_en.get("title")
+                or entry.get("source_title", "")
+            )
+            summary_zh = (
+                preview_zh.get("preview")
+                or preview_zh.get("value")
+                or ""
+            )
+            summary_en = (
+                preview_en.get("preview")
+                or preview_en.get("value")
+                or ""
+            )
+            expert_summary = preview_zh.get("value") or ""
+            expert_summary_en = preview_en.get("value") or ""
+            country = entry.get("country", "")
+            action_type = entry.get("action_type", "")
+            risk_level = entry.get("risk_level", "")
+            risk_score = entry.get("risk_score", "") or entry.get(
+                "importance_score", ""
+            )
+            published_at = entry.get("published_at", "")
+            collected_at = entry.get("created_at", "")
         items.append(
             {
                 "report_id": report_id,
                 "event_id": event_id,
-                "title": record.get("title", ""),
-                "summary_zh": record.get("summary_zh", ""),
-                "summary_en": record.get("summary_en", ""),
-                "expert_summary": record.get("expert_summary", ""),
-                "expert_summary_en": record.get("expert_summary_en", ""),
-                "country": record.get("country_primary", ""),
-                "action_type": record.get("action_type", ""),
-                "risk_level": record.get("risk_level", ""),
-                "risk_score": record.get("risk_score", ""),
-                "published_at": record.get("published_at", ""),
-                "collected_at": record.get("collected_at", ""),
+                "title": title,
+                "summary_zh": summary_zh,
+                "summary_en": summary_en,
+                "expert_summary": expert_summary,
+                "expert_summary_en": expert_summary_en,
+                "country": country,
+                "action_type": action_type,
+                "risk_level": risk_level,
+                "risk_score": risk_score,
+                "published_at": published_at,
+                "collected_at": collected_at,
             }
         )
     return items
