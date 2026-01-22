@@ -57,31 +57,42 @@ def _normalize_line(text):
     return re.sub(r"[。.!?！？]+$", "", (text or "").strip())
 
 
-def _build_message(record, base_url):
+def _build_message(record, base_url, lang="zh"):
     record_id = str(record.get("id", "")).strip()
     if not record_id:
         return ""
     title = str(record.get("title", "")).strip()
-    summary = (
-        record.get("summary_zh")
-        or record.get("summary_en")
-        or record.get("expert_summary")
-        or ""
-    )
-    expert = record.get("expert_summary") or record.get("expert_summary_en") or ""
+
+    if lang == "en":
+        summary = record.get("summary_en") or ""
+        expert = record.get("expert_summary_en") or ""
+        if not summary and not expert:
+            return ""
+        is_cn = False
+        link = f"{base_url.rstrip('/')}/en/task/pay/{record_id}.html"
+    else:
+        summary = (
+            record.get("summary_zh")
+            or record.get("summary_en")
+            or record.get("expert_summary")
+            or ""
+        )
+        expert = record.get("expert_summary") or record.get("expert_summary_en") or ""
+        if not summary and not expert:
+            return ""
+        is_cn = True
+        link = f"{base_url.rstrip('/')}/cn/task/pay/{record_id}.html"
+
     summary = str(summary).strip()
     expert = str(expert).strip()
     summary_lines = _split_summary_lines(summary, limit=2)
     summary_lines = [_clip_text(line, 200) for line in summary_lines if line]
     expert_line = _clip_text(expert, 200) if expert else ""
 
-    link = f"{base_url.rstrip('/')}/cn/task/pay/{record_id}.html"
-
     parts = []
     if title:
         parts.append(_escape_markdown(title))
 
-    is_cn = bool(record.get("summary_zh") or record.get("expert_summary"))
     summary_label = "摘要：" if is_cn else "Summary: "
     expert_label = "专家结论：" if is_cn else "Expert: "
 
@@ -129,9 +140,17 @@ def _send_message(token, channel, text, retries=1):
     return False
 
 
-def post_telegram_records(records, config):
-    token = (config.telegram_bot_token or "").strip()
-    channel = _normalize_channel(config.telegram_channel or "")
+def post_telegram_records(records, config, lang="zh"):
+    lang = (lang or "zh").strip().lower()
+    if lang == "en":
+        token = (getattr(config, "telegram_en_bot_token", "") or "").strip()
+        channel = _normalize_channel(
+            getattr(config, "telegram_en_channel", "") or ""
+        )
+    else:
+        token = (config.telegram_bot_token or "").strip()
+        channel = _normalize_channel(config.telegram_channel or "")
+
     if not token or not channel:
         return 0, 0
     base_url = (getattr(config, "site_base_url", "") or "").strip()
@@ -141,7 +160,7 @@ def post_telegram_records(records, config):
     total = 0
     posted = 0
     for record in records:
-        message = _build_message(record, base_url)
+        message = _build_message(record, base_url, lang=lang)
         if not message:
             continue
         total += 1

@@ -410,6 +410,11 @@ def run_pipeline(config):
             posted, total = post_telegram_records(new_records, config)
             if total:
                 print(f"[telegram] posted {posted}/{total}")
+            posted_en, total_en = post_telegram_records(
+                new_records, config, lang="en"
+            )
+            if total_en:
+                print(f"[telegram-en] posted {posted_en}/{total_en}")
         except Exception as exc:
             print(f"[telegram] error: {exc}")
         write_status(running=False, finished=True)

@@ -27,6 +27,12 @@ def _load_records(path):
 def main():
     parser = argparse.ArgumentParser(description="Post telegram messages")
     parser.add_argument("--input", required=True, help="JSONL file path")
+    parser.add_argument(
+        "--lang",
+        default="zh",
+        choices=["zh", "en"],
+        help="Language channel to post",
+    )
     args = parser.parse_args()
 
     records = _load_records(args.input)
@@ -35,7 +41,7 @@ def main():
         return
 
     config = Config.from_env()
-    posted, total = post_telegram_records(records, config)
+    posted, total = post_telegram_records(records, config, lang=args.lang)
     print(f"Posted {posted}/{total}")
 
 

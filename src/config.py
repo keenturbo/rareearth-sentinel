@@ -150,6 +150,8 @@ class Config:
     paypal_api_base: str
     telegram_bot_token: str
     telegram_channel: str
+    telegram_en_bot_token: str
+    telegram_en_channel: str
     unlock_expires_days: int
     show_related_context: bool
 
@@ -250,6 +252,8 @@ class Config:
             paypal_api_base=_get_env("PAYPAL_API_BASE", "https://api-m.paypal.com"),
             telegram_bot_token=_get_env("TELEGRAM_BOT_TOKEN", ""),
             telegram_channel=_get_env("TELEGRAM_CHANNEL", ""),
+            telegram_en_bot_token=_get_env("TELEGRAM_EN_BOT_TOKEN", ""),
+            telegram_en_channel=_get_env("TELEGRAM_EN_CHANNEL", ""),
             unlock_expires_days=_get_int("UNLOCK_EXPIRES_DAYS", 7),
             show_related_context=_get_bool("SHOW_RELATED_CONTEXT", False),
         )
