@@ -1,7 +1,15 @@
+import json
+import os
 import re
 import time
+from datetime import datetime
+from email.utils import parsedate_to_datetime
 
 import requests
+
+from src.utils import now_cst
+
+TOP3_SCHEDULE_HOURS = (10, 15, 20)
 
 
 def _escape_markdown(text):
@@ -116,6 +124,105 @@ def _build_message(record, base_url, lang="zh"):
     return "\n".join([part for part in parts if part])
 
 
+def _parse_dt(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        pass
+    try:
+        return parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _record_date_label(record, lang="zh"):
+    dt = _parse_dt(record.get("published_at") or "")
+    if not dt:
+        dt = _parse_dt(record.get("collected_at") or "")
+    if not dt:
+        dt = now_cst()
+    try:
+        dt = dt.astimezone(now_cst().tzinfo)
+    except (ValueError, OSError):
+        pass
+    if lang == "en":
+        return dt.strftime("%a, %d %b %Y")
+    return dt.strftime("%Y-%m-%d")
+
+
+def _risk_level_value(record):
+    level = record.get("risk_level")
+    if level:
+        return str(level)
+    try:
+        risk_score = int(record.get("risk_score", 0) or 0)
+    except (TypeError, ValueError):
+        return ""
+    level = max(1, min(5, (risk_score + 19) // 20))
+    return str(level)
+
+
+def _build_top3_message(item, base_url, lang="zh"):
+    report_id = str(item.get("report_id", "")).strip()
+    if not report_id:
+        return ""
+    title = str(item.get("title", "")).strip()
+    country = str(item.get("country", "")).strip()
+    action = str(item.get("action_type", "")).strip()
+    risk_level = _risk_level_value(item)
+
+    if lang == "en":
+        summary = item.get("summary_en") or item.get("summary_zh") or ""
+        expert = item.get("expert_summary_en") or item.get("expert_summary") or ""
+        link = f"{base_url.rstrip('/')}/en/task/pay/{report_id}.html"
+    else:
+        summary = item.get("summary_zh") or item.get("summary_en") or ""
+        expert = item.get("expert_summary") or item.get("expert_summary_en") or ""
+        link = f"{base_url.rstrip('/')}/cn/task/pay/{report_id}.html"
+
+    summary = str(summary).strip()
+    expert = str(expert).strip()
+    summary_lines = _split_summary_lines(summary, limit=2)
+    summary_lines = [_clip_text(line, 200) for line in summary_lines if line]
+    expert_line = _clip_text(expert, 240) if expert else ""
+
+    header_parts = []
+    if country:
+        header_parts.append(country)
+    if action:
+        header_parts.append(action)
+    if risk_level:
+        header_parts.append(
+            f"Risk {risk_level}" if lang == "en" else f"风险 {risk_level}"
+        )
+    if lang == "zh":
+        date_label = _record_date_label(item, lang=lang)
+        if date_label:
+            header_parts.append(date_label)
+
+    parts = []
+    if header_parts:
+        parts.append(_escape_markdown(" · ".join(header_parts)))
+    if title:
+        parts.append(_escape_markdown(title))
+
+    if summary_lines:
+        label = "摘要：" if lang == "zh" else "Summary: "
+        parts.append(_escape_markdown(f"{label}{summary_lines[0]}"))
+        if lang == "zh" and len(summary_lines) > 1:
+            parts.append(_escape_markdown(summary_lines[1]))
+
+    if expert_line:
+        label = "专家结论：" if lang == "zh" else "Expert: "
+        parts.append(_escape_markdown(f"{label}{expert_line}"))
+
+    action_label = "哨兵执行：" if lang == "zh" else "Execute: "
+    parts.append(_escape_markdown(action_label) + link)
+    return "\n".join([part for part in parts if part])
+
+
 def _send_message(token, channel, text, retries=1):
     if not token or not channel or not text:
         return False
@@ -138,6 +245,55 @@ def _send_message(token, channel, text, retries=1):
         if attempt < retries:
             time.sleep(1.0)
     return False
+
+
+def _top3_list_path(config):
+    return os.path.join(config.data_dir, "status", "top3_list.json")
+
+
+def _top3_state_path(config):
+    return os.path.join(config.data_dir, "status", "top3_status.json")
+
+
+def _load_top3_list(config):
+    path = _top3_list_path(config)
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _load_top3_state(config):
+    path = _top3_state_path(config)
+    if not os.path.exists(path):
+        return {"date": "", "sent": {}}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        data = {}
+    return {
+        "date": data.get("date", ""),
+        "sent": data.get("sent", {}) or {},
+    }
+
+
+def _save_top3_state(config, state):
+    path = _top3_state_path(config)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+def _due_slots(now_dt):
+    due = []
+    for idx, hour in enumerate(TOP3_SCHEDULE_HOURS, start=1):
+        if now_dt.hour > hour or (now_dt.hour == hour and now_dt.minute >= 0):
+            due.append(idx)
+    return due
 
 
 def post_telegram_records(records, config, lang="zh"):
@@ -167,4 +323,62 @@ def post_telegram_records(records, config, lang="zh"):
         if _send_message(token, channel, message, retries=1):
             posted += 1
         time.sleep(0.2)
+    return posted, total
+
+
+def post_telegram_top3_due(config, now_dt=None):
+    data = _load_top3_list(config)
+    date_key = data.get("date", "")
+    items = data.get("items") or []
+    if not date_key or not items:
+        return 0, 0
+
+    now_dt = now_dt or now_cst()
+    if now_dt.strftime("%Y-%m-%d") != date_key:
+        return 0, 0
+
+    due_slots = _due_slots(now_dt)
+    if not due_slots:
+        return 0, 0
+
+    state = _load_top3_state(config)
+    if state.get("date") != date_key:
+        state = {"date": date_key, "sent": {}}
+    sent = state.get("sent", {}) or {}
+
+    base_url = (getattr(config, "site_base_url", "") or "").strip()
+    if not base_url:
+        base_url = "https://sentinel.dataspices.com"
+
+    posted = 0
+    total = 0
+    for slot in due_slots:
+        if len(items) < slot:
+            continue
+        item = items[slot - 1]
+        for lang in ("zh", "en"):
+            key = f"{lang}_{slot}"
+            if sent.get(key):
+                continue
+            if lang == "en":
+                token = (getattr(config, "telegram_en_bot_token", "") or "").strip()
+                channel = _normalize_channel(
+                    getattr(config, "telegram_en_channel", "") or ""
+                )
+            else:
+                token = (config.telegram_bot_token or "").strip()
+                channel = _normalize_channel(config.telegram_channel or "")
+            if not token or not channel:
+                continue
+            message = _build_top3_message(item, base_url, lang=lang)
+            if not message:
+                continue
+            total += 1
+            if _send_message(token, channel, message, retries=1):
+                posted += 1
+                sent[key] = now_cst().isoformat(timespec="seconds")
+            time.sleep(0.2)
+
+    state["sent"] = sent
+    _save_top3_state(config, state)
     return posted, total

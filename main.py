@@ -19,7 +19,7 @@ from src.normalizer import Normalizer
 from src.utils import clean_text, isoformat, now_cst, is_homepage_url
 from src.datasets import build_datasets
 from src.premium import generate_daily_briefs, backfill_daily_briefs
-from src.telegram import post_telegram_records
+from src.telegram import post_telegram_records, post_telegram_top3_due
 
 CANDIDATE_CONFIDENCE_MIN = 60
 CANDIDATE_LEN_MIN = 2
@@ -180,6 +180,48 @@ def _append_keyword_candidates(
     return len(candidates)
 
 
+def _build_top3_items(entries, record_map):
+    items = []
+    for entry in entries[:3]:
+        event_id = entry.get("event_id")
+        report_id = entry.get("report_id")
+        if not event_id or not report_id:
+            continue
+        record = record_map.get(event_id)
+        if not record:
+            continue
+        items.append(
+            {
+                "report_id": report_id,
+                "event_id": event_id,
+                "title": record.get("title", ""),
+                "summary_zh": record.get("summary_zh", ""),
+                "summary_en": record.get("summary_en", ""),
+                "expert_summary": record.get("expert_summary", ""),
+                "expert_summary_en": record.get("expert_summary_en", ""),
+                "country": record.get("country_primary", ""),
+                "action_type": record.get("action_type", ""),
+                "risk_level": record.get("risk_level", ""),
+                "risk_score": record.get("risk_score", ""),
+                "published_at": record.get("published_at", ""),
+                "collected_at": record.get("collected_at", ""),
+            }
+        )
+    return items
+
+
+def _write_top3_list(config, items, date_key):
+    path = os.path.join(config.data_dir, "status", "top3_list.json")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    payload = {
+        "date": date_key,
+        "generated_at": isoformat(now_cst()),
+        "items": items,
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
 def _build_context_builder(config, records):
     mode = (config.context_mode or "token").strip().lower()
     if mode == "vector":
@@ -217,6 +259,7 @@ def run_pipeline(config):
     reporter = Reporter(config)
 
     history_records = list(storage.iter_records())
+    record_map = {r.get("id"): r for r in history_records if r.get("id")}
     context_builder, _embedding_store = _build_context_builder(config, history_records)
     normalizer = Normalizer(history_records, config)
 
@@ -391,6 +434,7 @@ def run_pipeline(config):
                     context_builder.add_record(record)
                     normalizer.add_record(record)
                     seen_ids.add(record["id"])
+                    record_map[record["id"]] = record
                     stats["saved"] += 1
                     new_records.append(record)
                     _append_keyword_candidates(record, config, candidate_seen)
@@ -402,8 +446,12 @@ def run_pipeline(config):
                     processed_items += 1
                     write_status(running=True)
 
+        premium_entries = []
         if config.premium_enabled:
-            generate_daily_briefs(config, list(storage.iter_records()))
+            premium_entries = generate_daily_briefs(config, list(storage.iter_records()))
+            date_key = now_cst().strftime("%Y-%m-%d")
+            top3_items = _build_top3_items(premium_entries, record_map)
+            _write_top3_list(config, top3_items, date_key)
 
         reporter.rebuild(storage)
         try:
@@ -417,6 +465,12 @@ def run_pipeline(config):
                 print(f"[telegram-en] posted {posted_en}/{total_en}")
         except Exception as exc:
             print(f"[telegram] error: {exc}")
+        try:
+            posted_top3, total_top3 = post_telegram_top3_due(config)
+            if total_top3:
+                print(f"[top3] posted {posted_top3}/{total_top3}")
+        except Exception as exc:
+            print(f"[top3] error: {exc}")
         write_status(running=False, finished=True)
         return stats
     except BaseException as exc:
