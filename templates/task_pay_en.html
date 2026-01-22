@@ -33,6 +33,10 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
 .pay-note{font-size:12px;color:var(--muted);margin-top:10px}
 .pay-btn{display:inline-block;margin-top:10px;font-size:12px;color:#fff;background:var(--warn);padding:6px 14px;border-radius:999px;text-decoration:none;border:0;cursor:pointer}
 .pay-btn:hover{background:#92400e}
+.paypal-btn{display:inline-flex;align-items:center;gap:6px;margin-top:10px;font-size:12px;color:#fff;background:#0070ba;padding:6px 14px;border-radius:999px;text-decoration:none;border:0;cursor:pointer}
+.paypal-btn:hover{background:#005ea6}
+.paypal-logo{width:14px;height:14px;display:inline-flex}
+.paypal-logo svg{width:100%;height:100%;fill:currentColor}
 .unlock-box{margin-top:10px;font-size:12px;color:var(--muted);background:var(--soft);border-radius:8px;padding:8px}
 .notice-gold{color:#b45309;font-weight:600}
 .order-box{margin-top:10px;font-size:12px;color:var(--muted);background:var(--soft);border-radius:8px;padding:8px}
@@ -56,7 +60,7 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
   .modal-card{width:100%;height:100%;max-height:none;border-radius:0;padding:16px 14px 90px}
   .modal-close{position:fixed;top:12px;right:16px;font-size:24px}
   .pay-grid{grid-template-columns:1fr}
-  .pay-btn,.pay-open-btn{width:100%;padding:10px 0;font-size:14px}
+  .pay-btn,.pay-open-btn,.paypal-btn{width:100%;padding:10px 0;font-size:14px}
 }
 </style>
 <!-- Cloudflare Web Analytics --><script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "e70b3b5596ee443690a85e4c19e6c15a"}'></script><!-- End Cloudflare Web Analytics -->
@@ -115,14 +119,23 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
 
         <div class="pay-field">
           <label>PayPal</label>
-          <button class="pay-btn" id="paypal-btn">Pay with PayPal</button>
+          <button class="paypal-btn" id="paypal-btn">
+            <span class="paypal-logo" aria-hidden="true">
+              <svg viewBox="0 0 24 24" role="presentation">
+                <path d="M7 3h7a5 5 0 0 1 0 10H9v8H7V3zm2 2v6h5a3 3 0 0 0 0-6H9z" />
+              </svg>
+            </span>
+            Pay with PayPal
+          </button>
           <div class="pay-note" id="paypal-status">Pay securely with PayPal (USD).</div>
         </div>
 
         <div class="pay-field">
           <label>Payment method</label>
-          <input id="pay-method" type="hidden" value="usdt" />
-          <div class="copy">USDT (TRC20)</div>
+          <select id="pay-method" class="pay-input">
+            <option value="paypal" selected>PayPal</option>
+            <option value="usdt">USDT (TRC20)</option>
+          </select>
         </div>
 
         <div class="pay-field">
