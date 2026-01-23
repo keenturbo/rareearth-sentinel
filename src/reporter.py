@@ -1250,4 +1250,729 @@ class Reporter:
             if date_label:
                 meta_line = f"{meta_line} · {date_label[:16]}"
 
-        # ... (rest unchanged)
+            row_class = "row"
+            if risk_level >= 4:
+                row_class += " risk"
+            elif risk_level == 3:
+                row_class += " warn"
+
+            tags = []
+            tags.extend(item.get("minerals", []))
+            tags.extend([f"@{e}" for e in item.get("entities", [])])
+            if is_china_primary(item.get("country_primary", "")):
+                tags.append("ChinaPrimary")
+            if item.get("china_dependency") and item.get("china_dependency") != "None":
+                tags.append(f"ChinaDep: {item.get('china_dependency')}")
+            if item.get("china_involved"):
+                tags.append(f"ChinaRole: {item.get('china_role', 'Mentioned')}")
+
+            tags_html = "".join(
+                f'<span class="tag">{html.escape(str(tag))}</span>' for tag in tags
+            )
+
+            analysis_html = self._render_expert(item, lang=lang)
+            context_html = self._render_related_context(item, lang=lang)
+
+            rows.append(
+                """
+<div class="{row_class}" data-impact="{impact}">
+  <div class="meta">{meta_line}</div>
+  <div class="title"><a href="{url}" target="_blank">{title}</a></div>
+  <div class="meta">{summary_label}：{summary}</div>
+  {analysis_html}
+  {context_html}
+  <div class="tags">{tags_html}</div>
+</div>
+""".format(
+                    row_class=row_class,
+                    meta_line=meta_line,
+                    title=title,
+                    url=html.escape(item.get("url", "")),
+                    summary_label=summary_label_html,
+                    summary=summary or "-",
+                    analysis_html=analysis_html,
+                    context_html=context_html,
+                    tags_html=tags_html,
+                    impact=impact,
+                )
+            )
+
+        return "\n".join(rows)
+
+    def _chip_class(self, label, mapping, default):
+        return mapping.get(label, default)
+
+    def _format_forecast(self, label, forecast):
+        if not isinstance(forecast, dict):
+            return ""
+        trend = forecast.get("price_pressure")
+        confidence = forecast.get("confidence")
+        if not trend:
+            return ""
+        symbol = {"Up": "↑", "Down": "↓", "Neutral": "→"}.get(trend, trend)
+        conf_text = f"{confidence}" if confidence not in (None, "") else "-"
+        return f"{label}{symbol}({conf_text})"
+
+    def _render_list(self, items, label):
+        if not items:
+            return ""
+        safe_items = []
+        for entry in items:
+            text = str(entry).strip()
+            if text:
+                safe_items.append(html.escape(text))
+            if len(safe_items) >= 3:
+                break
+        if not safe_items:
+            return ""
+        list_html = "".join(f"<li>{item}</li>" for item in safe_items)
+        return (
+            f'<div class="analysis-list"><div class="meta"><span class="label-strong">{label}</span></div>'
+            f"<ul>{list_html}</ul></div>"
+        )
+
+    def _render_expert(self, item, lang="zh"):
+        impact = str(item.get("impact", "")).strip()
+        risk_trend = str(item.get("risk_trend", "")).strip()
+        expert_summary = html.escape(item.get("expert_summary", ""))
+
+        supply = item.get("supply_risk_score")
+        policy = item.get("policy_risk_score")
+        price = item.get("price_pressure_score")
+        risk_score = item.get("risk_score")
+
+        labels = {
+            "summary": "专家结论" if lang == "zh" else "Expert Insight",
+            "impact": "对中国" if lang == "zh" else "Impact",
+            "risk": "风险" if lang == "zh" else "Risk",
+            "subscores": "分项" if lang == "zh" else "Subscores",
+            "forecast": "预测" if lang == "zh" else "Forecast",
+            "strategy": "战略建议" if lang == "zh" else "Strategy",
+            "tactical": "操作建议" if lang == "zh" else "Tactics",
+            "score": "综合风险" if lang == "zh" else "Overall Risk",
+        }
+
+        if lang == "en":
+            impact_class = self._chip_class(
+                impact,
+                {"Positive": "good", "Neutral": "neutral", "Negative": "bad"},
+                "neutral",
+            )
+            trend_class = self._chip_class(
+                risk_trend,
+                {"Intensifying": "trend-up", "Stable": "trend-flat", "Easing": "trend-down"},
+                "trend-flat",
+            )
+        else:
+            impact_class = self._chip_class(
+                impact,
+                {"利好": "good", "中性": "neutral", "利空": "bad"},
+                "neutral",
+            )
+            trend_class = self._chip_class(
+                risk_trend,
+                {"加强": "trend-up", "持平": "trend-flat", "缓和": "trend-down"},
+                "trend-flat",
+            )
+
+        forecast_items = [
+            self._format_forecast("6月" if lang == "zh" else "6m", item.get("forecast_6m")),
+            self._format_forecast("12月" if lang == "zh" else "12m", item.get("forecast_12m")),
+            self._format_forecast("24月" if lang == "zh" else "24m", item.get("forecast_24m")),
+            self._format_forecast("48月" if lang == "zh" else "48m", item.get("forecast_48m")),
+        ]
+        forecast_line = " · ".join([f for f in forecast_items if f])
+
+        strategy_html = self._render_list(item.get("recommendations_strategy", []), labels["strategy"])
+        tactical_html = self._render_list(item.get("recommendations_tactical", []), labels["tactical"])
+        cta_text = "哨兵执行操作建议" if lang == "zh" else "Sentinel executes recommendations"
+        cta_html = ""
+        report_id = str(item.get("id", "")).strip()
+        if tactical_html and report_id:
+            subdir = "cn" if lang == "zh" else "en"
+            href = f"/{subdir}/task/pay/{report_id}.html"
+            cta_html = (
+                '<div class="sentinel-cta-wrap">'
+                f'<a class="sentinel-cta" href="{html.escape(href)}">{cta_text}</a>'
+                "</div>"
+            )
+
+        has_any = any(
+            [
+                impact,
+                risk_trend,
+                expert_summary,
+                supply is not None,
+                policy is not None,
+                price is not None,
+                risk_score is not None,
+                forecast_line,
+                strategy_html,
+                tactical_html,
+            ]
+        )
+        if not has_any:
+            return ""
+
+        score_line = ""
+        if supply is not None or policy is not None or price is not None:
+            if lang == "en":
+                score_line = (
+                    f"Supply {supply}/100 · Policy {policy}/100 · Price {price}/100"
+                )
+            else:
+                score_line = (
+                    f"供应链 {supply}/100 · 政策 {policy}/100 · 价格 {price}/100"
+                )
+
+        score_badge = ""
+        if risk_score is not None and risk_score != "":
+            score_badge = f"{labels['score']} {risk_score}/100"
+
+        head_parts = []
+        if impact:
+            head_parts.append(
+                f'<span class="chip {impact_class}">{labels["impact"]}：{html.escape(impact)}</span>'
+            )
+        if risk_trend:
+            head_parts.append(
+                f'<span class="chip {trend_class}">{labels["risk"]}：{html.escape(risk_trend)}</span>'
+            )
+        if score_badge:
+            head_parts.append(f'<span class="chip score">{score_badge}</span>')
+
+        head_html = "".join(head_parts)
+        summary_html = (
+            f'<div class="analysis-summary"><span class="label-strong">{labels["summary"]}</span>：{expert_summary}</div>'
+            if expert_summary
+            else ""
+        )
+
+        detail_blocks = []
+        if score_line:
+            detail_blocks.append(
+                f'<div class="analysis-grid"><span class="label-strong">{labels["subscores"]}</span>：{score_line}</div>'
+            )
+        if forecast_line:
+            detail_blocks.append(
+                f'<div class="analysis-grid"><span class="label-strong">{labels["forecast"]}</span>：{forecast_line}</div>'
+            )
+        if strategy_html:
+            detail_blocks.append(strategy_html)
+        if tactical_html:
+            detail_blocks.append(tactical_html)
+
+        details_html = "".join(detail_blocks) + cta_html
+
+        return (
+            '<div class="analysis">'
+            f'<div class="analysis-head">{head_html}</div>'
+            f"{summary_html}"
+            f"{details_html}"
+            "</div>"
+        )
+
+    def _render_related_context(self, item, lang="zh"):
+        context_lines = item.get("related_context") or []
+        if not self.config.show_related_context:
+            return ""
+        if not context_lines:
+            return ""
+        safe_lines = []
+        for line in context_lines:
+            text = str(line).strip()
+            if not text:
+                continue
+            if text.startswith("- "):
+                text = text[2:].strip()
+            if lang == "en":
+                parts = [p.strip() for p in text.split("|")]
+                cleaned = []
+                for part in parts:
+                    if not part:
+                        continue
+                    if part.startswith("风险") or part.startswith("对中国"):
+                        continue
+                    cleaned.append(part)
+                text = " | ".join(cleaned)
+                if not text:
+                    continue
+            safe_lines.append(html.escape(text))
+            if len(safe_lines) >= 6:
+                break
+        if not safe_lines:
+            return ""
+
+        label = "关联脉络" if lang == "zh" else "Related Context"
+        list_html = "".join(f"<li>{line}</li>" for line in safe_lines)
+        return (
+            '<div class="analysis related">'
+            f'<div class="analysis-head"><span class="chip">{label}</span></div>'
+            f'<div class="analysis-list"><ul>{list_html}</ul></div>'
+            "</div>"
+        )
+
+    def _append_unique(self, target, seen, value, limit):
+        if len(target) >= limit:
+            return
+        text = str(value).strip()
+        if not text:
+            return
+        key = text.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        target.append(text)
+
+    def _render_brief_list(self, items, label):
+        if not items:
+            return (
+                f'<div class="brief-col"><div class="meta">{label}</div>'
+                '<div class="meta">暂无建议</div></div>'
+            )
+        list_html = "".join(f"<li>{html.escape(item)}</li>" for item in items)
+        return (
+            f'<div class="brief-col"><div class="meta">{label}</div>'
+            f"<ul>{list_html}</ul></div>"
+        )
+
+    def _is_today(self, item):
+        collected_at = item.get("collected_at", "")
+        if not collected_at:
+            return False
+        try:
+            dt = datetime.fromisoformat(collected_at)
+        except ValueError:
+            return False
+        return dt.date() == now_cst().date()
+
+    def _render_daily_brief(self, items, lang="zh"):
+        strategy = []
+        tactical = []
+        seen_strategy = set()
+        seen_tactical = set()
+
+        if lang == "en":
+            impact_counts = {"Positive": 0, "Neutral": 0, "Negative": 0}
+            impact_labels = ("Positive", "Neutral", "Negative")
+            counts_tpl = "Samples {sample} · Positive {pos} · Neutral {neu} · Negative {neg}"
+            strategy_label = "Strategy Recommendations"
+            tactical_label = "Tactical Recommendations"
+        else:
+            impact_counts = {"利好": 0, "中性": 0, "利空": 0}
+            impact_labels = ("利好", "中性", "利空")
+            counts_tpl = "样本 {sample} · 利好 {pos} · 中性 {neu} · 利空 {neg}"
+            strategy_label = "战略建议"
+            tactical_label = "操作建议"
+
+        sample_count = 0
+
+        for item in items:
+            if not self._is_today(item):
+                continue
+            sample_count += 1
+            impact = str(item.get("impact", "")).strip()
+            if impact in impact_counts:
+                impact_counts[impact] += 1
+
+            for rec in item.get("recommendations_strategy") or []:
+                self._append_unique(strategy, seen_strategy, rec, 5)
+            for rec in item.get("recommendations_tactical") or []:
+                self._append_unique(tactical, seen_tactical, rec, 5)
+
+        if sample_count == 0:
+            return (
+                '<div class="brief-empty">今日暂无摘要</div>'
+                if lang == "zh"
+                else '<div class="brief-empty">No brief for today.</div>'
+            )
+
+        counts_line = counts_tpl.format(
+            sample=sample_count,
+            pos=impact_counts[impact_labels[0]],
+            neu=impact_counts[impact_labels[1]],
+            neg=impact_counts[impact_labels[2]],
+        )
+        strategy_html = self._render_brief_list(strategy, strategy_label)
+        tactical_html = self._render_brief_list(tactical, tactical_label)
+
+        return (
+            f'<div class="brief-row">{counts_line}</div>'
+            f'<div class="brief-grid">{strategy_html}{tactical_html}</div>'
+        )
+
+    def _daily_context_lines(self, records, lang="zh", limit=40):
+        lines = []
+
+        def _risk(record):
+            key = "risk_score_en" if lang == "en" else "risk_score"
+            try:
+                return float(record.get(key) or 0)
+            except (TypeError, ValueError):
+                return 0
+
+        today_records = [r for r in records if self._is_today(r)]
+        today_records = sorted(today_records, key=_risk, reverse=True)
+
+        for record in today_records:
+            title = str(record.get("title", "")).strip()
+            if not title:
+                continue
+            country = str(record.get("country_primary", "")).strip()
+            action = str(record.get("action_type", "")).strip()
+            impact_key = "impact_west" if lang == "en" else "china_impact"
+            impact = str(record.get(impact_key, "")).strip()
+            summary_key = "summary_en" if lang == "en" else "summary_zh"
+            summary = str(record.get(summary_key, "")).strip()
+            risk = _risk(record)
+            line = f"- {country} | {action} | {impact} | risk {int(risk)} | {title}"
+            if summary:
+                line += f" | {summary[:140]}"
+            lines.append(line)
+            if len(lines) >= limit:
+                break
+
+        return lines
+
+    def _fallback_daily_report(self, records, lang="zh"):
+        impact_counts = Counter()
+        minerals = Counter()
+        countries = Counter()
+        actions = Counter()
+        risk_scores = []
+
+        for record in records:
+            if not self._is_today(record):
+                continue
+            impact_key = "impact_west" if lang == "en" else "china_impact"
+            impact = str(record.get(impact_key, "")).strip()
+            if impact:
+                impact_counts[impact] += 1
+            for mineral in record.get("minerals") or []:
+                minerals[str(mineral).strip()] += 1
+            country = str(record.get("country_primary", "")).strip()
+            if country:
+                countries[country] += 1
+            action = str(record.get("action_type", "")).strip()
+            if action:
+                actions[action] += 1
+            key = "risk_score_en" if lang == "en" else "risk_score"
+            try:
+                score = float(record.get(key) or 0)
+            except (TypeError, ValueError):
+                score = 0
+            if score:
+                risk_scores.append(score)
+
+        dominant = impact_counts.most_common(1)[0][0] if impact_counts else "Neutral"
+        avg_risk = round(sum(risk_scores) / len(risk_scores)) if risk_scores else 0
+        top_mineral = minerals.most_common(1)[0][0] if minerals else "-"
+        top_country = countries.most_common(1)[0][0] if countries else "-"
+        top_action = actions.most_common(1)[0][0] if actions else "-"
+
+        if lang == "en":
+            headline = "Daily Intelligence Report"
+            body = (
+                f"Overall tone is {dominant.lower()} across today's signals. "
+                f"Average composite risk is {avg_risk}/100. "
+                f"Attention centers on {top_country} and {top_mineral} with actions in {top_action}."
+            )
+            bullets = [
+                f"Highest attention country: {top_country}",
+                f"Key mineral focus: {top_mineral}",
+                f"Dominant action type: {top_action}",
+            ]
+        else:
+            headline = "每日情报综合报告"
+            body = (
+                f"今日整体偏{dominant}，综合风险均值为{avg_risk}/100。"
+                f"关注重点集中在{top_country}与{top_mineral}，主要动作类型为{top_action}。"
+            )
+            bullets = [
+                f"高关注国家：{top_country}",
+                f"关键矿种：{top_mineral}",
+                f"主要动作：{top_action}",
+            ]
+
+        return {
+            "headline": headline,
+            "body": body,
+            "bullets": bullets,
+        }
+
+    def _generate_daily_report(self, records, lang="zh"):
+        today_records = [r for r in records if self._is_today(r)]
+        if not today_records:
+            return None
+
+        lines = self._daily_context_lines(records, lang=lang, limit=40)
+        if not lines:
+            return None
+
+        context_text = "\n".join(lines)
+        extractor = self._get_daily_extractor()
+        report = extractor.analyze_daily_report(context_text, lang=lang)
+        if report is None:
+            return self._fallback_daily_report(records, lang=lang)
+
+        if not report.get("headline"):
+            report["headline"] = (
+                "Daily Intelligence Report" if lang == "en" else "每日情报综合报告"
+            )
+        return report
+
+    def _render_daily_report(self, daily_report, lang="zh"):
+        title = "每日情报综合报告" if lang == "zh" else "Daily Intelligence Report"
+        if not daily_report:
+            empty = "今日暂无综合报告" if lang == "zh" else "No report for today."
+            return (
+                f'<div class="daily-title">{title}</div>'
+                f'<div class="daily-empty">{empty}</div>'
+            )
+
+        headline = html.escape(daily_report.get("headline", "").strip())
+        body = html.escape(daily_report.get("body", "").strip())
+        bullets = daily_report.get("bullets") or []
+
+        headline_html = (
+            f'<div class="daily-headline">{headline}</div>'
+            if headline
+            else ""
+        )
+        body_html = f'<div class="daily-body">{body}</div>' if body else ""
+
+        bullet_items = []
+        for bullet in bullets[:3]:
+            text = str(bullet).strip()
+            if text:
+                bullet_items.append(f"<li>{html.escape(text)}</li>")
+        bullets_html = (
+            f'<ul class="daily-bullets">{"".join(bullet_items)}</ul>'
+            if bullet_items
+            else ""
+        )
+
+        return (
+            f'<div class="daily-title">{title}</div>'
+            f"{headline_html}"
+            f"{body_html}"
+            f"{bullets_html}"
+        )
+
+    def _render_premium(self, premium_items, items, lang="zh"):
+        if premium_items:
+            blocks = []
+            reason_label = "价值" if lang == "zh" else "Why it matters"
+            preview_label = "报告包含" if lang == "zh" else "Includes"
+            reason_label_html = f'<span class="label-gray">{reason_label}</span>'
+            preview_label_html = f'<span class="label-gray">{preview_label}</span>'
+            for item in premium_items[:3]:
+                title = html.escape(item.get("title", ""))
+                value = html.escape(item.get("value", ""))
+                preview = html.escape(item.get("preview", ""))
+                price = item.get("price", 9)
+                unlock = item.get("unlock") or "mailto:sentinel@dataspices.com"
+                btn_label = (
+                    f"解锁深度报告" if lang == "zh" else f"Unlock Deep Report"
+                )
+                preview_html = (
+                    f'<div class="premium-preview">{preview_label_html}：{preview}</div>'
+                    if preview
+                    else ""
+                )
+                block = (
+                    '<div class="premium-item">'
+                    f'<div class="premium-topic">{title}</div>'
+                    f'<div class="premium-reason">{reason_label_html}：{value}</div>'
+                    f"{preview_html}"
+                    f'<a class="premium-btn" href="{html.escape(unlock)}">{btn_label}</a>'
+                    "</div>"
+                )
+                blocks.append(block)
+            return "".join(blocks)
+
+        today_items = [item for item in items if self._is_today(item)]
+        if not today_items:
+            return (
+                '<div class="meta">暂无重点追踪</div>'
+                if lang == "zh"
+                else '<div class="meta">No premium leads today.</div>'
+            )
+
+        def score(item):
+            return int(item.get("risk_score", 0) or 0)
+
+        top_items = sorted(today_items, key=score, reverse=True)[:3]
+        blocks = []
+        for item in top_items:
+            title = html.escape(item.get("title", ""))
+            reason = html.escape(item.get("expert_summary", "") or item.get("summary", ""))
+            reason_label = "价值" if lang == "zh" else "Why it matters"
+            reason_label_html = f'<span class="label-gray">{reason_label}</span>'
+            btn_label = "解锁深度报告" if lang == "zh" else "Unlock Deep Report"
+            report_id = str(item.get("id", "")).strip()
+            unlock = self._pay_link(lang, report_id) if report_id else "mailto:sentinel@dataspices.com"
+            block = (
+                '<div class="premium-item">'
+                f'<div class="premium-topic">{title}</div>'
+                f'<div class="premium-reason">{reason_label_html}：{reason}</div>'
+                f'<a class="premium-btn" href="{html.escape(unlock)}">{btn_label}</a>'
+                '</div>'
+            )
+            blocks.append(block)
+        return "".join(blocks)
+
+    def _render_archive_nav(self, archives, archive_month="", prefix="", lang="zh"):
+        if not archives:
+            return ""
+        show_limit = 7
+        links = []
+        hidden = 0
+
+        for idx, entry in enumerate(archives):
+            month = entry.get("month")
+            count = entry.get("count", 0)
+            if not month:
+                continue
+            active = " active" if month == archive_month else ""
+            is_extra = idx >= show_limit and not active
+            extra_class = " archive-extra" if is_extra else ""
+            if is_extra:
+                hidden += 1
+            href = f"{prefix}archive/{month}.html"
+            links.append(
+                f'<a class="archive-link{active}{extra_class}" href="{href}">{month} ({count})</a>'
+            )
+
+        toggle_html = ""
+        if hidden > 0:
+            show_label = "展开更多" if lang == "zh" else "Show more"
+            hide_label = "收起" if lang == "zh" else "Show less"
+            toggle_html = (
+                f'<button class="archive-toggle" data-show="{show_label}" '
+                f'data-hide="{hide_label}" data-expanded="false">{show_label}</button>'
+            )
+
+        return "".join(links) + toggle_html
+
+    def _render_rollups(self, rollups, lang="zh"):
+        if not rollups:
+            return '<div class="rollups-empty">暂无汇总</div>'
+
+        windows = rollups.get("windows", {})
+        window_30 = windows.get("30d", {})
+        window_90 = windows.get("90d", {})
+
+        def _top_chips(entries):
+            chips = []
+            for entry in entries:
+                name = entry.get("name")
+                count = entry.get("count")
+                if not name:
+                    continue
+                chips.append(f'<span class="rollup-chip">{html.escape(name)} {count}</span>')
+            return "".join(chips)
+
+        top_minerals = _top_chips(rollups.get("top_minerals", []))
+        top_countries = _top_chips(rollups.get("top_countries", []))
+        top_actions = _top_chips(rollups.get("top_actions", []))
+
+        if lang == "en":
+            summary_line = (
+                f"Last 30d {window_30.get('count', 0)} · High Risk {window_30.get('high_risk', 0)}"
+                f" ｜ Last 90d {window_90.get('count', 0)} · High Risk {window_90.get('high_risk', 0)}"
+            )
+            mineral_label = "Minerals"
+            country_label = "Countries"
+            action_label = "Actions"
+            fallback = '<div class="meta">None</div>'
+        else:
+            summary_line = (
+                f"近30天 {window_30.get('count', 0)} 条 · 高风险 {window_30.get('high_risk', 0)}"
+                f" ｜ 近90天 {window_90.get('count', 0)} 条 · 高风险 {window_90.get('high_risk', 0)}"
+            )
+            mineral_label = "矿种聚合"
+            country_label = "国家聚合"
+            action_label = "动作聚合"
+            fallback = '<div class="meta">暂无</div>'
+
+        return (
+            f'<div class="rollups-row">{summary_line}</div>'
+            f'<div class="rollups-grid">'
+            f'<div class="rollup-col"><div class="meta">{mineral_label}</div>{top_minerals or fallback}</div>'
+            f'<div class="rollup-col"><div class="meta">{country_label}</div>{top_countries or fallback}</div>'
+            f'<div class="rollup-col"><div class="meta">{action_label}</div>{top_actions or fallback}</div>'
+            f'</div>'
+        )
+
+    def _prune_record(self, record, lang="zh"):
+        if lang == "en":
+            summary = record.get("summary_en") or record.get("summary_zh", "")
+            impact = record.get("impact_west", "Neutral")
+            risk_trend = record.get("risk_trend_west", "Stable")
+            expert_summary = record.get("expert_summary_en") or ""
+            rec_strategy = record.get("recommendations_strategy_en", [])
+            rec_tactical = record.get("recommendations_tactical_en", [])
+            supply = record.get("supply_risk_score_en", record.get("supply_risk_score"))
+            policy = record.get("policy_risk_score_en", record.get("policy_risk_score"))
+            price = record.get("price_pressure_score_en", record.get("price_pressure_score"))
+            risk_score = record.get("risk_score_en", record.get("risk_score"))
+            risk_level = record.get("risk_level_en", record.get("risk_level"))
+            forecast_6m = record.get("forecast_6m_en") or record.get("forecast_6m", {})
+            forecast_12m = record.get("forecast_12m_en") or record.get("forecast_12m", {})
+            forecast_24m = record.get("forecast_24m_en") or record.get("forecast_24m", {})
+            forecast_48m = record.get("forecast_48m_en") or record.get("forecast_48m", {})
+        else:
+            summary = record.get("summary_zh", "")
+            impact = record.get("china_impact", "中性")
+            risk_trend = record.get("china_risk_trend", "持平")
+            expert_summary = record.get("expert_summary", "")
+            rec_strategy = record.get("recommendations_strategy", [])
+            rec_tactical = record.get("recommendations_tactical", [])
+            supply = record.get("supply_risk_score")
+            policy = record.get("policy_risk_score")
+            price = record.get("price_pressure_score")
+            risk_score = record.get("risk_score")
+            risk_level = record.get("risk_level")
+            forecast_6m = record.get("forecast_6m", {})
+            forecast_12m = record.get("forecast_12m", {})
+            forecast_24m = record.get("forecast_24m", {})
+            forecast_48m = record.get("forecast_48m", {})
+
+        fields = {
+            "id": record.get("id"),
+            "title": record.get("title", ""),
+            "url": record.get("url", ""),
+            "source_type": record.get("source_type", ""),
+            "published_at": record.get("published_at", ""),
+            "collected_at": record.get("collected_at", ""),
+            "language": record.get("language", ""),
+            "summary": summary,
+            "country_primary": record.get("country_primary", ""),
+            "event_location": record.get("event_location", ""),
+            "minerals": record.get("minerals", []),
+            "entities": record.get("entities", []),
+            "action_type": record.get("action_type", "Other"),
+            "risk_level": risk_level or 0,
+            "importance_score": record.get("importance_score", 0),
+            "china_involved": record.get("china_involved", False),
+            "china_dependency": record.get("china_dependency", "None"),
+            "china_role": record.get("china_role", "Mentioned"),
+            "confidence": record.get("confidence", 60),
+            "impact": impact,
+            "risk_trend": risk_trend,
+            "expert_summary": expert_summary,
+            "recommendations_strategy": rec_strategy,
+            "recommendations_tactical": rec_tactical,
+            "supply_risk_score": supply,
+            "policy_risk_score": policy,
+            "price_pressure_score": price,
+            "risk_score": risk_score,
+            "forecast_6m": forecast_6m,
+            "forecast_12m": forecast_12m,
+            "forecast_24m": forecast_24m,
+            "forecast_48m": forecast_48m,
+            "related_context": record.get("related_context", []),
+            "analysis_with_context": record.get("analysis_with_context"),
+        }
+        return fields
