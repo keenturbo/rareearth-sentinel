@@ -4,6 +4,7 @@ import os
 import re
 import signal
 import time
+import traceback
 from dataclasses import replace
 from urllib.parse import urlparse
 
@@ -492,7 +493,8 @@ def run_pipeline(config):
                     config, list(storage.iter_records())
                 )
             except Exception as exc:
-                print(f"[premium] error: {exc}")
+                print(f"[premium] error: {type(exc).__name__}: {exc}")
+                traceback.print_exc()
                 premium_entries = []
             try:
                 top3_items = _build_top3_items(premium_entries, record_map)
