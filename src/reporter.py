@@ -1731,6 +1731,8 @@ class Reporter:
             )
 
         headline = html.escape(daily_report.get("headline", "").strip())
+        if headline and headline == title:
+    headline = ""
         body = html.escape(daily_report.get("body", "").strip())
         bullets = daily_report.get("bullets") or []
 
