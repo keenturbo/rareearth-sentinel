@@ -173,12 +173,12 @@ Article:
         except Exception:
             return None
 
-        try:     
-          raw_text = getattr(response, "text", "") 
-        except Exception:     
-         return None 
-        if not raw_text:     
-         return None 
+        try:
+            raw_text = getattr(response, "text", "")
+        except Exception:
+            return None
+        if not raw_text:
+            return None
         data = extract_json(raw_text)
         return normalize_brief(data, lang=lang)
 
