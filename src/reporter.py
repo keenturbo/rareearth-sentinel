@@ -1804,6 +1804,7 @@ class Reporter:
 
         top_items = sorted(today_items, key=score, reverse=True)[:3]
         blocks = []
+        subdir = "cn" if lang == "zh" else "en"
         for item in top_items:
             title = html.escape(item.get("title", ""))
             reason = html.escape(item.get("expert_summary", "") or item.get("summary", ""))
@@ -1811,7 +1812,7 @@ class Reporter:
             reason_label_html = f'<span class="label-gray">{reason_label}</span>'
             btn_label = "解锁深度报告" if lang == "zh" else "Unlock Deep Report"
             report_id = str(item.get("id", "")).strip()
-            unlock = self._pay_link(lang, report_id) if report_id else "mailto:sentinel@dataspices.com"
+            unlock = f"/{subdir}/task/pay/{report_id}.html" if report_id else "mailto:sentinel@dataspices.com"
             block = (
                 '<div class="premium-item">'
                 f'<div class="premium-topic">{title}</div>'
