@@ -486,10 +486,19 @@ def run_pipeline(config):
 
         premium_entries = []
         if config.premium_enabled:
-            premium_entries = generate_daily_briefs(config, list(storage.iter_records()))
             date_key = now_cst().strftime("%Y-%m-%d")
-            top3_items = _build_top3_items(premium_entries, record_map)
-            _write_top3_list(config, top3_items, date_key)
+            try:
+                premium_entries = generate_daily_briefs(
+                    config, list(storage.iter_records())
+                )
+            except Exception as exc:
+                print(f"[premium] error: {exc}")
+                premium_entries = []
+            try:
+                top3_items = _build_top3_items(premium_entries, record_map)
+                _write_top3_list(config, top3_items, date_key)
+            except Exception as exc:
+                print(f"[top3] error: {exc}")
 
         reporter.rebuild(storage)
         try:
