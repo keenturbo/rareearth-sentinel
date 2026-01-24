@@ -206,6 +206,53 @@ class Reporter:
             self._daily_extractor = GeminiExtractor(self.config)
         return self._daily_extractor
 
+    def _daily_report_cache_path(self):
+        return os.path.join(self.config.data_dir, "status", "daily_report_zh.json")
+
+    def _load_daily_report_cache(self, max_age_hours=48):
+        path = self._daily_report_cache_path()
+        if not os.path.exists(path):
+            return None, ""
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return None, ""
+        if not isinstance(data, dict):
+            return None, ""
+        generated_at = str(data.get("generated_at", "")).strip()
+        if not generated_at:
+            return None, ""
+        dt = self._parse_date(generated_at)
+        if not dt:
+            return None, ""
+        now = now_cst()
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        age_hours = (now - dt).total_seconds() / 3600
+        if age_hours > max_age_hours:
+            return None, ""
+        report = {
+            "headline": data.get("headline", ""),
+            "body": data.get("body", ""),
+            "bullets": data.get("bullets") or [],
+        }
+        return report, generated_at
+
+    def _save_daily_report_cache(self, report):
+        path = self._daily_report_cache_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        payload = {
+            "generated_at": isoformat(now_cst()),
+            "headline": report.get("headline", ""),
+            "body": report.get("body", ""),
+            "bullets": report.get("bullets") or [],
+        }
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+
     def _parse_date(self, text):
         if not text:
             return None
@@ -1701,19 +1748,88 @@ class Reporter:
         }
 
     def _generate_daily_report(self, records, lang="zh"):
+        def _rule_fallback():
+            today = [r for r in records if self._is_today(r)]
+            if not today:
+                return None
+            def _risk(r):
+                try:
+                    return float(r.get("risk_score") or 0)
+                except (TypeError, ValueError):
+                    return 0
+            top = sorted(today, key=_risk, reverse=True)[:3]
+            points = []
+            bullets = []
+            for record in top:
+                text = (
+                    record.get("expert_summary")
+                    or record.get("summary_zh")
+                    or record.get("title")
+                    or ""
+                )
+                text = str(text).strip()
+                if text:
+                    if len(text) > 60:
+                        text = text[:60].rstrip("，。;；,") + "…"
+                    points.append(text)
+                title = str(record.get("title", "")).strip()
+                country = str(record.get("country_primary", "")).strip()
+                action = str(record.get("action_type", "")).strip()
+                bullet = " · ".join([v for v in (country, action, title) if v])
+                if bullet:
+                    bullets.append(bullet)
+
+            risk_scores = []
+            for record in today:
+                try:
+                    risk_scores.append(float(record.get("risk_score") or 0))
+                except (TypeError, ValueError):
+                    continue
+            avg_risk = round(sum(risk_scores) / len(risk_scores)) if risk_scores else 0
+
+            if points:
+                body = f"今日要点：{'；'.join(points[:3])}。综合风险均值为{avg_risk}/100。"
+            else:
+                body = f"综合风险均值为{avg_risk}/100。"
+
+            if not bullets:
+                bullets = points[:3]
+
+            return {
+                "headline": "每日情报综合报告",
+                "body": body,
+                "bullets": bullets[:3],
+                "mode": "fallback_rule",
+            }
+
+        def _fallback_zh():
+            cached, generated_at = self._load_daily_report_cache(max_age_hours=48)
+            if cached:
+                cached["fallback_note"] = f"（上次生成于 {generated_at}）"
+                cached["mode"] = "fallback_last"
+                return cached
+            return _rule_fallback()
+
         today_records = [r for r in records if self._is_today(r)]
         if not today_records:
-            return None
+            return _fallback_zh() if lang == "zh" else None
 
         lines = self._daily_context_lines(records, lang=lang, limit=40)
         if not lines:
-            return None
+            return _fallback_zh() if lang == "zh" else None
 
         context_text = "\n".join(lines)
         extractor = self._get_daily_extractor()
         report = extractor.analyze_daily_report(context_text, lang=lang)
         if report is None:
+            if lang == "zh":
+                fallback = _fallback_zh()
+                if fallback:
+                    return fallback
             return self._fallback_daily_report(records, lang=lang)
+
+        if lang == "zh":
+            self._save_daily_report_cache(report)
 
         if not report.get("headline"):
             report["headline"] = (
@@ -1733,6 +1849,10 @@ class Reporter:
         headline = html.escape(daily_report.get("headline", "").strip())
         if headline and headline == title:
            headline = ""
+        note = str(daily_report.get("fallback_note", "")).strip()
+        note_html = (
+            f'<div class="daily-note">{html.escape(note)}</div>' if note else ""
+        )
         body = html.escape(daily_report.get("body", "").strip())
         bullets = daily_report.get("bullets") or []
 
@@ -1756,6 +1876,7 @@ class Reporter:
 
         return (
             f'<div class="daily-title">{title}</div>'
+            f"{note_html}"
             f"{headline_html}"
             f"{body_html}"
             f"{bullets_html}"
