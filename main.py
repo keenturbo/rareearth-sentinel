@@ -188,9 +188,20 @@ def _build_top3_items(entries, record_map):
         report_id = entry.get("report_id")
         if not event_id or not report_id:
             continue
+        preview_zh = entry.get("preview_zh") or {}
+        preview_en = entry.get("preview_en") or {}
+        value_zh = preview_zh.get("value") or ""
+        report_contains_zh = preview_zh.get("preview") or ""
+        value_en = preview_en.get("value") or ""
+        report_contains_en = preview_en.get("preview") or ""
         record = record_map.get(event_id)
         if record:
-            title = record.get("title", "")
+            title = (
+                record.get("title", "")
+                or preview_zh.get("title")
+                or preview_en.get("title")
+                or entry.get("source_title", "")
+            )
             summary_zh = record.get("summary_zh", "")
             summary_en = record.get("summary_en", "")
             expert_summary = record.get("expert_summary", "")
@@ -202,8 +213,6 @@ def _build_top3_items(entries, record_map):
             published_at = record.get("published_at", "")
             collected_at = record.get("collected_at", "")
         else:
-            preview_zh = entry.get("preview_zh") or {}
-            preview_en = entry.get("preview_en") or {}
             title = (
                 preview_zh.get("title")
                 or preview_en.get("title")
@@ -238,6 +247,10 @@ def _build_top3_items(entries, record_map):
                 "summary_en": summary_en,
                 "expert_summary": expert_summary,
                 "expert_summary_en": expert_summary_en,
+                "value_zh": value_zh,
+                "report_contains_zh": report_contains_zh,
+                "value_en": value_en,
+                "report_contains_en": report_contains_en,
                 "country": country,
                 "action_type": action_type,
                 "risk_level": risk_level,
