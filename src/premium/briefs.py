@@ -67,17 +67,22 @@ Return ONLY JSON with fields:
 - impact_score (1-10 integer)
 - tracking_nodes (array of 3 time-bound items)
 - confidence_notes (array of 1-2 items explaining evidence limits)
-- value_proposition (1 sentence explaining why this matters)
+- value_proposition (multi-line text)
 - key_evidence (array of up to 3 evidence points)
 - assumptions (array of up to 3 evidence gaps)
 - audience_fit (one of investor, industry, policy, mixed)
 
 Constraints:
-- Be concise, factual, and actionable.
+- Be structured, deep, and actionable. Length is not limited.
+- conclusion must be decision-oriented.
 - fact_checks must be verifiable; do not invent facts.
 - key_numbers must be supported by the article or summary; use "Unknown" if missing.
-- confidence_notes must explain evidence limits.
-- value_proposition should focus on decision value.
+- tracking_nodes must be an action checklist: verb + object + reason + time window.
+- confidence_notes must include evidence weighting labels: Verified / Unverified / Inferred.
+- value_proposition must be multi-line and include:
+  1) Impact Path: 3-5 steps
+  2) Scenarios & probabilities: 3 scenarios with rough % (e.g., 50/30/20)
+- Do not add new fields.
 
 Metadata:
 {meta_block}
@@ -125,16 +130,21 @@ Article:
 - impact_score（1-10分）
 - tracking_nodes（3条需追踪节点）
 - confidence_notes（1-2条证据局限说明）
-- value_proposition（一句话说明为什么值得跟踪）
+- value_proposition（多行文本）
 - key_evidence（最多3条关键证据）
 - assumptions（最多3条证据缺口/假设）
 - audience_fit（investor/industry/policy/mixed）
 
-要求：简洁、可执行，不要猜测。
+要求：结构化、深入、可执行，长度不限制。
+- conclusion 必须面向决策。
 - fact_checks 必须可验证。
 - key_numbers 必须来自原文或摘要，缺失写“未知”。
-- confidence_notes 必须说明不确定性或证据缺口。
-- value_proposition 强调决策价值。
+- tracking_nodes 必须为行动清单：动词 + 对象 + 原因 + 时间窗口。
+- confidence_notes 必须包含证据分层标签：已验证 / 待证实 / 推断。
+- value_proposition 必须为多行并包含：
+  1) 影响路径：3-5步
+  2) 情景与概率：3个情景 + 粗略百分比（如50/30/20）
+- 不要新增字段。
 
 元信息：
 {meta_block}
