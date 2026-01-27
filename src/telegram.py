@@ -169,57 +169,35 @@ def _build_top3_message(item, base_url, lang="zh"):
     if not report_id:
         return ""
     title = str(item.get("title", "")).strip()
-    country = str(item.get("country", "")).strip()
-    action = str(item.get("action_type", "")).strip()
-    risk_level = _risk_level_value(item)
 
     if lang == "en":
-        summary = item.get("summary_en") or item.get("summary_zh") or ""
-        expert = item.get("expert_summary_en") or item.get("expert_summary") or ""
-        link = f"{base_url.rstrip('/')}/en/task/pay/{report_id}.html"
+        value = item.get("value_en") or ""
+        report_contains = item.get("report_contains_en") or ""
+        link = f"{base_url.rstrip('/')}/en/pay/{report_id}.html"
     else:
-        summary = item.get("summary_zh") or item.get("summary_en") or ""
-        expert = item.get("expert_summary") or item.get("expert_summary_en") or ""
-        link = f"{base_url.rstrip('/')}/cn/task/pay/{report_id}.html"
+        value = item.get("value_zh") or ""
+        report_contains = item.get("report_contains_zh") or ""
+        link = f"{base_url.rstrip('/')}/cn/pay/{report_id}.html"
 
-    summary = str(summary).strip()
-    expert = str(expert).strip()
-    summary_lines = _split_summary_lines(summary, limit=2)
-    summary_lines = [_clip_text(line, 200) for line in summary_lines if line]
-    expert_line = _clip_text(expert, 240) if expert else ""
+    if not value and not report_contains:
+        return ""
 
-    header_parts = []
-    if country:
-        header_parts.append(country)
-    if action:
-        header_parts.append(action)
-    if risk_level:
-        header_parts.append(
-            f"Risk {risk_level}" if lang == "en" else f"风险 {risk_level}"
-        )
-    if lang == "zh":
-        date_label = _record_date_label(item, lang=lang)
-        if date_label:
-            header_parts.append(date_label)
+    value = _clip_text(str(value).strip(), 160)
+    report_contains = _clip_text(str(report_contains).strip(), 300)
 
     parts = []
-    if header_parts:
-        parts.append(_escape_markdown(" · ".join(header_parts)))
     if title:
         parts.append(_escape_markdown(title))
 
-    if summary_lines:
-        label = "摘要：" if lang == "zh" else "Summary: "
-        parts.append(_escape_markdown(f"{label}{summary_lines[0]}"))
-        if lang == "zh" and len(summary_lines) > 1:
-            parts.append(_escape_markdown(summary_lines[1]))
+    if value:
+        label = "价值：" if lang == "zh" else "Value: "
+        parts.append(_escape_markdown(f"{label}{value}"))
 
-    if expert_line:
-        label = "专家结论：" if lang == "zh" else "Expert: "
-        parts.append(_escape_markdown(f"{label}{expert_line}"))
+    if report_contains:
+        label = "报告包含：" if lang == "zh" else "Report includes: "
+        parts.append(_escape_markdown(f"{label}{report_contains}"))
 
-    action_label = "哨兵执行：" if lang == "zh" else "Execute: "
-    parts.append(_escape_markdown(action_label) + link)
+    parts.append(link)
     return "\n".join([part for part in parts if part])
 
 
