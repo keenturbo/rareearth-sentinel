@@ -168,16 +168,20 @@ def _build_top3_message(item, base_url, lang="zh"):
     report_id = str(item.get("report_id", "")).strip()
     if not report_id:
         return ""
-    title = str(item.get("title", "")).strip()
 
     if lang == "en":
+        title = str(item.get("title_en", "")).strip()
         value = item.get("value_en") or ""
         report_contains = item.get("report_contains_en") or ""
         link = f"{base_url.rstrip('/')}/en/pay/{report_id}.html"
     else:
+        title = str(item.get("title_zh") or item.get("title", "")).strip()
         value = item.get("value_zh") or ""
         report_contains = item.get("report_contains_zh") or ""
         link = f"{base_url.rstrip('/')}/cn/pay/{report_id}.html"
+
+    if not title:
+        return ""
 
     if not value and not report_contains:
         return ""

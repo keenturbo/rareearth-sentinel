@@ -64,11 +64,12 @@ def _build_item(entry):
     if not (value_zh or report_contains_zh) or not (value_en or report_contains_en):
         return None
 
-    title = (
-        str(preview_zh.get("title", "")).strip()
-        or str(preview_en.get("title", "")).strip()
-        or str(entry.get("source_title", "")).strip()
-    )
+    title_zh = str(preview_zh.get("title", "")).strip()
+    title_en = str(preview_en.get("title", "")).strip()
+    if not title_zh:
+        title_zh = str(entry.get("source_title", "")).strip()
+
+    title = title_zh or title_en or str(entry.get("source_title", "")).strip()
 
     report_id = str(entry.get("report_id", "")).strip()
     if not report_id:
@@ -77,6 +78,8 @@ def _build_item(entry):
     return {
         "report_id": report_id,
         "title": title,
+        "title_zh": title_zh,
+        "title_en": title_en,
         "value_zh": value_zh,
         "report_contains_zh": report_contains_zh,
         "value_en": value_en,
