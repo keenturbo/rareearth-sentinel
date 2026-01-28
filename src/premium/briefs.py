@@ -75,15 +75,16 @@ Return ONLY JSON with fields:
 
 Constraints:
 - Be structured, deep, and actionable. Length is not limited.
+- Maintain a Western de-risking stance; emphasize reducing reliance on China and securing domestic supply chains.
 - conclusion must be decision-oriented.
 - fact_checks must be verifiable; do not invent facts.
 - key_numbers must be supported by the article or summary; use "Unknown" if missing.
-- tracking_nodes must be an action checklist: verb + object + reason + time window + decision criteria.
+- tracking_nodes must be an action checklist: verb + object + reason + time window + decision criteria; include at least one policy or industrial action aligned with Western de-risking (e.g., offtake agreements, strategic stockpiles, subsidies, export controls, M&A).
 - time windows must be relative (next 30/90/180 days) and not in the past; if a past date is implied, rewrite as relative.
 - confidence_notes must include evidence weighting labels: Verified / Unverified / Inferred (include all three).
 - value_proposition must be multi-line and include:
   1) Impact Path: 3-5 steps
-  2) Scenarios & probabilities: 3 scenarios with rough % and trigger conditions
+  2) Scenarios & probabilities: 3 scenarios with rough % and trigger conditions with quantitative thresholds (e.g., yield <75%, capacity >50%, funding cut >20%)
   3) Next update focus: specific signals + time window
 - Do not add new fields.
 
@@ -125,7 +126,7 @@ Article:
             summary = summary_zh or summary_en
             if self.prompt_version == "v2":
                 prompt = f"""
-你是一名稀土情报核查专家，请生成售价9美元的付费简报（给中国决策者）。
+你是一名稀土情报核查专家，请生成售价9美元的付费简报（给中国决策者）。立场必须以中国战略安全与供应链主导为核心，强调巩固中国地位与定价权。
 只输出JSON，包含字段：
 - conclusion（一句话结论）
 - fact_checks（2-3条核查要点）
@@ -143,12 +144,12 @@ Article:
 - conclusion 必须面向决策。
 - fact_checks 必须可验证。
 - key_numbers 必须来自原文或摘要，缺失写“未知”。
-- tracking_nodes 必须为行动清单：动词 + 对象 + 原因 + 时间窗口 + 判断标准。
+- tracking_nodes 必须为行动清单：动词 + 对象 + 原因 + 时间窗口 + 判断标准；至少包含1条政策或产业动作（如出口管制、专利壁垒、并购整合、财政补贴、战略储备等）。
 - 时间窗口必须 >= 当前日期，使用相对时间（未来30/90/180天）；若出现过去时间，改为相对时间。
 - confidence_notes 必须包含证据分层标签：已验证 / 待证实 / 推断（必须三层）。
 - value_proposition 必须为多行并包含：
   1) 影响路径：3-5步
-  2) 情景与概率：3个情景 + 粗略百分比 + 触发条件
+  2) 情景与概率：3个情景 + 粗略百分比 + 触发条件（必须包含量化阈值，如良率<75%、产能>50%、预算削减>20%）
   3) 下次更新重点：具体信号 + 时间窗口
 - 不要新增字段。
 
