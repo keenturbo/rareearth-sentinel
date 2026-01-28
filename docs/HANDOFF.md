@@ -2,6 +2,8 @@
 
 Last updated: 2026-01-20
 
+新窗口启动请先 get docs/CONTRIBUTING.md
+
 This handoff is split into two guides:
 - Development guide: docs/DEV_GUIDE.md
 - Operations guide: docs/OPS_GUIDE.md
