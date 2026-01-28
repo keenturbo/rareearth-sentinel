@@ -181,6 +181,146 @@ def _append_keyword_candidates(
     return len(candidates)
 
 
+def _normalize_title_key(text):
+    if not text:
+        return ""
+    text = re.sub(r"\s+", " ", str(text)).strip().lower()
+    text = re.sub(r"[^\w\u4e00-\u9fff]", "", text)
+    return text
+
+
+def _company_key(record):
+    if not record:
+        return ""
+    company = str(record.get("company", "")).strip()
+    if not company:
+        entities = record.get("entities") or []
+        if isinstance(entities, str):
+            entities = [
+                seg.strip()
+                for seg in re.split(r"[，,;；\n]+", entities)
+                if seg.strip()
+            ]
+        elif not isinstance(entities, list):
+            entities = []
+        if entities:
+            company = str(entities[0]).strip()
+    return _normalize_title_key(company)
+
+
+def _entry_title(entry, record):
+    preview_zh = entry.get("preview_zh") or {}
+    preview_en = entry.get("preview_en") or {}
+    title = (
+        preview_zh.get("title")
+        or preview_en.get("title")
+        or entry.get("source_title")
+        or (record.get("title") if record else "")
+    )
+    return str(title or "").strip()
+
+
+def _source_key(record, entry):
+    url = ""
+    if record:
+        url = record.get("resolved_url") or record.get("url") or ""
+    domain = ""
+    if url:
+        domain = urlparse(url).netloc.lower().lstrip("www.")
+    if not domain:
+        domain = str(entry.get("official_source_id") or "").strip().lower()
+    return domain
+
+
+def _entry_impact_score(entry):
+    for key in ("impact_score", "impact_score_zh", "impact_score_en"):
+        value = entry.get(key)
+        if value in ("", None):
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            continue
+    return 0
+
+
+def _entry_risk_score(entry, record_map):
+    event_id = entry.get("event_id")
+    if not event_id:
+        return 0
+    record = record_map.get(event_id)
+    if not record:
+        return 0
+    try:
+        return int(record.get("risk_score", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _dedupe_entries(entries, record_map, limit=3):
+    seen_company = set()
+    seen_title = set()
+    seen_source = set()
+    deduped = []
+    for entry in entries:
+        record = (
+            record_map.get(entry.get("event_id"))
+            if entry.get("event_id")
+            else None
+        )
+        company = _company_key(record)
+        title_key = _normalize_title_key(_entry_title(entry, record))
+        source = _source_key(record, entry)
+        if (company and company in seen_company) or (
+            title_key and title_key in seen_title
+        ) or (source and source in seen_source):
+            continue
+        if company:
+            seen_company.add(company)
+        if title_key:
+            seen_title.add(title_key)
+        if source:
+            seen_source.add(source)
+        deduped.append(entry)
+        if limit and len(deduped) >= limit:
+            break
+    return deduped
+
+
+def _select_major_event_entries(entries, record_map):
+    candidates = []
+    for entry in entries:
+        event_id = entry.get("event_id")
+        if not event_id:
+            continue
+        risk_score = _entry_risk_score(entry, record_map)
+        impact_score = _entry_impact_score(entry)
+        if risk_score >= 85 or impact_score >= 9:
+            candidates.append((risk_score, impact_score, event_id))
+    if not candidates:
+        return []
+    candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    major_event_id = candidates[0][2]
+    view_entries = [
+        entry
+        for entry in entries
+        if entry.get("event_id") == major_event_id
+        and entry.get("view") in ("policy", "industry", "capital")
+    ]
+    if len(view_entries) < 3:
+        return []
+    order = {"policy": 0, "industry": 1, "capital": 2}
+    view_entries.sort(key=lambda e: order.get(e.get("view"), 99))
+    return view_entries[:3]
+
+
+def _select_top3_entries(entries, record_map, limit=3):
+    major_entries = _select_major_event_entries(entries, record_map)
+    if major_entries:
+        return major_entries
+    return _dedupe_entries(entries, record_map, limit=limit)
+
+
 def _build_top3_items(entries, record_map):
     items = []
     for entry in entries[:3]:
@@ -518,7 +658,10 @@ def run_pipeline(config):
                 traceback.print_exc()
                 premium_entries = []
             try:
-                top3_items = _build_top3_items(premium_entries, record_map)
+                top3_entries = _select_top3_entries(
+                    premium_entries, record_map, limit=3
+                )
+                top3_items = _build_top3_items(top3_entries, record_map)
                 _write_top3_list(config, top3_items, date_key)
             except Exception as exc:
                 print(f"[top3] error: {exc}")

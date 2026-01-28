@@ -22,7 +22,7 @@ class PremiumBriefGenerator:
         )
         self.prompt_version = os.getenv("PROMPT_VERSION", "v1").strip().lower()
 
-    def generate(self, record, lang="zh"):
+    def generate(self, record, lang="zh", view=None):
         content = str(record.get("content", "")).strip()
         if not content:
             return None
@@ -54,6 +54,44 @@ class PremiumBriefGenerator:
             f"Domain: {domain}\n"
             f"OfficialSource: {official_id}\n"
         )
+
+        view = str(view or "").strip().lower()
+        view_note = ""
+        if view in {"policy", "industry", "capital"}:
+            if lang == "en":
+                if view == "policy":
+                    view_note = (
+                        "Perspective: Policy/Government. Emphasize regulatory levers, export controls, "
+                        "strategic stockpiles, and policy alignment. Ensure at least one tracking_nodes "
+                        "item is a policy/government action."
+                    )
+                elif view == "industry":
+                    view_note = (
+                        "Perspective: Industrial/Supply Chain. Emphasize processing capacity, offtake "
+                        "agreements, supply bottlenecks, and industrial execution. Ensure at least one "
+                        "tracking_nodes item is an industrial/supply-chain action."
+                    )
+                elif view == "capital":
+                    view_note = (
+                        "Perspective: Capital/Finance. Emphasize financing structure, valuation risk, "
+                        "capital deployment, and M&A windows. Ensure at least one tracking_nodes item is "
+                        "a capital/finance action."
+                    )
+            else:
+                if view == "policy":
+                    view_note = (
+                        "视角：政策/外交。强调政策工具、出口管制、战略储备等；行动清单至少包含1条政策动作。"
+                    )
+                elif view == "industry":
+                    view_note = (
+                        "视角：产业/供应链。强调产能、分离加工、供应瓶颈与工业执行；行动清单至少包含1条产业动作。"
+                    )
+                elif view == "capital":
+                    view_note = (
+                        "视角：资本/投融资。强调融资结构、估值风险、资金落地与并购窗口；行动清单至少包含1条资本动作。"
+                    )
+        if view_note:
+            view_note = view_note.strip() + "\n"
 
         if lang == "en":
             summary = summary_en or summary_zh
@@ -87,8 +125,7 @@ Constraints:
   2) Scenarios & probabilities: 3 scenarios with rough % and trigger conditions with quantitative thresholds (e.g., yield <75%, capacity >50%, funding cut >20%)
   3) Next update focus: specific signals + time window
 - Do not add new fields.
-
-CurrentDate: {current_date} (CST)
+{view_note}CurrentDate: {current_date} (CST)
 Metadata:
 {meta_block}
 Summary:
@@ -152,8 +189,7 @@ Article:
   2) 情景与概率：3个情景 + 粗略百分比 + 触发条件（必须包含量化阈值，如良率<75%、产能>50%、预算削减>20%）
   3) 下次更新重点：具体信号 + 时间窗口
 - 不要新增字段。
-
-当前日期：{current_date}（CST）
+{view_note}当前日期：{current_date}（CST）
 元信息：
 {meta_block}
 摘要：

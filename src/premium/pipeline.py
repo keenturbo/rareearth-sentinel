@@ -293,7 +293,57 @@ def generate_daily_briefs(config, records, limit=None):
     output_dir, date_key = _today_dir(config.premium_dir)
     official_map = _load_official_domains(config)
 
-    index_entries = []
+    def _generate_view_entries(record, base_report_id):
+        view_entries = []
+        for view in ("policy", "industry", "capital"):
+            report_id = f"{base_report_id}-{view}"
+            entry = {
+                "report_id": report_id,
+                "event_id": record.get("id"),
+                "tier": "brief",
+                "price": 9,
+                "date": date_key,
+                "view": view,
+                "source_title": record.get("title", ""),
+                "official_source_id": _infer_official_source(record, official_map),
+                "created_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            }
+            entry_has_any = False
+            impact_score_value = None
+
+            for lang in ("zh", "en"):
+                brief = generator.generate(record, lang=lang, view=view)
+                if brief is None:
+                    continue
+                quality = brief_quality_score(brief)
+                if quality < config.premium_min_quality:
+                    continue
+                entry_has_any = True
+                entry[f"quality_{lang}"] = quality
+                entry[f"preview_{lang}"] = _report_preview(brief, lang=lang)
+                impact_val = brief.get("impact_score")
+                if impact_val is not None:
+                    entry[f"impact_score_{lang}"] = impact_val
+                    if impact_score_value is None:
+                        impact_score_value = impact_val
+
+                report_path = os.path.join(output_dir, _brief_filename(report_id, lang))
+                with open(report_path, "w", encoding="utf-8") as f:
+                    json.dump(brief, f, ensure_ascii=False, indent=2)
+
+                md_path = os.path.join(output_dir, _brief_md_filename(report_id, lang))
+                with open(md_path, "w", encoding="utf-8") as f:
+                    f.write(_brief_to_markdown(brief, lang=lang))
+
+            if impact_score_value is not None:
+                entry["impact_score"] = impact_score_value
+            if entry_has_any:
+                view_entries.append(entry)
+        return view_entries
+
+    major_candidates = []
+    prepared_entries = []
+
     for record in top_records:
         report_id = _build_report_id(record)
         entry = {
@@ -307,6 +357,7 @@ def generate_daily_briefs(config, records, limit=None):
             "created_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
         }
         entry_has_any = False
+        impact_score_value = None
 
         for lang in ("zh", "en"):
             brief = generator.generate(record, lang=lang)
@@ -318,6 +369,11 @@ def generate_daily_briefs(config, records, limit=None):
             entry_has_any = True
             entry[f"quality_{lang}"] = quality
             entry[f"preview_{lang}"] = _report_preview(brief, lang=lang)
+            impact_val = brief.get("impact_score")
+            if impact_val is not None:
+                entry[f"impact_score_{lang}"] = impact_val
+                if impact_score_value is None:
+                    impact_score_value = impact_val
 
             report_path = os.path.join(output_dir, _brief_filename(report_id, lang))
             with open(report_path, "w", encoding="utf-8") as f:
@@ -327,7 +383,38 @@ def generate_daily_briefs(config, records, limit=None):
             with open(md_path, "w", encoding="utf-8") as f:
                 f.write(_brief_to_markdown(brief, lang=lang))
 
+        if impact_score_value is not None:
+            entry["impact_score"] = impact_score_value
+
         if entry_has_any:
+            prepared_entries.append((record, entry, report_id))
+            try:
+                risk_score = int(record.get("risk_score", 0) or 0)
+            except (TypeError, ValueError):
+                risk_score = 0
+            try:
+                impact_score_val = int(impact_score_value or 0)
+            except (TypeError, ValueError):
+                impact_score_val = 0
+            if risk_score >= 85 or impact_score_val >= 9:
+                major_candidates.append(
+                    (risk_score, impact_score_val, record.get("id"))
+                )
+
+    major_event_id = ""
+    if major_candidates:
+        major_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+        major_event_id = major_candidates[0][2]
+
+    index_entries = []
+    for record, entry, report_id in prepared_entries:
+        if major_event_id and record.get("id") == major_event_id:
+            view_entries = _generate_view_entries(record, report_id)
+            if len(view_entries) == 3:
+                index_entries.extend(view_entries)
+            else:
+                index_entries.append(entry)
+        else:
             index_entries.append(entry)
 
     if index_entries:
