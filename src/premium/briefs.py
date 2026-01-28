@@ -42,6 +42,7 @@ class PremiumBriefGenerator:
         if url:
             domain = urlparse(url).netloc
         official_id = str(record.get("official_source_id", "")).strip()
+        current_date = datetime.now().strftime("%Y-%m-%d")
 
         meta_block = (
             f"Title: {title}\n"
@@ -77,13 +78,16 @@ Constraints:
 - conclusion must be decision-oriented.
 - fact_checks must be verifiable; do not invent facts.
 - key_numbers must be supported by the article or summary; use "Unknown" if missing.
-- tracking_nodes must be an action checklist: verb + object + reason + time window.
-- confidence_notes must include evidence weighting labels: Verified / Unverified / Inferred.
+- tracking_nodes must be an action checklist: verb + object + reason + time window + decision criteria.
+- time windows must be relative (next 30/90/180 days) and not in the past; if a past date is implied, rewrite as relative.
+- confidence_notes must include evidence weighting labels: Verified / Unverified / Inferred (include all three).
 - value_proposition must be multi-line and include:
   1) Impact Path: 3-5 steps
-  2) Scenarios & probabilities: 3 scenarios with rough % (e.g., 50/30/20)
+  2) Scenarios & probabilities: 3 scenarios with rough % and trigger conditions
+  3) Next update focus: specific signals + time window
 - Do not add new fields.
 
+CurrentDate: {current_date} (CST)
 Metadata:
 {meta_block}
 Summary:
@@ -139,13 +143,16 @@ Article:
 - conclusion 必须面向决策。
 - fact_checks 必须可验证。
 - key_numbers 必须来自原文或摘要，缺失写“未知”。
-- tracking_nodes 必须为行动清单：动词 + 对象 + 原因 + 时间窗口。
-- confidence_notes 必须包含证据分层标签：已验证 / 待证实 / 推断。
+- tracking_nodes 必须为行动清单：动词 + 对象 + 原因 + 时间窗口 + 判断标准。
+- 时间窗口必须 >= 当前日期，使用相对时间（未来30/90/180天）；若出现过去时间，改为相对时间。
+- confidence_notes 必须包含证据分层标签：已验证 / 待证实 / 推断（必须三层）。
 - value_proposition 必须为多行并包含：
   1) 影响路径：3-5步
-  2) 情景与概率：3个情景 + 粗略百分比（如50/30/20）
+  2) 情景与概率：3个情景 + 粗略百分比 + 触发条件
+  3) 下次更新重点：具体信号 + 时间窗口
 - 不要新增字段。
 
+当前日期：{current_date}（CST）
 元信息：
 {meta_block}
 摘要：
