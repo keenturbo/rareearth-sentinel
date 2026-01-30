@@ -220,7 +220,12 @@ textarea{min-height:140px;resize:vertical}
       const data = res.ok ? await res.json() : null;
       if (data && data.ok && data.market) {
         renderMarket(data.market);
-        setStatus('保存完成');
+        if (data.rebuild_ok === false) {
+          const msg = data.log ? `保存完成，但重建失败：${data.log}` : '保存完成，但重建失败';
+          setStatus(msg);
+        } else {
+          setStatus('保存完成');
+        }
       } else {
         setStatus(data && data.log ? `保存失败: ${data.log}` : '保存失败');
       }
@@ -244,7 +249,12 @@ textarea{min-height:140px;resize:vertical}
       const data = res.ok ? await res.json() : null;
       if (data && data.ok && data.market) {
         renderMarket(data.market);
-        setStatus('图片已删除，已回退表格');
+        if (data.rebuild_ok === false) {
+          const msg = data.log ? `图片已删除，但重建失败：${data.log}` : '图片已删除，但重建失败';
+          setStatus(msg);
+        } else {
+          setStatus('图片已删除，已回退表格');
+        }
       } else {
         setStatus(data && data.log ? `删除失败: ${data.log}` : '删除失败');
       }
