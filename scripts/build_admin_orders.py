@@ -232,6 +232,9 @@ def _build_indices_page(template_path, output_path):
         template.replace("{{LAST_UPDATE}}", isoformat(now_cst()))
         .replace("{{UPLOAD_ENDPOINT}}", "/api/admin/indices/upload")
         .replace("{{STATUS_ENDPOINT}}", "/api/admin/indices/status")
+        .replace("{{MARKET_STATUS_ENDPOINT}}", "/api/admin/indices/market/status")
+        .replace("{{MARKET_SAVE_ENDPOINT}}", "/api/admin/indices/market/save")
+        .replace("{{MARKET_CLEAR_ENDPOINT}}", "/api/admin/indices/market/clear-image")
     )
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
