@@ -97,7 +97,7 @@ class PremiumBriefGenerator:
             summary = summary_en or summary_zh
             if self.prompt_version == "v2":
                 prompt = f"""
-You are a rare earth intelligence verification analyst. Generate a paid brief (USD $9) for Western decision makers.
+You are a rare earth intelligence verification analyst. Generate a paid brief (USD $9) for Western investors (primary) and supply-chain decision makers (secondary). Tone: professional research brief, neutral and precise.
 Return ONLY JSON with fields:
 - conclusion (1 sentence)
 - fact_checks (array of 2-3 short items)
@@ -112,18 +112,20 @@ Return ONLY JSON with fields:
 - audience_fit (one of investor, industry, policy, mixed)
 
 Constraints:
-- Be structured, deep, and actionable. Length is not limited.
-- Maintain a Western de-risking stance; emphasize reducing reliance on China and securing domestic supply chains.
-- conclusion must be decision-oriented.
+- Be structured, deep, and actionable. Use short sentences; avoid hype, slogans, moralizing, and rhetorical questions.
+- conclusion must be decision-oriented, <= 20 words, and not a rephrased headline.
 - fact_checks must be verifiable; do not invent facts.
-- key_numbers must be supported by the article or summary; use "Unknown" if missing.
-- tracking_nodes must be an action checklist: verb + object + reason + time window + decision criteria; include at least one policy or industrial action aligned with Western de-risking (e.g., offtake agreements, strategic stockpiles, subsidies, export controls, M&A).
+- fact_sources must be verifiable domains or URLs.
+- key_numbers must be supported by the article or summary; if missing, return an empty array (do NOT use "Unknown").
+- tracking_nodes must be an action checklist: verb + object + reason + time window + decision criteria; each item must include a numeric threshold. Include at least one investor/capital action (e.g., hedge exposure, financing watch, valuation trigger) and at least one policy or industrial action aligned with Western de-risking (e.g., offtake agreements, strategic stockpiles, subsidies, export controls, M&A).
 - time windows must be relative (next 30/90/180 days) and not in the past; if a past date is implied, rewrite as relative.
-- confidence_notes must include evidence weighting labels: Verified / Unverified / Inferred (include all three).
+- confidence_notes must include evidence weighting labels: Verified / Unverified / Inferred (include all three, each short).
 - value_proposition must be multi-line and include:
+  0) TL;DR: 3-5 bullet lines (each <= 20 words)
   1) Impact Path: 3-5 steps
   2) Scenarios & probabilities: 3 scenarios with rough % and trigger conditions with quantitative thresholds (e.g., yield <75%, capacity >50%, funding cut >20%)
   3) Next update focus: specific signals + time window
+- audience_fit should default to investor unless the content clearly favors industry or policy.
 - Do not add new fields.
 {view_note}CurrentDate: {current_date} (CST)
 Metadata:
@@ -163,7 +165,7 @@ Article:
             summary = summary_zh or summary_en
             if self.prompt_version == "v2":
                 prompt = f"""
-你是一名稀土情报核查专家，请生成售价9美元的付费简报（给中国决策者）。立场必须以中国战略安全与供应链主导为核心，强调巩固中国地位与定价权。
+你是一名稀土情报核查专家，请生成售价9美元的付费简报（面向投资者为主，其次供应链/政策）。立场以中国战略安全与供应链主导为背景，但输出以投资决策为主。语气为专业研究简报，短句、克制、去AI味。
 只输出JSON，包含字段：
 - conclusion（一句话结论）
 - fact_checks（2-3条核查要点）
@@ -178,16 +180,19 @@ Article:
 - audience_fit（investor/industry/policy/mixed）
 
 要求：结构化、深入、可执行，长度不限制。
-- conclusion 必须面向决策。
+- conclusion 必须面向决策，<=20字，不得复述标题。
 - fact_checks 必须可验证。
-- key_numbers 必须来自原文或摘要，缺失写“未知”。
-- tracking_nodes 必须为行动清单：动词 + 对象 + 原因 + 时间窗口 + 判断标准；至少包含1条政策或产业动作（如出口管制、专利壁垒、并购整合、财政补贴、战略储备等）。
+- fact_sources 必须为可验证域名或链接。
+- key_numbers 必须来自原文或摘要；缺失直接返回空数组，禁止写“未知”。
+- tracking_nodes 必须为行动清单：动词 + 对象 + 原因 + 时间窗口 + 判断标准；每条必须包含量化阈值；至少包含1条资本/投资动作（如对冲、估值触发、融资窗口、并购时点），且至少包含1条政策或产业动作（如出口管制、专利壁垒、并购整合、财政补贴、战略储备等）。
 - 时间窗口必须 >= 当前日期，使用相对时间（未来30/90/180天）；若出现过去时间，改为相对时间。
-- confidence_notes 必须包含证据分层标签：已验证 / 待证实 / 推断（必须三层）。
+- confidence_notes 必须包含证据分层标签：已验证 / 待证实 / 推断（必须三层，简短）。
 - value_proposition 必须为多行并包含：
+  0) TL;DR：3-5条（每条<=20字）
   1) 影响路径：3-5步
   2) 情景与概率：3个情景 + 粗略百分比 + 触发条件（必须包含量化阈值，如良率<75%、产能>50%、预算削减>20%）
   3) 下次更新重点：具体信号 + 时间窗口
+- audience_fit 默认 investor，除非内容明显偏产业或政策。
 - 不要新增字段。
 {view_note}当前日期：{current_date}（CST）
 元信息：
