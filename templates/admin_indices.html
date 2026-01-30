@@ -13,12 +13,15 @@ body{margin:0;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-se
 header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:12px;flex-wrap:wrap}
 header h1{font-family:"Noto Serif SC",serif;margin:0;font-size:22px}
 header .meta{font-size:12px;color:var(--muted)}
-.section{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px}
+.section{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:16px}
 .status{font-size:12px;color:var(--muted);margin-bottom:12px}
 .field{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
 input[type="file"]{font-size:12px}
+input[type="text"],textarea{font-size:12px;border:1px solid #d1d5db;border-radius:8px;padding:8px;background:#fff}
+textarea{min-height:140px;resize:vertical}
 .btn{font-size:12px;border:1px solid #d1d5db;background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}
 .btn:disabled{opacity:0.6;cursor:not-allowed}
 .badge{display:inline-block;font-size:11px;padding:2px 6px;border-radius:999px;background:#f3f4f6;color:var(--muted)}
 .row{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:6px}
@@ -43,6 +46,22 @@ input[type="file"]{font-size:12px}
       <input id="file" type="file" accept=".xls" />
     </div>
     <button class="btn primary" id="upload-btn">上传并更新首页</button>
+  </section>
+
+  <section class="section" id="market-section" data-market-status-endpoint="{{MARKET_STATUS_ENDPOINT}}" data-market-save-endpoint="{{MARKET_SAVE_ENDPOINT}}" data-market-clear-endpoint="{{MARKET_CLEAR_ENDPOINT}}">
+    <div class="status" id="market-status">行情数据加载中...</div>
+    <div class="field">
+      <label>行情图片 URL（中文首页展示）</label>
+      <input id="market-image-url" type="text" placeholder="https://" />
+    </div>
+    <div class="field">
+      <label>稀土市场行情分析（用于 AI 背景知识）</label>
+      <textarea id="market-analysis" placeholder="稀土市场行情分析：..."></textarea>
+    </div>
+    <div class="row">
+      <button class="btn primary" id="market-save-btn">保存行情信息</button>
+      <button class="btn danger" id="market-clear-btn">删除图片并回退表格</button>
+    </div>
   </section>
 </div>
 <script>
@@ -135,6 +154,110 @@ input[type="file"]{font-size:12px}
 
   uploadBtn.addEventListener('click', upload);
   loadStatus();
+})();
+
+(function(){
+  const marketSection = document.getElementById('market-section');
+  if (!marketSection) return;
+
+  const marketStatusEndpoint = marketSection.dataset.marketStatusEndpoint || '';
+  const marketSaveEndpoint = marketSection.dataset.marketSaveEndpoint || '';
+  const marketClearEndpoint = marketSection.dataset.marketClearEndpoint || '';
+
+  const statusEl = document.getElementById('market-status');
+  const imageInput = document.getElementById('market-image-url');
+  const analysisInput = document.getElementById('market-analysis');
+  const saveBtn = document.getElementById('market-save-btn');
+  const clearBtn = document.getElementById('market-clear-btn');
+
+  const fmtTime = (text) => {
+    if (!text) return '-';
+    return String(text).replace('T', ' ').replace('Z', '');
+  };
+
+  const setStatus = (text) => {
+    if (statusEl) statusEl.textContent = text;
+  };
+
+  const renderMarket = (market) => {
+    if (!market) return;
+    if (imageInput) imageInput.value = market.image_url || '';
+    if (analysisInput) analysisInput.value = market.analysis_text || '';
+    const updated = fmtTime(market.updated_at);
+    const hasImage = market.image_url ? '有图' : '无图';
+    setStatus(`行情数据已加载 · ${hasImage} · 更新 ${updated}`);
+  };
+
+  const loadMarket = async () => {
+    if (!marketStatusEndpoint) return;
+    try {
+      const res = await fetch(marketStatusEndpoint, { method: 'GET' });
+      const data = res.ok ? await res.json() : null;
+      if (data && data.ok && data.market) {
+        renderMarket(data.market);
+      } else {
+        setStatus('行情数据加载失败');
+      }
+    } catch (err) {
+      setStatus('行情数据加载失败');
+    }
+  };
+
+  const saveMarket = async () => {
+    if (!marketSaveEndpoint) return;
+    saveBtn.disabled = true;
+    setStatus('保存中...');
+    const payload = {
+      image_url: imageInput.value.trim(),
+      analysis_text: analysisInput.value.trim()
+    };
+    try {
+      const res = await fetch(marketSaveEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = res.ok ? await res.json() : null;
+      if (data && data.ok && data.market) {
+        renderMarket(data.market);
+        setStatus('保存完成');
+      } else {
+        setStatus(data && data.log ? `保存失败: ${data.log}` : '保存失败');
+      }
+    } catch (err) {
+      setStatus('保存失败');
+    } finally {
+      saveBtn.disabled = false;
+    }
+  };
+
+  const clearImage = async () => {
+    if (!marketClearEndpoint) return;
+    clearBtn.disabled = true;
+    setStatus('正在删除图片...');
+    try {
+      const res = await fetch(marketClearEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      const data = res.ok ? await res.json() : null;
+      if (data && data.ok && data.market) {
+        renderMarket(data.market);
+        setStatus('图片已删除，已回退表格');
+      } else {
+        setStatus(data && data.log ? `删除失败: ${data.log}` : '删除失败');
+      }
+    } catch (err) {
+      setStatus('删除失败');
+    } finally {
+      clearBtn.disabled = false;
+    }
+  };
+
+  if (saveBtn) saveBtn.addEventListener('click', saveMarket);
+  if (clearBtn) clearBtn.addEventListener('click', clearImage);
+  loadMarket();
 })();
 </script>
 </body>
