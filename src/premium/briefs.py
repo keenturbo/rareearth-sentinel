@@ -11,6 +11,25 @@ from ..utils import extract_json
 AUDIENCE_FIT = {"investor", "industry", "policy", "mixed"}
 
 
+def _load_market_analysis(data_dir, limit=1200):
+    if not data_dir:
+        return ""
+    path = os.path.join(data_dir, "status", "indices_market.json")
+    if not os.path.exists(path):
+        return ""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    text = str(data.get("analysis_text", "")).strip()
+    if limit and len(text) > limit:
+        text = text[:limit].rstrip()
+    return text
+
+
 class PremiumBriefGenerator:
     def __init__(self, config):
         if not config.gemini_api_key:
@@ -54,6 +73,20 @@ class PremiumBriefGenerator:
             f"Domain: {domain}\n"
             f"OfficialSource: {official_id}\n"
         )
+
+        market_analysis = _load_market_analysis(self.config.data_dir)
+        market_block = ""
+        if market_analysis:
+            if lang == "en":
+                market_block = (
+                    "\nMarket commentary (background only, not verified):\n"
+                    f"{market_analysis}\n"
+                )
+            else:
+                market_block = (
+                    "\n市场行情分析（仅作背景评论，不视为已验证事实）：\n"
+                    f"{market_analysis}\n"
+                )
 
         view = str(view or "").strip().lower()
         view_note = ""
@@ -126,13 +159,14 @@ Constraints:
   2) Scenarios & probabilities: 3 scenarios with rough % and trigger conditions with quantitative thresholds (e.g., yield <75%, capacity >50%, funding cut >20%)
   3) Next update focus: specific signals + time window
 - audience_fit should default to investor unless the content clearly favors industry or policy.
+- Market commentary is background-only; do NOT cite it as verified fact.
 - Do not add new fields.
 {view_note}CurrentDate: {current_date} (CST)
 Metadata:
 {meta_block}
 Summary:
 {summary}
-
+{market_block}
 Article:
 {content}
 """
@@ -193,13 +227,14 @@ Article:
   2) 情景与概率：3个情景 + 粗略百分比 + 触发条件（必须包含量化阈值，如良率<75%、产能>50%、预算削减>20%）
   3) 下次更新重点：具体信号 + 时间窗口
 - audience_fit 默认 investor，除非内容明显偏产业或政策。
+- 市场行情分析仅作背景评论，不得作为已验证事实引用。
 - 不要新增字段。
 {view_note}当前日期：{current_date}（CST）
 元信息：
 {meta_block}
 摘要：
 {summary}
-
+{market_block}
 正文：
 {content}
 """
