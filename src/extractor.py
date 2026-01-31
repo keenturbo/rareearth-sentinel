@@ -407,9 +407,22 @@ Article:
             "bullets": bullets[:3],
         }
 
-    def analyze_daily_report(self, context_text, lang="zh"):
+    def analyze_daily_report(self, context_text, lang="zh", market_analysis=""):
         if not context_text:
             return None
+
+        market_block = ""
+        if market_analysis:
+            if lang == "en":
+                market_block = (
+                    "\nMarket commentary (background only, not verified):\n"
+                    f"{market_analysis}\n"
+                )
+            else:
+                market_block = (
+                    "\n市场行情评论（仅背景，不作为已验证事实）：\n"
+                    f"{market_analysis}\n"
+                )
 
         if lang == "en":
             if self.prompt_version == "v2":
@@ -421,7 +434,7 @@ Constraints:
 - body: 120-180 words, concise and analytical, emphasize change, impact path, and evidence.
 - bullets: array of 3 short bullet points (event + impact).
 If signals are weak, keep the tone neutral and avoid hype.
-
+{market_block}
 Event list:
 {context_text}
 """
@@ -434,7 +447,7 @@ Constraints:
 - body: 120-180 words, concise and analytical.
 - bullets: array of 3 short bullet points.
 If signals are weak, keep the tone neutral.
-
+{market_block}
 Event list:
 {context_text}
 """
@@ -448,7 +461,7 @@ Event list:
 - body：150-300 字，强调变化、影响路径与证据，避免口号。
 - bullets：3 条短要点（事件 + 影响）。
 若信号偏弱，保持中性语气。
-
+{market_block}
 事件清单：
 {context_text}
 """
@@ -461,7 +474,7 @@ Constraints:
 - body: 150-300 Chinese characters, concise and analytical.
 - bullets: array of 3 short bullet points.
 If signals are weak, keep the tone neutral.
-
+{market_block}
 Event list:
 {context_text}
 """
