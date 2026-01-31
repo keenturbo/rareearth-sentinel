@@ -38,6 +38,20 @@ def _read_jsonl(path):
     return entries
 
 
+def _load_market_analysis(data_dir):
+    path = os.path.join(data_dir, "status", "indices_market.json")
+    if not os.path.exists(path):
+        return ""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    return str(data.get("analysis_text", "")).strip()
+
+
 def _dedupe(entries, key):
     data = {}
     for entry in entries:
@@ -226,7 +240,7 @@ def _format_evidence(record, lang="cn"):
     }
 
 
-def _build_prompt(entry, evidence, lang="cn", time_window=""):
+def _build_prompt(entry, evidence, lang="cn", time_window="", market_analysis=""):
     task_suggestion = entry.get("task_suggestion", "")
     report_title = entry.get("report_title", "")
     report_value = entry.get("report_value", "")
@@ -242,6 +256,19 @@ def _build_prompt(entry, evidence, lang="cn", time_window=""):
 
     evidence_block = "\n".join(lines) if lines else "(no evidence)"
     prompt_version = os.getenv("PROMPT_VERSION", "v1").strip().lower()
+
+    market_block = ""
+    if market_analysis:
+        if lang == "en":
+            market_block = (
+                "\nMarket commentary (background only, not verified facts):\n"
+                f"{market_analysis}\n"
+            )
+        else:
+            market_block = (
+                "\n市场行情评论（仅背景，不作为已验证事实）：\n"
+                f"{market_analysis}\n"
+            )
 
     if prompt_version == "v2":
         if lang == "en":
@@ -263,7 +290,7 @@ Task info:
 - value: {report_value}
 - frequency: {frequency}
 - time window: {time_window}
-
+{market_block}
 Evidence:
 {evidence_block}
 """
@@ -286,7 +313,7 @@ Evidence:
 - 价值：{report_value}
 - 频率：{frequency}
 - 观察窗口：{time_window}
-
+{market_block}
 证据清单：
 {evidence_block}
 """
@@ -307,7 +334,7 @@ Task info:
 - value: {report_value}
 - frequency: {frequency}
 - time window: {time_window}
-
+{market_block}
 Evidence:
 {evidence_block}
 """
@@ -327,7 +354,7 @@ Evidence:
 - 价值：{report_value}
 - 频率：{frequency}
 - 观察窗口：{time_window}
-
+{market_block}
 证据清单：
 {evidence_block}
 """
@@ -596,6 +623,7 @@ def run_tasks(task_id="", force=False):
     records = _read_jsonl(intel_path)
     keywords = load_keywords(config.keywords_file)
     extractor = GeminiExtractor(config)
+    market_analysis = _load_market_analysis(config.data_dir)
 
     now = now_cst()
     ran = 0
@@ -650,8 +678,20 @@ def run_tasks(task_id="", force=False):
         report_data_cn = None
         report_data_en = None
         if evidence:
-            prompt_cn = _build_prompt(entry, evidence_cn, lang="cn", time_window=time_label)
-            prompt_en = _build_prompt(entry, evidence_en, lang="en", time_window=time_label)
+            prompt_cn = _build_prompt(
+                entry,
+                evidence_cn,
+                lang="cn",
+                time_window=time_label,
+                market_analysis=market_analysis,
+            )
+            prompt_en = _build_prompt(
+                entry,
+                evidence_en,
+                lang="en",
+                time_window=time_label,
+                market_analysis=market_analysis,
+            )
             report_data_cn = _normalize_report(_generate_report(extractor, prompt_cn))
             report_data_en = _normalize_report(_generate_report(extractor, prompt_en))
 
