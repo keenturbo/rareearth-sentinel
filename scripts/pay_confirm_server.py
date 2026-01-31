@@ -1765,18 +1765,7 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
                 existing = _load_indices_market(market_path)
                 market = _normalize_market_payload(data or {}, existing=existing)
                 _write_indices_market(market_path, market)
-                rebuild_cmd = [
-                    sys.executable,
-                    os.path.join(ROOT, "main.py"),
-                    "--rebuild",
-                ]
-                code, line = _run_command(rebuild_cmd, ROOT)
-                resp = {"ok": True, "market": market}
-                if code != 0:
-                    resp["rebuild_ok"] = False
-                    if line:
-                        resp["log"] = line
-                self._json_response(200, resp)
+                self._json_response(200, {"ok": True, "market": market})
                 return
 
             if normalized_path == market_clear_path:
@@ -1784,18 +1773,7 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
                 existing = _load_indices_market(market_path)
                 market = _clear_market_image(existing)
                 _write_indices_market(market_path, market)
-                rebuild_cmd = [
-                    sys.executable,
-                    os.path.join(ROOT, "main.py"),
-                    "--rebuild",
-                ]
-                code, line = _run_command(rebuild_cmd, ROOT)
-                resp = {"ok": True, "market": market}
-                if code != 0:
-                    resp["rebuild_ok"] = False
-                    if line:
-                        resp["log"] = line
-                self._json_response(200, resp)
+                self._json_response(200, {"ok": True, "market": market})
                 return
 
             if normalized_path == paypal_create_path:
