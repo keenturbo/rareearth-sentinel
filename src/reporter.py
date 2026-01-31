@@ -18,6 +18,24 @@ class Reporter:
         self.config = config
         self._daily_extractor = None
 
+    def _load_indices_market(self):
+        path = os.path.join(self.config.data_dir, "status", "indices_market.json")
+        if not os.path.exists(path):
+            return {}
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _load_market_analysis(self, limit=1200):
+        market = self._load_indices_market()
+        text = str(market.get("analysis_text", "")).strip()
+        if limit and len(text) > limit:
+            text = text[:limit].rstrip()
+        return text
+
     def _safe_prune_record(self, record, lang="zh"):
         prune = getattr(self, "_prune_record", None)
         if callable(prune):
@@ -477,6 +495,41 @@ class Reporter:
             "" if index_data.get("is_news") else self._render_news_more(lang=lang)
         )
 
+        market = self._load_indices_market()
+        show_market = not archive_month and not index_data.get("is_news")
+        index_market_section = ""
+        index_watch_section = ""
+        market_image = ""
+        market_updated = ""
+        if isinstance(market, dict):
+            market_image = str(market.get("image_url", "")).strip()
+            market_updated = str(market.get("updated_at", "")).strip()
+
+        if show_market and lang == "zh" and market_image:
+            updated_label = market_updated.replace("T", " ").replace("Z", "") if market_updated else ""
+            meta_line = "来源：包头稀土产品交易所"
+            if updated_label:
+                meta_line = f"{meta_line} · 更新 {updated_label}"
+            index_market_section = (
+                '<section class="section">'
+                '<div class="section-title">每日价格信息</div>'
+                f'<div class="index-market-meta">{html.escape(meta_line)}</div>'
+                f'<img class="index-market-img" src="{html.escape(market_image)}" alt="稀土产品每日报价表" loading="lazy" />'
+                '</section>'
+            )
+
+        hide_index_watch = show_market and lang == "zh" and market_image
+        if not hide_index_watch:
+            disclaimer_html = ""
+            if show_market and lang == "en":
+                disclaimer_html = (
+                    '<div class="meta index-disclaimer">Data provided by Baotou REE Exchange for reference only; not investment advice.</div>'
+                )
+            if index_watch_html:
+                index_watch_section = (
+                    f'<section class="section">{index_watch_html}{disclaimer_html}</section>'
+                )
+
         page_note = index_data.get("page_note", "")
         if archive_month:
             page_note = (
@@ -496,6 +549,8 @@ class Reporter:
             .replace("{{PAGE_NOTE}}", page_note)
             .replace("{{PREMIUM_TRACKING}}", premium_html)
             .replace("{{INDEX_WATCH}}", index_watch_html)
+            .replace("{{INDEX_MARKET_SECTION}}", index_market_section)
+            .replace("{{INDEX_WATCH_SECTION}}", index_watch_section)
             .replace("{{NEWS_MORE}}", news_more_html)
         )
         return html_out
@@ -2019,7 +2074,12 @@ class Reporter:
 
         context_text = "\n".join(lines)
         extractor = self._get_daily_extractor()
-        report = extractor.analyze_daily_report(context_text, lang=lang)
+        market_analysis = self._load_market_analysis()
+        report = extractor.analyze_daily_report(
+            context_text,
+            lang=lang,
+            market_analysis=market_analysis,
+        )
         if report is None:
             fallback = _fallback_lang(lang)
             if fallback:
