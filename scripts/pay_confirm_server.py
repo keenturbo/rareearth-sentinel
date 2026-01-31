@@ -564,6 +564,10 @@ def _indices_status_path():
     return os.path.join(ROOT, "data", "status", "indices_upload.json")
 
 
+def _indices_market_path():
+    return os.path.join(ROOT, "data", "status", "indices_market.json")
+
+
 def _indices_log_path():
     return os.path.join(ROOT, "logs", "indices_upload.log")
 
@@ -593,6 +597,55 @@ def _write_indices_status(path, payload):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def _load_indices_market(path):
+    if not path or not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_indices_market(path, payload):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def _normalize_market_payload(data, existing=None):
+    now = datetime.utcnow().isoformat() + "Z"
+    base = existing if isinstance(existing, dict) else {}
+    data = data if isinstance(data, dict) else {}
+
+    image_url = data.get("image_url")
+    if image_url is None:
+        image_url = base.get("image_url", "")
+    image_url = str(image_url).strip()
+
+    analysis_text = data.get("analysis_text")
+    if analysis_text is None:
+        analysis_text = base.get("analysis_text", "")
+    analysis_text = str(analysis_text).strip()
+
+    return {
+        "image_url": image_url,
+        "analysis_text": analysis_text,
+        "updated_at": now,
+    }
+
+
+def _clear_market_image(existing=None):
+    now = datetime.utcnow().isoformat() + "Z"
+    base = existing if isinstance(existing, dict) else {}
+    return {
+        "image_url": "",
+        "analysis_text": str(base.get("analysis_text", "")).strip(),
+        "updated_at": now,
+    }
 
 
 def _last_non_empty(text):
@@ -1681,6 +1734,8 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
             sources_delete_path = _normalize_path("/api/admin/sources/delete")
             sources_run_path = _normalize_path("/api/admin/sources/run")
             indices_upload_path = _normalize_path("/api/admin/indices/upload")
+            market_save_path = _normalize_path("/api/admin/indices/market/save")
+            market_clear_path = _normalize_path("/api/admin/indices/market/clear-image")
             keywords_add_path = _normalize_path("/api/admin/keywords/add")
             keywords_delete_path = _normalize_path("/api/admin/keywords/delete")
             keywords_approve_path = _normalize_path("/api/admin/keywords/approve")
@@ -1703,6 +1758,44 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
                 data = json.loads(raw.decode("utf-8"))
             except json.JSONDecodeError:
                 self._json_response(400, {"ok": False, "error": "bad_json"})
+                return
+
+            if normalized_path == market_save_path:
+                market_path = _indices_market_path()
+                existing = _load_indices_market(market_path)
+                market = _normalize_market_payload(data or {}, existing=existing)
+                _write_indices_market(market_path, market)
+                rebuild_cmd = [
+                    sys.executable,
+                    os.path.join(ROOT, "main.py"),
+                    "--rebuild",
+                ]
+                code, line = _run_command(rebuild_cmd, ROOT)
+                resp = {"ok": True, "market": market}
+                if code != 0:
+                    resp["rebuild_ok"] = False
+                    if line:
+                        resp["log"] = line
+                self._json_response(200, resp)
+                return
+
+            if normalized_path == market_clear_path:
+                market_path = _indices_market_path()
+                existing = _load_indices_market(market_path)
+                market = _clear_market_image(existing)
+                _write_indices_market(market_path, market)
+                rebuild_cmd = [
+                    sys.executable,
+                    os.path.join(ROOT, "main.py"),
+                    "--rebuild",
+                ]
+                code, line = _run_command(rebuild_cmd, ROOT)
+                resp = {"ok": True, "market": market}
+                if code != 0:
+                    resp["rebuild_ok"] = False
+                    if line:
+                        resp["log"] = line
+                self._json_response(200, resp)
                 return
 
             if normalized_path == paypal_create_path:
@@ -2040,6 +2133,7 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
             admin_path = _normalize_path(self.config.pay_confirm_admin_endpoint)
             sources_list_path = _normalize_path("/api/admin/sources/list")
             indices_status_path = _normalize_path("/api/admin/indices/status")
+            market_status_path = _normalize_path("/api/admin/indices/market/status")
             keywords_list_path = _normalize_path("/api/admin/keywords/list")
             keywords_candidates_path = _normalize_path("/api/admin/keywords/candidates")
 
@@ -2054,6 +2148,13 @@ class PayConfirmHandler(BaseHTTPRequestHandler):
             if normalized_path == indices_status_path:
                 status = _load_indices_status(_indices_status_path())
                 self._json_response(200, {"ok": True, "status": status})
+                return
+
+            if normalized_path == market_status_path:
+                market = _load_indices_market(_indices_market_path())
+                if not market:
+                    market = {"image_url": "", "analysis_text": "", "updated_at": ""}
+                self._json_response(200, {"ok": True, "market": market})
                 return
 
             if normalized_path == keywords_list_path:
