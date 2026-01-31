@@ -34,6 +34,7 @@ class PremiumBriefGenerator:
     def __init__(self, config):
         if not config.gemini_api_key:
             raise ValueError("GEMINI_API_KEY is required for premium reports")
+        self.config = config
         genai.configure(api_key=config.gemini_api_key)
         self.model = genai.GenerativeModel(
             config.gemini_model,
