@@ -1131,7 +1131,7 @@ class Reporter:
                     if not line:
                         continue
                     try:
-                        entry = json.loads(line)
+                        entry = json.loads(line))
                     except json.JSONDecodeError:
                         continue
                     if isinstance(entry, dict):
@@ -2125,6 +2125,68 @@ class Reporter:
             compact = raw
         return self._truncate_text(compact, limit)
 
+    def _strip_view_suffix(self, report_id):
+        rid = str(report_id or "").strip()
+        if not rid:
+            return ""
+        return re.sub(r"[-_](policy|industry|capital)$", "", rid, flags=re.I)
+
+    def _ensure_subject_title(self, text, lang="zh"):
+        title = str(text or "").strip()
+        if not title:
+            return title
+        if lang != "zh":
+            return title
+        if title.startswith(("投资者", "企业", "政府", "美国", "中国", "欧盟", "市场", "供应链")):
+            return title
+        verbs = (
+            "减持",
+            "布局",
+            "锁定",
+            "关注",
+            "对冲",
+            "加仓",
+            "增持",
+            "回避",
+            "规避",
+            "增加",
+            "降低",
+            "提高",
+            "转向",
+            "暂停",
+            "延后",
+            "优先",
+            "追踪",
+            "监测",
+            "配置",
+            "分散",
+            "买入",
+            "卖出",
+            "削减",
+            "加快",
+            "稳健",
+            "保守",
+            "谨慎",
+            "拉长",
+            "收缩",
+            "备份",
+            "启动",
+            "推进",
+        )
+        if title.startswith(verbs):
+            return f"投资者建议：{title}"
+        return title
+
+    def _clean_preview_text(self, text):
+        cleaned = str(text or "").strip()
+        if not cleaned:
+            return ""
+        cleaned = re.sub(r"[;；]{2,}", "；", cleaned)
+        cleaned = re.sub(r"([。.!?])\s*[;；]+\s*", r"\1 ", cleaned)
+        cleaned = re.sub(r"[;；]\s*([。.!?])", r"\1", cleaned)
+        cleaned = re.sub(r"\s{2,}", " ", cleaned)
+        return cleaned.strip()
+
     def _render_daily_report(self, daily_report, lang="zh", compact=False):
         title = "每日情报综合报告" if lang == "zh" else "Daily Intelligence Report"
         if not daily_report:
@@ -2146,26 +2208,7 @@ class Reporter:
         bullets = daily_report.get("bullets") or []
 
         if compact:
-            lower_body = body.lower()
-            hide_bullets = False
-            if body:
-                if "今日要点" in body or "要点：" in body or "要点:" in body:
-                    hide_bullets = True
-                if "highlights" in lower_body:
-                    hide_bullets = True
-                if not hide_bullets and bullets:
-                    norm_body = re.sub(r"\s+", "", lower_body)
-                    for bullet in bullets:
-                        text = str(bullet).strip()
-                        if len(text) < 6:
-                            continue
-                        norm_bullet = re.sub(r"\s+", "", text.lower())
-                        if norm_bullet and norm_bullet in norm_body:
-                            hide_bullets = True
-                            break
-            body = self._truncate_text(body, 200)
-            if hide_bullets:
-                bullets = []
+            bullets = []
 
         body = html.escape(body)
 
@@ -2202,8 +2245,24 @@ class Reporter:
             preview_label = "报告包含" if lang == "zh" else "Includes"
             reason_label_html = f'<span class="label-gray">{reason_label}</span>'
             preview_label_html = f'<span class="label-gray">{preview_label}</span>'
+            hint_html = ""
+            if lang == "zh" and len(premium_items) >= 3:
+                base_ids = []
+                for entry in premium_items[:3]:
+                    base = self._strip_view_suffix(entry.get("report_id", ""))
+                    if not base:
+                        base_ids = []
+                        break
+                    base_ids.append(base.lower())
+                if len(base_ids) == 3 and len(set(base_ids)) == 1:
+                    hint_html = (
+                        '<div class="meta top3-hint">'
+                        '本期为重大事件三视角（资本 / 产业 / 政策）'
+                        '</div>'
+                    )
             for item in premium_items[:3]:
-                title = html.escape(item.get("title", ""))
+                title_raw = self._ensure_subject_title(item.get("title", ""), lang=lang)
+                title = html.escape(title_raw)
                 value_raw = item.get("value", "")
                 value_text = (
                     self._compact_value_text(value_raw, lang=lang)
@@ -2211,7 +2270,8 @@ class Reporter:
                     else str(value_raw or "")
                 )
                 value = html.escape(value_text)
-                preview = html.escape(item.get("preview", ""))
+                preview_text = self._clean_preview_text(item.get("preview", ""))
+                preview = html.escape(preview_text)
                 price = item.get("price", 9)
                 unlock = item.get("unlock") or "mailto:sentinel@dataspices.com"
                 btn_label = (
@@ -2231,7 +2291,7 @@ class Reporter:
                     "</div>"
                 )
                 blocks.append(block)
-            return "".join(blocks)
+            return f"{hint_html}{''.join(blocks)}"
 
         today_items = [item for item in items if self._is_today(item)]
         if not today_items:
@@ -2248,7 +2308,7 @@ class Reporter:
         blocks = []
         subdir = "cn" if lang == "zh" else "en"
         for item in top_items:
-            title = html.escape(item.get("title", ""))
+            title = html.escape(self._ensure_subject_title(item.get("title", ""), lang=lang))
             reason_raw = item.get("expert_summary", "") or item.get("summary", "")
             reason_text = (
                 self._compact_value_text(reason_raw, lang=lang)
