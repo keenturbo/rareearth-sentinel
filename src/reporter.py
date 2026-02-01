@@ -478,7 +478,10 @@ class Reporter:
         items = index_data.get("items", [])
         cards_html = self._render_cards(items, lang=lang)
         stats = index_data.get("stats", {})
-        daily_report_html = self._render_daily_report(daily_report, lang=lang)
+        compact_home = not archive_month and not index_data.get("is_news")
+        daily_report_html = self._render_daily_report(
+            daily_report, lang=lang, compact=compact_home
+        )
         daily_brief = self._render_daily_brief(items, lang=lang)
         archive_nav = self._render_archive_nav(
             index_data.get("archives", []),
@@ -487,7 +490,9 @@ class Reporter:
             lang=lang,
         )
         rollups_html = self._render_rollups(index_data.get("rollups", {}), lang=lang)
-        premium_html = self._render_premium(index_data.get("premium", []), items, lang=lang)
+        premium_html = self._render_premium(
+            index_data.get("premium", []), items, lang=lang, compact=compact_home
+        )
         index_watch_html = self._render_index_watch(
             index_watch or index_data.get("index_watch", {}), lang=lang
         )
@@ -2095,7 +2100,32 @@ class Reporter:
             )
         return report
 
-    def _render_daily_report(self, daily_report, lang="zh"):
+    def _truncate_text(self, text, limit):
+        text = str(text or "").strip()
+        if not text or not limit:
+            return text
+        if len(text) <= limit:
+            return text
+        return text[:limit].rstrip("，。;；, .") + "…"
+
+    def _compact_value_text(self, text, lang="zh", limit=120, max_bullets=2):
+        raw = str(text or "").strip()
+        if not raw:
+            return ""
+        lines = [line.strip() for line in raw.splitlines() if line.strip()]
+        bullet_lines = []
+        for line in lines:
+            if line.startswith(("-", "•", "·", "*")):
+                bullet_lines.append(re.sub(r"^[\-\*\•·\—]+\s*", "", line).strip())
+        if bullet_lines:
+            keep = [line for line in bullet_lines[:max_bullets] if line]
+            sep = "；" if lang == "zh" else "; "
+            compact = sep.join(keep)
+        else:
+            compact = raw
+        return self._truncate_text(compact, limit)
+
+    def _render_daily_report(self, daily_report, lang="zh", compact=False):
         title = "每日情报综合报告" if lang == "zh" else "Daily Intelligence Report"
         if not daily_report:
             empty = "今日暂无综合报告" if lang == "zh" else "No report for today."
@@ -2111,8 +2141,33 @@ class Reporter:
         note_html = (
             f'<div class="daily-note">{html.escape(note)}</div>' if note else ""
         )
-        body = html.escape(daily_report.get("body", "").strip())
+        raw_body = str(daily_report.get("body", "")).strip()
+        body = raw_body
         bullets = daily_report.get("bullets") or []
+
+        if compact:
+            lower_body = body.lower()
+            hide_bullets = False
+            if body:
+                if "今日要点" in body or "要点：" in body or "要点:" in body:
+                    hide_bullets = True
+                if "highlights" in lower_body:
+                    hide_bullets = True
+                if not hide_bullets and bullets:
+                    norm_body = re.sub(r"\s+", "", lower_body)
+                    for bullet in bullets:
+                        text = str(bullet).strip()
+                        if len(text) < 6:
+                            continue
+                        norm_bullet = re.sub(r"\s+", "", text.lower())
+                        if norm_bullet and norm_bullet in norm_body:
+                            hide_bullets = True
+                            break
+            body = self._truncate_text(body, 200)
+            if hide_bullets:
+                bullets = []
+
+        body = html.escape(body)
 
         headline_html = (
             f'<div class="daily-headline">{headline}</div>'
@@ -2140,7 +2195,7 @@ class Reporter:
             f"{bullets_html}"
         )
 
-    def _render_premium(self, premium_items, items, lang="zh"):
+    def _render_premium(self, premium_items, items, lang="zh", compact=False):
         if premium_items:
             blocks = []
             reason_label = "价值" if lang == "zh" else "Why it matters"
@@ -2149,7 +2204,13 @@ class Reporter:
             preview_label_html = f'<span class="label-gray">{preview_label}</span>'
             for item in premium_items[:3]:
                 title = html.escape(item.get("title", ""))
-                value = html.escape(item.get("value", ""))
+                value_raw = item.get("value", "")
+                value_text = (
+                    self._compact_value_text(value_raw, lang=lang)
+                    if compact
+                    else str(value_raw or "")
+                )
+                value = html.escape(value_text)
                 preview = html.escape(item.get("preview", ""))
                 price = item.get("price", 9)
                 unlock = item.get("unlock") or "mailto:sentinel@dataspices.com"
@@ -2188,7 +2249,13 @@ class Reporter:
         subdir = "cn" if lang == "zh" else "en"
         for item in top_items:
             title = html.escape(item.get("title", ""))
-            reason = html.escape(item.get("expert_summary", "") or item.get("summary", ""))
+            reason_raw = item.get("expert_summary", "") or item.get("summary", "")
+            reason_text = (
+                self._compact_value_text(reason_raw, lang=lang)
+                if compact
+                else str(reason_raw or "")
+            )
+            reason = html.escape(reason_text)
             reason_label = "价值" if lang == "zh" else "Why it matters"
             reason_label_html = f'<span class="label-gray">{reason_label}</span>'
             btn_label = "解锁深度报告" if lang == "zh" else "Unlock Deep Report"
