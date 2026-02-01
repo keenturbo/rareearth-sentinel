@@ -92,6 +92,8 @@ header.topbar{display:flex;justify-content:space-between;align-items:center;marg
 .idx-up{color:#dc2626;font-weight:600}
 .idx-down{color:#16a34a;font-weight:600}
 .idx-flat{color:#64748b;font-weight:600}
+.index-market-meta{font-size:12px;color:var(--muted);margin-bottom:8px}
+.index-market-img{width:100%;max-width:100%;border:1px solid #e5e7eb;border-radius:8px}
 .news-more{margin:12px 0;text-align:center}
 .news-more a{display:inline-block;font-size:12px;color:var(--accent);text-decoration:none}
 .news-more a:hover{text-decoration:underline}
@@ -193,9 +195,8 @@ header.topbar{display:flex;justify-content:space-between;align-items:center;marg
     {{ROLLUPS}}
   </section>
 
-  <section class="section">
-    {{INDEX_WATCH}}
-  </section>
+  {{INDEX_MARKET_SECTION}}
+  {{INDEX_WATCH_SECTION}}
 
   <section class="section" id="status-section">
     <div class="section-title">运行状态</div>
