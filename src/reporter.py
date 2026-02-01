@@ -1131,7 +1131,7 @@ class Reporter:
                     if not line:
                         continue
                     try:
-                        entry = json.loads(line))
+                        entry = json.loads(line)
                     except json.JSONDecodeError:
                         continue
                     if isinstance(entry, dict):
