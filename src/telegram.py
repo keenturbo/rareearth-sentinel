@@ -293,7 +293,7 @@ def post_telegram_records(records, config, lang="zh"):
         return 0, 0
     base_url = (getattr(config, "site_base_url", "") or "").strip()
     if not base_url:
-        base_url = "https://sentinel.dataspices.com"
+        base_url = "https://rareearthsentinel.com"
 
     total = 0
     posted = 0
@@ -330,7 +330,7 @@ def post_telegram_top3_due(config, now_dt=None):
 
     base_url = (getattr(config, "site_base_url", "") or "").strip()
     if not base_url:
-        base_url = "https://sentinel.dataspices.com"
+        base_url = "https://rareearthsentinel.com"
 
     posted = 0
     total = 0
