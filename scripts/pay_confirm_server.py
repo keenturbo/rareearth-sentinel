@@ -137,7 +137,7 @@ def _format_tier(amount):
 def _paypal_return_urls(config, order_type, report_id):
     base = _normalize_base(getattr(config, "site_base_url", ""))
     if not base:
-        base = "https://sentinel.dataspices.com"
+        base = "https://rareearthsentinel.com"
     if str(order_type) == "task":
         path = f"/en/task/pay/{report_id}.html"
     else:
