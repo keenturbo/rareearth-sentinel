@@ -165,7 +165,7 @@ class Config:
             static_dir=_get_env("STATIC_DIR", "static"),
             templates_dir=_get_env("TEMPLATES_DIR", "templates"),
             site_base_url=_get_env(
-                "SITE_BASE_URL", "https://sentinel.dataspices.com"
+                "SITE_BASE_URL", "https://rareearthsentinel.com"
             ),
             keywords_file=_get_env("KEYWORDS_FILE", "config/keywords.txt"),
             sources=_get_list("SOURCES", ["google_news"]),
