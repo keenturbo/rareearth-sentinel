@@ -16,10 +16,11 @@ header .sub{font-size:12px;color:var(--muted)}
 .header-links a{text-decoration:none;color:var(--muted)}
 .header-links a:hover{color:var(--accent)}
 .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.column{display:flex;flex-direction:column;gap:16px}
 .section{background:#fff;border-radius:12px;padding:16px;box-shadow:0 6px 14px rgba(0,0,0,0.05)}
 .section-title{font-weight:600;margin-bottom:4px}
 .meta{font-size:12px;color:var(--muted);margin-bottom:8px}
-textarea{width:100%;min-height:280px;border:1px solid #e2e8f0;border-radius:10px;padding:10px;font-size:12px;line-height:1.5;color:#0b1220;resize:vertical;background:#f9fbff}
+textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px;padding:10px;font-size:12px;line-height:1.5;color:#0b1220;resize:vertical;background:#f9fbff}
 .actions{display:flex;align-items:center;gap:8px;margin-top:10px}
 .btn{font-size:12px;border:1px solid #d1d5db;background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -52,25 +53,49 @@ textarea{width:100%;min-height:280px;border:1px solid #e2e8f0;border-radius:10px
   </header>
 
   <div class="grid">
-    <section class="section">
-      <div class="section-title">中文社媒文案</div>
-      <div class="meta">适合雪球 / 微博 / 公众号 · 已含 Emoji 与链接</div>
-      <textarea id="copy-cn" readonly>{{SOCIAL_COPY_CN}}</textarea>
-      <div class="actions">
-        <button class="btn primary" data-copy="copy-cn" data-status="status-cn">一键复制中文</button>
-        <span class="copy-status" id="status-cn"></span>
-      </div>
-    </section>
+    <div class="column">
+      <section class="section">
+        <div class="section-title">中文外链版</div>
+        <div class="meta">适合雪球 / 微博 / 公众号 · 含链接 + 私信提示</div>
+        <textarea id="copy-cn-link" readonly>{{SOCIAL_COPY_CN_LINK}}</textarea>
+        <div class="actions">
+          <button class="btn primary" data-copy="copy-cn-link" data-status="status-cn-link">复制外链版</button>
+          <span class="copy-status" id="status-cn-link"></span>
+        </div>
+      </section>
 
-    <section class="section">
-      <div class="section-title">English Social Copy</div>
-      <div class="meta">For LinkedIn / X · Emoji + hashtags included</div>
-      <textarea id="copy-en" readonly>{{SOCIAL_COPY_EN}}</textarea>
-      <div class="actions">
-        <button class="btn primary" data-copy="copy-en" data-status="status-en">Copy English</button>
-        <span class="copy-status" id="status-en"></span>
-      </div>
-    </section>
+      <section class="section">
+        <div class="section-title">中文私信版</div>
+        <div class="meta">适合雪球禁外链场景 · 无链接版本</div>
+        <textarea id="copy-cn-dm" readonly>{{SOCIAL_COPY_CN_DM}}</textarea>
+        <div class="actions">
+          <button class="btn primary" data-copy="copy-cn-dm" data-status="status-cn-dm">复制私信版</button>
+          <span class="copy-status" id="status-cn-dm"></span>
+        </div>
+      </section>
+    </div>
+
+    <div class="column">
+      <section class="section">
+        <div class="section-title">English (With Link)</div>
+        <div class="meta">For LinkedIn / X · Includes link + DM line</div>
+        <textarea id="copy-en-link" readonly>{{SOCIAL_COPY_EN_LINK}}</textarea>
+        <div class="actions">
+          <button class="btn primary" data-copy="copy-en-link" data-status="status-en-link">Copy Link Version</button>
+          <span class="copy-status" id="status-en-link"></span>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-title">English (DM Version)</div>
+        <div class="meta">No link · Short version for LinkedIn / X</div>
+        <textarea id="copy-en-dm" readonly>{{SOCIAL_COPY_EN_DM}}</textarea>
+        <div class="actions">
+          <button class="btn primary" data-copy="copy-en-dm" data-status="status-en-dm">Copy DM Version</button>
+          <span class="copy-status" id="status-en-dm"></span>
+        </div>
+      </section>
+    </div>
   </div>
 </div>
 <script>

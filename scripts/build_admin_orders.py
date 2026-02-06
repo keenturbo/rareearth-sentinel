@@ -14,6 +14,21 @@ from src.config import Config
 from src.utils import now_cst, isoformat
 
 
+SOCIAL_PREFIXES_CN = ["要点：", "要点:", "要点", "今日要点：", "今日要点", "要点摘要：", "要点摘要"]
+SOCIAL_PREFIXES_EN = [
+    "tl;dr:",
+    "tl;dr",
+    "key angles:",
+    "key angles",
+    "key points:",
+    "key points",
+    "highlights:",
+    "highlights",
+    "summary:",
+    "summary",
+]
+
+
 def _read_jsonl(path):
     entries = {}
     if not os.path.exists(path):
@@ -276,11 +291,36 @@ def _read_json(path):
     return data if isinstance(data, dict) else {}
 
 
-def _short_line(text, limit=80):
+def _strip_prefix(text, prefixes):
     raw = str(text or "").strip()
     if not raw:
         return ""
+    lowered = raw.lower()
+    for prefix in prefixes:
+        if lowered.startswith(prefix.lower()):
+            raw = raw[len(prefix) :].lstrip(" :：-—•*\t")
+            break
+    raw = re.sub(r"^[\-\*\u2022]+\s*", "", raw)
+    return raw.strip()
+
+
+def _normalize_punct(text):
+    if not text:
+        return ""
+    return (
+        text.replace("。;", "。")
+        .replace("；;", "；")
+        .replace(".;", ".")
+        .replace(";;", ";")
+    )
+
+
+def _short_social_line(text, limit=80, prefixes=None):
+    raw = _strip_prefix(text, prefixes or [])
+    if not raw:
+        return ""
     raw = re.sub(r"\s+", " ", raw)
+    raw = _normalize_punct(raw)
     for sep in ("。", ".", "；", ";", "！", "!", "？", "?"):
         if sep in raw:
             raw = raw.split(sep)[0].strip()
@@ -290,16 +330,61 @@ def _short_line(text, limit=80):
     return raw
 
 
-def _emoji_for_report_id(report_id, idx):
+def _first_text(value):
+    if isinstance(value, list):
+        for item in value:
+            text = str(item or "").strip()
+            if text:
+                return text
+    if isinstance(value, str):
+        return value.strip()
+    return ""
+
+
+def _extract_daily_headline(daily, fallback):
+    if not isinstance(daily, dict):
+        return fallback
+    for key in ("headline", "title", "summary_title", "summary", "headline_zh", "headline_en"):
+        value = daily.get(key)
+        if value:
+            return str(value).strip()
+    return fallback
+
+
+def _extract_opportunity(daily):
+    if not isinstance(daily, dict):
+        return ""
+    for key in (
+        "strategy",
+        "strategies",
+        "tactics",
+        "tactical",
+        "actionable_strategy",
+        "actionable_strategies",
+        "actionable_tactics",
+    ):
+        text = _first_text(daily.get(key))
+        if text:
+            return text
+    return ""
+
+
+def _angle_meta(report_id, idx, lang="zh"):
     rid = str(report_id or "").lower()
-    if re.search(r"(?:-|_)capital$", rid):
-        return "💰"
-    if re.search(r"(?:-|_)industry$", rid):
-        return "🏭"
     if re.search(r"(?:-|_)policy$", rid):
-        return "📜"
-    defaults = ["🔹", "🔸", "⭐"]
-    return defaults[idx % len(defaults)]
+        return "📜", "政策" if lang == "zh" else "Policy"
+    if re.search(r"(?:-|_)industry$", rid):
+        return "🏭", "产业" if lang == "zh" else "Industry"
+    if re.search(r"(?:-|_)capital$", rid):
+        return "💰", "资本" if lang == "zh" else "Capital"
+    fallback_labels = [
+        ("📜", "政策" if lang == "zh" else "Policy"),
+        ("🏭", "产业" if lang == "zh" else "Industry"),
+        ("💰", "资本" if lang == "zh" else "Capital"),
+    ]
+    if idx < len(fallback_labels):
+        return fallback_labels[idx]
+    return "🔹", "要点" if lang == "zh" else "Angle"
 
 
 def _build_pay_link(base_url, subdir, report_id):
@@ -313,71 +398,99 @@ def _build_pay_link(base_url, subdir, report_id):
     return f"/{subdir}/pay/{report_id}.html"
 
 
-def _build_social_copy_cn(top3, site_base_url):
+def _build_social_copy_cn(top3, daily, site_base_url):
     items = top3.get("items") if isinstance(top3, dict) else []
     if not items:
-        return "今日 Top3 尚未生成，请稍后再试。"
+        msg = "今日 Top3 尚未生成，请稍后再试。"
+        return msg, msg
+
     first = items[0] if items else {}
-    first_title = str(first.get("title_zh") or first.get("title_en") or "稀土情报").strip()
-    lines = [f"【重磅】{first_title}", "今日稀土情报要点："]
+    fallback_title = str(first.get("title_zh") or first.get("title_en") or "稀土情报").strip()
+    headline = _extract_daily_headline(daily, fallback_title)
+
+    lines = [f"【重磅】{headline}", "", "要点"]
 
     for idx, item in enumerate(items[:3]):
-        title = str(item.get("title_zh") or item.get("title_en") or "关键事件").strip()
-        value = _short_line(
+        raw = (
             item.get("value_zh")
             or item.get("report_contains_zh")
             or item.get("value_en")
-            or item.get("report_contains_en"),
-            limit=80,
+            or item.get("report_contains_en")
         )
-        emoji = _emoji_for_report_id(item.get("report_id"), idx)
-        if value:
-            lines.append(f"{emoji} {title}：{value}")
+        angle = _short_social_line(raw, limit=60, prefixes=SOCIAL_PREFIXES_CN)
+        if not angle:
+            angle = _short_social_line(item.get("title_zh") or item.get("title_en"), limit=60)
+        emoji, label = _angle_meta(item.get("report_id"), idx, lang="zh")
+        if angle:
+            lines.append(f"{emoji} {label}：{angle}")
         else:
-            lines.append(f"{emoji} {title}")
+            lines.append(f"{emoji} {label}")
 
+    opportunity = _extract_opportunity(daily)
+    opportunity = _short_social_line(opportunity, limit=80)
+    if opportunity:
+        lines.extend(["", f"机会窗口：{opportunity}"])
+
+    link_lines = list(lines)
     report_id = first.get("report_id")
     link = _build_pay_link(site_base_url, "cn", report_id)
     if link:
-        lines.append("👉 完整报告（含阈值/情景/行动清单）：")
-        lines.append(link)
-    lines.append("#稀土 #关键矿产 #供应链")
-    return "\n".join(lines)
+        link_lines.extend(["", "👉 完整报告（含阈值/情景/行动清单）：", link])
+    link_lines.extend(["私信回复【稀土】获取完整版", "#稀土 #关键矿产 #供应链"])
+
+    dm_lines = list(lines)
+    dm_lines.extend(["", "私信回复【稀土】获取完整版", "#稀土 #关键矿产 #供应链"])
+
+    return "\n".join(link_lines), "\n".join(dm_lines)
 
 
-def _build_social_copy_en(top3, site_base_url):
+def _build_social_copy_en(top3, daily, site_base_url):
     items = top3.get("items") if isinstance(top3, dict) else []
     if not items:
-        return "Top 3 not ready yet. Please check later."
+        msg = "Top 3 not ready yet. Please check later."
+        return msg, msg
+
     first = items[0] if items else {}
-    first_title = str(first.get("title_en") or first.get("title_zh") or "Rare Earth Signals").strip()
-    lines = ["Rare Earth Signals | Top 3", f"Lead: {first_title}", "Key angles:"]
+    fallback_title = str(first.get("title_en") or first.get("title_zh") or "Rare Earth Signals").strip()
+    headline = _extract_daily_headline(daily, fallback_title)
+
+    lines = ["Rare Earth Signals | Top 3", f"Lead: {headline}", "", "Key angles"]
 
     for idx, item in enumerate(items[:3]):
-        title = str(item.get("title_en") or item.get("title_zh") or "Key event").strip()
-        value = _short_line(
+        raw = (
             item.get("value_en")
             or item.get("report_contains_en")
             or item.get("value_zh")
-            or item.get("report_contains_zh"),
-            limit=120,
+            or item.get("report_contains_zh")
         )
-        emoji = _emoji_for_report_id(item.get("report_id"), idx)
-        if value:
-            lines.append(f"{emoji} {title}: {value}")
+        angle = _short_social_line(raw, limit=140, prefixes=SOCIAL_PREFIXES_EN)
+        if not angle:
+            angle = _short_social_line(item.get("title_en") or item.get("title_zh"), limit=140)
+        emoji, label = _angle_meta(item.get("report_id"), idx, lang="en")
+        if angle:
+            lines.append(f"{emoji} {label}: {angle}")
         else:
-            lines.append(f"{emoji} {title}")
+            lines.append(f"{emoji} {label}")
 
+    opportunity = _extract_opportunity(daily)
+    opportunity = _short_social_line(opportunity, limit=140)
+    if opportunity:
+        lines.extend(["", f"Opportunity: {opportunity}"])
+
+    link_lines = list(lines)
     report_id = first.get("report_id")
     link = _build_pay_link(site_base_url, "en", report_id)
     if link:
-        lines.append("Full report (scenarios, thresholds, actions):")
-        lines.append(link)
-    lines.append("#RareEarth #CriticalMinerals #SupplyChain")
-    return "\n".join(lines)
+        link_lines.extend(["", "Full report:", link])
+    link_lines.extend(["DM for full report", "#RareEarth #CriticalMinerals #SupplyChain"])
+
+    dm_lines = list(lines)
+    dm_lines.extend(["", "DM for full report", "#RareEarth #CriticalMinerals #SupplyChain"])
+
+    return "\n".join(link_lines), "\n".join(dm_lines)
 
 
-def _build_social_page(template_path, output_path, social_cn, social_en):
+def _build_social_page(template_path, output_path, social_cn_link, social_cn_dm, social_en_link, social_en_dm):
     if not os.path.exists(template_path):
         return
     with open(template_path, "r", encoding="utf-8") as f:
@@ -385,8 +498,10 @@ def _build_social_page(template_path, output_path, social_cn, social_en):
 
     html_out = (
         template.replace("{{LAST_UPDATE}}", isoformat(now_cst()))
-        .replace("{{SOCIAL_COPY_CN}}", html.escape(social_cn))
-        .replace("{{SOCIAL_COPY_EN}}", html.escape(social_en))
+        .replace("{{SOCIAL_COPY_CN_LINK}}", html.escape(social_cn_link))
+        .replace("{{SOCIAL_COPY_CN_DM}}", html.escape(social_cn_dm))
+        .replace("{{SOCIAL_COPY_EN_LINK}}", html.escape(social_en_link))
+        .replace("{{SOCIAL_COPY_EN_DM}}", html.escape(social_en_dm))
     )
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -473,10 +588,21 @@ def main():
     social_template = os.path.join(config.templates_dir, "admin_social.html")
     social_output = os.path.join(config.static_dir, "cn", "admin", "social", "index.html")
     top3_path = os.path.join(config.data_dir, "status", "top3_list.json")
+    daily_zh_path = os.path.join(config.data_dir, "status", "daily_report_zh.json")
+    daily_en_path = os.path.join(config.data_dir, "status", "daily_report_en.json")
     top3_data = _read_json(top3_path)
-    social_cn = _build_social_copy_cn(top3_data, config.site_base_url)
-    social_en = _build_social_copy_en(top3_data, config.site_base_url)
-    _build_social_page(social_template, social_output, social_cn, social_en)
+    daily_zh = _read_json(daily_zh_path)
+    daily_en = _read_json(daily_en_path)
+    social_cn_link, social_cn_dm = _build_social_copy_cn(top3_data, daily_zh, config.site_base_url)
+    social_en_link, social_en_dm = _build_social_copy_en(top3_data, daily_en, config.site_base_url)
+    _build_social_page(
+        social_template,
+        social_output,
+        social_cn_link,
+        social_cn_dm,
+        social_en_link,
+        social_en_dm,
+    )
 
     print("Admin orders pages built")
     return 0
