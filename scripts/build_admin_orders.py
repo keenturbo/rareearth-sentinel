@@ -315,6 +315,59 @@ def _normalize_punct(text):
     )
 
 
+def _compact_bullet(text, limit=80):
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+    raw = re.sub(r"\s+", " ", raw)
+    raw = _normalize_punct(raw)
+    raw = raw.strip(" \t-—:：•")
+    if limit and len(raw) > limit:
+        raw = raw[:limit].rstrip("，。;；, .") + "…"
+    return raw
+
+
+def _extract_bullets(text, prefixes=None):
+    raw = _strip_prefix(text, prefixes or [])
+    raw = raw.replace("\r", " ").replace("\n", " ")
+    raw = _normalize_punct(raw)
+    if not raw:
+        return []
+    if "•" in raw:
+        parts = [p.strip() for p in raw.split("•") if p.strip()]
+    else:
+        parts = [raw.strip()]
+    cleaned = []
+    for part in parts:
+        part = re.sub(r"^[\-\*\u2022•]+\s*", "", part)
+        part = part.strip(" \t-—:：")
+        if part:
+            cleaned.append(part)
+    return cleaned
+
+
+def _normalize_compare(text):
+    raw = re.sub(r"[^a-z0-9]+", " ", str(text or "").lower())
+    return re.sub(r"\s+", " ", raw).strip()
+
+
+def _is_similar_en(a, b):
+    na = _normalize_compare(a)
+    nb = _normalize_compare(b)
+    if not na or not nb:
+        return False
+    if na == nb or na in nb or nb in na:
+        return True
+    a_words = na.split()
+    b_words = nb.split()
+    if not a_words or not b_words:
+        return False
+    prefix_len = 8
+    ap = " ".join(a_words[:prefix_len])
+    bp = " ".join(b_words[:prefix_len])
+    return bool(ap and ap == bp)
+
+
 def _short_social_line(text, limit=80, prefixes=None):
     raw = _strip_prefix(text, prefixes or [])
     if not raw:
@@ -417,9 +470,10 @@ def _build_social_copy_cn(top3, daily, site_base_url):
             or item.get("value_en")
             or item.get("report_contains_en")
         )
-        angle = _short_social_line(raw, limit=60, prefixes=SOCIAL_PREFIXES_CN)
+        bullets = _extract_bullets(raw, prefixes=SOCIAL_PREFIXES_CN)
+        angle = _compact_bullet(bullets[0], limit=60) if bullets else ""
         if not angle:
-            angle = _short_social_line(item.get("title_zh") or item.get("title_en"), limit=60)
+            angle = _compact_bullet(item.get("title_zh") or item.get("title_en"), limit=60)
         emoji, label = _angle_meta(item.get("report_id"), idx, lang="zh")
         if angle:
             lines.append(f"{emoji} {label}：{angle}")
@@ -455,6 +509,7 @@ def _build_social_copy_en(top3, daily, site_base_url):
     headline = _extract_daily_headline(daily, fallback_title)
 
     lines = ["Rare Earth Signals | Top 3", f"Lead: {headline}", "", "Key angles"]
+    prev_angle = ""
 
     for idx, item in enumerate(items[:3]):
         raw = (
@@ -463,12 +518,17 @@ def _build_social_copy_en(top3, daily, site_base_url):
             or item.get("value_zh")
             or item.get("report_contains_zh")
         )
-        angle = _short_social_line(raw, limit=140, prefixes=SOCIAL_PREFIXES_EN)
+        bullets = _extract_bullets(raw, prefixes=SOCIAL_PREFIXES_EN)
+        candidate = bullets[0] if bullets else ""
+        if candidate and prev_angle and _is_similar_en(candidate, prev_angle) and len(bullets) > 1:
+            candidate = bullets[1]
+        angle = _compact_bullet(candidate, limit=140)
         if not angle:
-            angle = _short_social_line(item.get("title_en") or item.get("title_zh"), limit=140)
+            angle = _compact_bullet(item.get("title_en") or item.get("title_zh"), limit=140)
         emoji, label = _angle_meta(item.get("report_id"), idx, lang="en")
         if angle:
             lines.append(f"{emoji} {label}: {angle}")
+            prev_angle = angle
         else:
             lines.append(f"{emoji} {label}")
 
