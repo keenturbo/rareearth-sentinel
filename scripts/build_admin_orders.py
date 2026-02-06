@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
+import html
 import json
 import os
+import re
 import sys
 from datetime import datetime
 
@@ -191,7 +193,7 @@ def _build_page(template_path, output_path, entries, reports, lang="zh", confirm
     with open(template_path, "r", encoding="utf-8") as f:
         template = f.read()
 
-    html = (
+    html_out = (
         template.replace("{{TOTAL_COUNT}}", str(len(entries)))
         .replace("{{LAST_UPDATE}}", isoformat(now_cst()))
         .replace("{{ORDERS_LIST}}", renderer(entries, reports, lang=lang))
@@ -200,7 +202,7 @@ def _build_page(template_path, output_path, entries, reports, lang="zh", confirm
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
-        f.write(html)
+        f.write(html_out)
 
 
 def _build_sources_page(template_path, output_path, lang="zh"):
@@ -209,7 +211,7 @@ def _build_sources_page(template_path, output_path, lang="zh"):
     with open(template_path, "r", encoding="utf-8") as f:
         template = f.read()
 
-    html = (
+    html_out = (
         template.replace("{{LAST_UPDATE}}", isoformat(now_cst()))
         .replace("{{SOURCES_ENDPOINT}}", "/api/admin/sources/list")
         .replace("{{SOURCES_SAVE_ENDPOINT}}", "/api/admin/sources/save")
@@ -219,7 +221,7 @@ def _build_sources_page(template_path, output_path, lang="zh"):
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
-        f.write(html)
+        f.write(html_out)
 
 
 def _build_indices_page(template_path, output_path):
@@ -228,7 +230,7 @@ def _build_indices_page(template_path, output_path):
     with open(template_path, "r", encoding="utf-8") as f:
         template = f.read()
 
-    html = (
+    html_out = (
         template.replace("{{LAST_UPDATE}}", isoformat(now_cst()))
         .replace("{{UPLOAD_ENDPOINT}}", "/api/admin/indices/upload")
         .replace("{{STATUS_ENDPOINT}}", "/api/admin/indices/status")
@@ -239,7 +241,7 @@ def _build_indices_page(template_path, output_path):
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
-        f.write(html)
+        f.write(html_out)
 
 
 def _build_keywords_page(template_path, output_path):
@@ -248,7 +250,7 @@ def _build_keywords_page(template_path, output_path):
     with open(template_path, "r", encoding="utf-8") as f:
         template = f.read()
 
-    html = (
+    html_out = (
         template.replace("{{LAST_UPDATE}}", isoformat(now_cst()))
         .replace("{{KEYWORDS_ENDPOINT}}", "/api/admin/keywords/list")
         .replace("{{CANDIDATES_ENDPOINT}}", "/api/admin/keywords/candidates")
@@ -260,7 +262,136 @@ def _build_keywords_page(template_path, output_path):
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
-        f.write(html)
+        f.write(html_out)
+
+
+def _read_json(path):
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _short_line(text, limit=80):
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+    raw = re.sub(r"\s+", " ", raw)
+    for sep in ("。", ".", "；", ";", "！", "!", "？", "?"):
+        if sep in raw:
+            raw = raw.split(sep)[0].strip()
+            break
+    if limit and len(raw) > limit:
+        raw = raw[:limit].rstrip("，。;；, .") + "…"
+    return raw
+
+
+def _emoji_for_report_id(report_id, idx):
+    rid = str(report_id or "").lower()
+    if re.search(r"(?:-|_)capital$", rid):
+        return "💰"
+    if re.search(r"(?:-|_)industry$", rid):
+        return "🏭"
+    if re.search(r"(?:-|_)policy$", rid):
+        return "📜"
+    defaults = ["🔹", "🔸", "⭐"]
+    return defaults[idx % len(defaults)]
+
+
+def _build_pay_link(base_url, subdir, report_id):
+    report_id = str(report_id or "").strip()
+    if not report_id:
+        return ""
+    base = str(base_url or "").strip()
+    if base:
+        base = base.rstrip("/")
+        return f"{base}/{subdir}/pay/{report_id}.html"
+    return f"/{subdir}/pay/{report_id}.html"
+
+
+def _build_social_copy_cn(top3, site_base_url):
+    items = top3.get("items") if isinstance(top3, dict) else []
+    if not items:
+        return "今日 Top3 尚未生成，请稍后再试。"
+    first = items[0] if items else {}
+    first_title = str(first.get("title_zh") or first.get("title_en") or "稀土情报").strip()
+    lines = [f"【重磅】{first_title}", "今日稀土情报要点："]
+
+    for idx, item in enumerate(items[:3]):
+        title = str(item.get("title_zh") or item.get("title_en") or "关键事件").strip()
+        value = _short_line(
+            item.get("value_zh")
+            or item.get("report_contains_zh")
+            or item.get("value_en")
+            or item.get("report_contains_en"),
+            limit=80,
+        )
+        emoji = _emoji_for_report_id(item.get("report_id"), idx)
+        if value:
+            lines.append(f"{emoji} {title}：{value}")
+        else:
+            lines.append(f"{emoji} {title}")
+
+    report_id = first.get("report_id")
+    link = _build_pay_link(site_base_url, "cn", report_id)
+    if link:
+        lines.append("👉 完整报告（含阈值/情景/行动清单）：")
+        lines.append(link)
+    lines.append("#稀土 #关键矿产 #供应链")
+    return "\n".join(lines)
+
+
+def _build_social_copy_en(top3, site_base_url):
+    items = top3.get("items") if isinstance(top3, dict) else []
+    if not items:
+        return "Top 3 not ready yet. Please check later."
+    first = items[0] if items else {}
+    first_title = str(first.get("title_en") or first.get("title_zh") or "Rare Earth Signals").strip()
+    lines = ["Rare Earth Signals | Top 3", f"Lead: {first_title}", "Key angles:"]
+
+    for idx, item in enumerate(items[:3]):
+        title = str(item.get("title_en") or item.get("title_zh") or "Key event").strip()
+        value = _short_line(
+            item.get("value_en")
+            or item.get("report_contains_en")
+            or item.get("value_zh")
+            or item.get("report_contains_zh"),
+            limit=120,
+        )
+        emoji = _emoji_for_report_id(item.get("report_id"), idx)
+        if value:
+            lines.append(f"{emoji} {title}: {value}")
+        else:
+            lines.append(f"{emoji} {title}")
+
+    report_id = first.get("report_id")
+    link = _build_pay_link(site_base_url, "en", report_id)
+    if link:
+        lines.append("Full report (scenarios, thresholds, actions):")
+        lines.append(link)
+    lines.append("#RareEarth #CriticalMinerals #SupplyChain")
+    return "\n".join(lines)
+
+
+def _build_social_page(template_path, output_path, social_cn, social_en):
+    if not os.path.exists(template_path):
+        return
+    with open(template_path, "r", encoding="utf-8") as f:
+        template = f.read()
+
+    html_out = (
+        template.replace("{{LAST_UPDATE}}", isoformat(now_cst()))
+        .replace("{{SOCIAL_COPY_CN}}", html.escape(social_cn))
+        .replace("{{SOCIAL_COPY_EN}}", html.escape(social_en))
+    )
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(html_out)
 
 
 def main():
@@ -338,6 +469,14 @@ def main():
     cn_keywords_template = os.path.join(config.templates_dir, "admin_keywords.html")
     cn_keywords_output = os.path.join(config.static_dir, "cn", "admin", "keywords", "index.html")
     _build_keywords_page(cn_keywords_template, cn_keywords_output)
+
+    social_template = os.path.join(config.templates_dir, "admin_social.html")
+    social_output = os.path.join(config.static_dir, "cn", "admin", "social", "index.html")
+    top3_path = os.path.join(config.data_dir, "status", "top3_list.json")
+    top3_data = _read_json(top3_path)
+    social_cn = _build_social_copy_cn(top3_data, config.site_base_url)
+    social_en = _build_social_copy_en(top3_data, config.site_base_url)
+    _build_social_page(social_template, social_output, social_cn, social_en)
 
     print("Admin orders pages built")
     return 0

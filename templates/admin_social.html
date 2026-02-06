@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>管理员 · 社媒文案</title>
+<style>
+:root{--ink:#0b1220;--muted:#536170;--bg:#f7f9fc;--card:#ffffff;--accent:#1d4ed8}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans",sans-serif;background:linear-gradient(180deg,#f7f9fc,#e9eef5);color:var(--ink)}
+.container{max-width:1100px;margin:0 auto;padding:22px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:12px;flex-wrap:wrap}
+header h1{margin:0;font-size:20px}
+header .sub{font-size:12px;color:var(--muted)}
+.header-links{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;text-align:right}
+.header-links a{text-decoration:none;color:var(--muted)}
+.header-links a:hover{color:var(--accent)}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.section{background:#fff;border-radius:12px;padding:16px;box-shadow:0 6px 14px rgba(0,0,0,0.05)}
+.section-title{font-weight:600;margin-bottom:4px}
+.meta{font-size:12px;color:var(--muted);margin-bottom:8px}
+textarea{width:100%;min-height:280px;border:1px solid #e2e8f0;border-radius:10px;padding:10px;font-size:12px;line-height:1.5;color:#0b1220;resize:vertical;background:#f9fbff}
+.actions{display:flex;align-items:center;gap:8px;margin-top:10px}
+.btn{font-size:12px;border:1px solid #d1d5db;background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.copy-status{font-size:12px;color:var(--muted)}
+@media(max-width:960px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>管理员 · 社媒文案</h1>
+      <div class="sub">更新 {{LAST_UPDATE}}</div>
+    </div>
+    <div class="sub header-links">
+      <a href="/cn/admin/orders/">报告</a>
+      <span>·</span>
+      <a href="/cn/admin/task-orders/">任务</a>
+      <span>·</span>
+      <a href="/cn/admin/sources/">信源</a>
+      <span>·</span>
+      <a href="/cn/admin/indices/">价格</a>
+      <span>·</span>
+      <a href="/cn/admin/social/">社媒</a>
+      <span>·</span>
+      <a href="/cn/admin/keywords/">关键词</a>
+      <span>·</span>
+      <a href="/cn/">返回中文首页</a>
+    </div>
+  </header>
+
+  <div class="grid">
+    <section class="section">
+      <div class="section-title">中文社媒文案</div>
+      <div class="meta">适合雪球 / 微博 / 公众号 · 已含 Emoji 与链接</div>
+      <textarea id="copy-cn" readonly>{{SOCIAL_COPY_CN}}</textarea>
+      <div class="actions">
+        <button class="btn primary" data-copy="copy-cn" data-status="status-cn">一键复制中文</button>
+        <span class="copy-status" id="status-cn"></span>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">English Social Copy</div>
+      <div class="meta">For LinkedIn / X · Emoji + hashtags included</div>
+      <textarea id="copy-en" readonly>{{SOCIAL_COPY_EN}}</textarea>
+      <div class="actions">
+        <button class="btn primary" data-copy="copy-en" data-status="status-en">Copy English</button>
+        <span class="copy-status" id="status-en"></span>
+      </div>
+    </section>
+  </div>
+</div>
+<script>
+(function(){
+  const buttons = document.querySelectorAll('[data-copy]');
+  if (!buttons.length) return;
+  const copyText = async (text) => {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    return false;
+  };
+  buttons.forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const targetId = btn.dataset.copy;
+      const statusId = btn.dataset.status;
+      const target = document.getElementById(targetId);
+      const status = document.getElementById(statusId);
+      if (!target) return;
+      const text = target.value || '';
+      const setStatus = (msg) => {
+        if (!status) return;
+        status.textContent = msg;
+        setTimeout(() => { status.textContent = ''; }, 2000);
+      };
+      try {
+        const ok = await copyText(text);
+        if (ok) {
+          setStatus('已复制');
+          return;
+        }
+      } catch (err) {
+      }
+      target.focus();
+      target.select();
+      try {
+        document.execCommand('copy');
+        setStatus('已复制');
+      } catch (err) {
+        setStatus('复制失败');
+      }
+    });
+  });
+})();
+</script>
+</body>
+</html>
