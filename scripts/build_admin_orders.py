@@ -28,6 +28,59 @@ SOCIAL_PREFIXES_EN = [
     "summary",
 ]
 
+ANGLE_KEYWORDS = {
+    "zh": {
+        "政策": ["政策", "监管", "出口", "管制", "关税", "法规", "政府", "配额", "许可", "禁令", "储备"],
+        "产业": ["供应链", "产能", "生产", "加工", "分离", "冶炼", "库存", "物流", "制造", "瓶颈", "产线"],
+        "资本": ["估值", "资金", "融资", "流动性", "资本", "投资", "市值", "溢价", "并购", "股价", "现金流"],
+    },
+    "en": {
+        "Policy": [
+            "policy",
+            "regulation",
+            "export",
+            "control",
+            "tariff",
+            "sanction",
+            "government",
+            "rule",
+            "mandate",
+            "ban",
+            "license",
+            "compliance",
+            "stockpile",
+        ],
+        "Industry": [
+            "supply chain",
+            "capacity",
+            "production",
+            "processing",
+            "separation",
+            "inventory",
+            "logistics",
+            "refining",
+            "manufacturing",
+            "bottleneck",
+            "reserves",
+            "reserve",
+        ],
+        "Capital": [
+            "valuation",
+            "liquidity",
+            "funding",
+            "capital",
+            "financing",
+            "equity",
+            "multiple",
+            "market cap",
+            "investor",
+            "premium",
+            "cash flow",
+            "cashflow",
+        ],
+    },
+}
+
 
 def _read_jsonl(path):
     entries = {}
@@ -368,6 +421,25 @@ def _is_similar_en(a, b):
     return bool(ap and ap == bp)
 
 
+def _pick_angle_bullet(bullets, label, lang="zh"):
+    if not bullets:
+        return ""
+    if len(bullets) == 1:
+        return bullets[0]
+
+    keywords = ANGLE_KEYWORDS.get(lang, {}).get(label, [])
+    if not keywords:
+        return bullets[0]
+
+    for bullet in bullets:
+        haystack = str(bullet or "")
+        target = haystack.lower() if lang == "en" else haystack
+        for kw in keywords:
+            if kw in target:
+                return bullet
+    return bullets[0]
+
+
 def _short_social_line(text, limit=80, prefixes=None):
     raw = _strip_prefix(text, prefixes or [])
     if not raw:
@@ -471,10 +543,11 @@ def _build_social_copy_cn(top3, daily, site_base_url):
             or item.get("report_contains_en")
         )
         bullets = _extract_bullets(raw, prefixes=SOCIAL_PREFIXES_CN)
-        angle = _compact_bullet(bullets[0], limit=60) if bullets else ""
+        emoji, label = _angle_meta(item.get("report_id"), idx, lang="zh")
+        candidate = _pick_angle_bullet(bullets, label, lang="zh")
+        angle = _compact_bullet(candidate, limit=60) if candidate else ""
         if not angle:
             angle = _compact_bullet(item.get("title_zh") or item.get("title_en"), limit=60)
-        emoji, label = _angle_meta(item.get("report_id"), idx, lang="zh")
         if angle:
             lines.append(f"{emoji} {label}：{angle}")
         else:
@@ -519,13 +592,20 @@ def _build_social_copy_en(top3, daily, site_base_url):
             or item.get("report_contains_zh")
         )
         bullets = _extract_bullets(raw, prefixes=SOCIAL_PREFIXES_EN)
-        candidate = bullets[0] if bullets else ""
+        emoji, label = _angle_meta(item.get("report_id"), idx, lang="en")
+
+        candidate = _pick_angle_bullet(bullets, label, lang="en")
         if candidate and prev_angle and _is_similar_en(candidate, prev_angle) and len(bullets) > 1:
-            candidate = bullets[1]
+            for alt in bullets:
+                if alt == candidate:
+                    continue
+                if not _is_similar_en(alt, prev_angle):
+                    candidate = alt
+                    break
+
         angle = _compact_bullet(candidate, limit=140)
         if not angle:
             angle = _compact_bullet(item.get("title_en") or item.get("title_zh"), limit=140)
-        emoji, label = _angle_meta(item.get("report_id"), idx, lang="en")
         if angle:
             lines.append(f"{emoji} {label}: {angle}")
             prev_angle = angle
