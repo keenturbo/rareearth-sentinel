@@ -523,7 +523,24 @@ def _build_pay_link(base_url, subdir, report_id):
     return f"/{subdir}/pay/{report_id}.html"
 
 
-def _build_social_copy_cn(top3, daily, site_base_url):
+def _pick_primary_report_id(items, reports_index):
+    if not isinstance(items, list):
+        return ""
+    candidates = []
+    for item in items:
+        rid = str((item or {}).get("report_id") or "").strip()
+        if rid:
+            candidates.append(rid)
+    if not candidates:
+        return ""
+    if isinstance(reports_index, dict) and reports_index:
+        for rid in candidates:
+            if rid in reports_index:
+                return rid
+    return candidates[0]
+
+
+def _build_social_copy_cn(top3, daily, site_base_url, reports_index=None):
     items = top3.get("items") if isinstance(top3, dict) else []
     if not items:
         msg = "今日 Top3 尚未生成，请稍后再试。"
@@ -559,7 +576,7 @@ def _build_social_copy_cn(top3, daily, site_base_url):
         lines.extend(["", f"机会窗口：{opportunity}"])
 
     link_lines = list(lines)
-    report_id = first.get("report_id")
+    report_id = _pick_primary_report_id(items, reports_index or {})
     link = _build_pay_link(site_base_url, "cn", report_id)
     if link:
         link_lines.extend(["", "👉 完整报告（含阈值/情景/行动清单）：", link])
@@ -571,7 +588,7 @@ def _build_social_copy_cn(top3, daily, site_base_url):
     return "\n".join(link_lines), "\n".join(dm_lines)
 
 
-def _build_social_copy_en(top3, daily, site_base_url):
+def _build_social_copy_en(top3, daily, site_base_url, reports_index=None):
     items = top3.get("items") if isinstance(top3, dict) else []
     if not items:
         msg = "Top 3 not ready yet. Please check later."
@@ -618,7 +635,7 @@ def _build_social_copy_en(top3, daily, site_base_url):
         lines.extend(["", f"Opportunity: {opportunity}"])
 
     link_lines = list(lines)
-    report_id = first.get("report_id")
+    report_id = _pick_primary_report_id(items, reports_index or {})
     link = _build_pay_link(site_base_url, "en", report_id)
     if link:
         link_lines.extend(["", "Full report:", link])
@@ -733,8 +750,8 @@ def main():
     top3_data = _read_json(top3_path)
     daily_zh = _read_json(daily_zh_path)
     daily_en = _read_json(daily_en_path)
-    social_cn_link, social_cn_dm = _build_social_copy_cn(top3_data, daily_zh, config.site_base_url)
-    social_en_link, social_en_dm = _build_social_copy_en(top3_data, daily_en, config.site_base_url)
+    social_cn_link, social_cn_dm = _build_social_copy_cn(top3_data, daily_zh, config.site_base_url, reports)
+    social_en_link, social_en_dm = _build_social_copy_en(top3_data, daily_en, config.site_base_url, reports)
     _build_social_page(
         social_template,
         social_output,
