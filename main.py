@@ -371,6 +371,7 @@ def _build_top3_items(entries, record_map):
             action_type = record.get("action_type", "")
             risk_level = record.get("risk_level", "")
             risk_score = record.get("risk_score", "")
+            impact_score = record.get("impact_score", "")
             published_at = record.get("published_at", "")
             collected_at = record.get("collected_at", "")
         else:
@@ -399,6 +400,11 @@ def _build_top3_items(entries, record_map):
             risk_score = entry.get("risk_score", "") or entry.get(
                 "importance_score", ""
             )
+            impact_score = (
+                entry.get("impact_score", "")
+                or entry.get("impact_score_zh", "")
+                or entry.get("impact_score_en", "")
+            )
             published_at = entry.get("published_at", "")
             collected_at = entry.get("created_at", "")
         items.append(
@@ -420,6 +426,7 @@ def _build_top3_items(entries, record_map):
                 "action_type": action_type,
                 "risk_level": risk_level,
                 "risk_score": risk_score,
+                "impact_score": impact_score,
                 "published_at": published_at,
                 "collected_at": collected_at,
             }
@@ -470,13 +477,52 @@ def _load_reports_index_ids(path):
 
 
 def _normalize_punct(text):
-    return (
-        str(text or "")
-        .replace("。;", "。")
-        .replace("；;", "；")
-        .replace(".;", ".")
-        .replace(";;", ";")
-    )
+    cleaned = str(text or "")
+    replacements = [
+        ("。;", "。"),
+        ("；;", "；"),
+        (".;", "."),
+        (";;", ";"),
+        ("。；", "。"),
+        ("；。", "。"),
+    ]
+    for src, dst in replacements:
+        cleaned = cleaned.replace(src, dst)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip()
+
+
+def _clip_text(text, limit):
+    text = str(text or "").strip()
+    if not text or not limit or len(text) <= limit:
+        return text
+    return text[:limit].rstrip("，。;；, .") + "…"
+
+
+def _to_int(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _normalize_compare(text):
+    return re.sub(r"[^\w\u4e00-\u9fff]", "", str(text or "").lower())
+
+
+def _is_similar(a, b):
+    na = _normalize_compare(a)
+    nb = _normalize_compare(b)
+    if not na or not nb:
+        return False
+    if na == nb or na in nb or nb in na:
+        return True
+    sa = set(na)
+    sb = set(nb)
+    union = sa | sb
+    if not union:
+        return False
+    return (len(sa & sb) / len(union)) >= 0.72
 
 
 def _strip_top3_prefixes(text):
@@ -492,42 +538,62 @@ def _strip_top3_prefixes(text):
     return raw.strip()
 
 
-def _extract_angle_line(raw, lang="zh", limit=60):
-    text = _strip_top3_prefixes(raw)
+def _extract_angle_candidates(raw, lang="zh", limit=60):
+    text = _normalize_punct(_strip_top3_prefixes(raw))
     if not text:
-        return ""
-    text = _normalize_punct(text)
-    text = text.replace("\r", "\n")
-    parts = [seg.strip() for seg in re.split(r"[•\n]+", text) if seg.strip()]
-    if parts:
-        text = parts[0]
-    text = re.sub(r"^[\-\*\u2022]+\s*", "", text)
-    text = text.strip(" \t-—:：")
-    text = re.sub(r"\s+", " ", text)
+        return []
 
-    if lang == "zh":
-        for sep in ("。", "；", "！", "？"):
-            if sep in text:
-                text = text.split(sep)[0].strip()
-                break
-    else:
-        for sep in (".", ";", "!", "?"):
-            if sep in text:
-                text = text.split(sep)[0].strip()
-                break
+    pieces = []
+    for seg in re.split(r"[•\n]+", text):
+        seg = seg.strip()
+        if not seg:
+            continue
+        seg = re.sub(
+            r"^(政策|产业|资本|policy|industry|capital|signal\s*\d+)\s*[:：-]\s*",
+            "",
+            seg,
+            flags=re.I,
+        )
+        seg = seg.strip(" -—:：")
+        if not seg:
+            continue
+        if lang == "zh":
+            seg = re.split(r"[。！？；]", seg)[0].strip()
+        else:
+            seg = re.split(r"[.!?;]", seg)[0].strip()
+        if not seg:
+            continue
+        pieces.append(_clip_text(seg, limit))
 
-    if limit and len(text) > limit:
-        text = text[:limit].rstrip("，。;；, .") + "…"
-    return text
+    if not pieces:
+        text = text.strip(" -—:：")
+        if text:
+            pieces.append(_clip_text(text, limit))
+
+    deduped = []
+    for p in pieces:
+        if not any(_is_similar(p, q) for q in deduped):
+            deduped.append(p)
+    return deduped
 
 
-def _angle_meta(report_id, idx, lang="zh"):
+def _view_from_report_id(report_id):
     rid = str(report_id or "").lower()
     if rid.endswith("-policy") or rid.endswith("_policy"):
-        return ("📜", "政策" if lang == "zh" else "Policy")
+        return "policy"
     if rid.endswith("-industry") or rid.endswith("_industry"):
-        return ("🏭", "产业" if lang == "zh" else "Industry")
+        return "industry"
     if rid.endswith("-capital") or rid.endswith("_capital"):
+        return "capital"
+    return ""
+
+
+def _angle_meta(view, idx, lang="zh"):
+    if view == "policy":
+        return ("📜", "政策" if lang == "zh" else "Policy")
+    if view == "industry":
+        return ("🏭", "产业" if lang == "zh" else "Industry")
+    if view == "capital":
         return ("💰", "资本" if lang == "zh" else "Capital")
 
     fallback_zh = [("📜", "信号一"), ("🏭", "信号二"), ("💰", "信号三")]
@@ -536,6 +602,36 @@ def _angle_meta(report_id, idx, lang="zh"):
     if idx < len(fallback):
         return fallback[idx]
     return ("🔹", "要点" if lang == "zh" else "Signal")
+
+
+def _collect_item_candidates(item, lang="zh", line_limit=60):
+    if lang == "zh":
+        keys = ["value_zh", "report_contains_zh", "title_zh", "title"]
+    else:
+        keys = ["value_en", "report_contains_en", "title_en", "title"]
+    candidates = []
+    for key in keys:
+        value = item.get(key)
+        if not value:
+            continue
+        candidates.extend(_extract_angle_candidates(value, lang=lang, limit=line_limit))
+    deduped = []
+    for c in candidates:
+        if c and not any(_is_similar(c, x) for x in deduped):
+            deduped.append(c)
+    return deduped
+
+
+def _pick_distinct_line(candidates, used_lines):
+    for c in candidates:
+        if c and not any(_is_similar(c, u) for u in used_lines):
+            used_lines.append(c)
+            return c
+    if candidates:
+        chosen = candidates[0]
+        used_lines.append(chosen)
+        return chosen
+    return ""
 
 
 def _pick_primary_report_id(top_items, valid_report_ids):
@@ -553,7 +649,174 @@ def _pick_primary_report_id(top_items, valid_report_ids):
     return ids[0]
 
 
-def _build_home_aggregate_html(top3_data, valid_report_ids, lang="zh"):
+def _extract_topic_tokens(text, lang="zh"):
+    raw = str(text or "")
+    tokens = set()
+    if lang == "zh":
+        for t in re.findall(r"[\u4e00-\u9fff]{2,6}", raw):
+            if t not in {"今日", "重点", "专题", "报告", "包含", "信号", "建议", "机会", "窗口"}:
+                tokens.add(t)
+    for t in re.findall(r"[A-Za-z]{4,}", raw.lower()):
+        if t not in {"today", "focus", "report", "includes", "signal", "window", "action"}:
+            tokens.add(t)
+    return tokens
+
+
+def _iter_daily_actions(daily_report):
+    if not isinstance(daily_report, dict):
+        return []
+    keys = [
+        "strategy",
+        "strategic",
+        "recommendations_strategy",
+        "tactics",
+        "tactical",
+        "recommendations_tactical",
+        "action_items",
+        "bullets",
+    ]
+    out = []
+    for key in keys:
+        value = daily_report.get(key)
+        if isinstance(value, list):
+            for item in value:
+                text = str(item or "").strip()
+                if text:
+                    out.append(text)
+        elif isinstance(value, str):
+            for seg in re.split(r"[\n;；]+", value):
+                seg = seg.strip()
+                if seg:
+                    out.append(seg)
+    return out
+
+
+def _pick_opportunity_window(daily_report, topic_text, lang="zh"):
+    candidates = _iter_daily_actions(daily_report)
+    if not candidates:
+        return ""
+    topic_tokens = _extract_topic_tokens(topic_text, lang=lang)
+
+    def score_line(line):
+        norm = _normalize_compare(line)
+        score = 0
+        for token in topic_tokens:
+            if _normalize_compare(token) in norm:
+                score += 1
+        return score
+
+    best = None
+    best_score = -1
+    for line in candidates:
+        s = score_line(line)
+        if s > best_score:
+            best = line
+            best_score = s
+
+    selected = best or candidates[0]
+    selected = _normalize_punct(selected)
+    return _clip_text(selected, 66 if lang == "zh" else 140)
+
+
+def _build_evidence_anchor(items, lang="zh"):
+    anchors = []
+    title_keys = ["title_zh", "title"] if lang == "zh" else ["title_en", "title"]
+    for item in items[:3]:
+        title = ""
+        for key in title_keys:
+            value = str(item.get(key) or "").strip()
+            if value:
+                title = value
+                break
+        if not title:
+            continue
+        title = _clip_text(_normalize_punct(title), 24 if lang == "zh" else 56)
+        if title and not any(_is_similar(title, a) for a in anchors):
+            anchors.append(title)
+        if len(anchors) >= 2:
+            break
+    if lang == "zh":
+        return "；".join(anchors)
+    return "; ".join(anchors)
+
+
+def _select_top1_item(items):
+    if not items:
+        return None
+    pref = {"policy": 2, "industry": 1, "capital": 0}
+
+    def key_fn(item):
+        risk = _to_int(item.get("risk_score"))
+        impact = _to_int(item.get("impact_score"))
+        view = _view_from_report_id(item.get("report_id"))
+        return (risk, impact, pref.get(view, -1))
+
+    return sorted(items, key=key_fn, reverse=True)[0]
+
+
+def _build_home_top1_fallback(item, valid_report_ids, lang="zh"):
+    if not item:
+        if lang == "zh":
+            return '<div class="meta">暂无重点追踪</div>'
+        return '<div class="meta">No top track yet.</div>'
+
+    if lang == "zh":
+        topic_title = "今日重点专题"
+        core_label = "核心结论"
+        signal_label = "核心信号"
+        preview_label = "报告包含"
+        btn_label = "解锁深度报告"
+        subdir = "cn"
+        sep = "："
+        raw_value = "value_zh"
+        raw_preview = "report_contains_zh"
+        raw_title = "title_zh"
+        line_limit = 62
+    else:
+        topic_title = "Today's Focus"
+        core_label = "Conclusion"
+        signal_label = "Key signal"
+        preview_label = "Includes"
+        btn_label = "Unlock Deep Report"
+        subdir = "en"
+        sep = ": "
+        raw_value = "value_en"
+        raw_preview = "report_contains_en"
+        raw_title = "title_en"
+        line_limit = 140
+
+    core = _extract_angle_candidates(item.get(raw_title) or item.get("title"), lang=lang, limit=line_limit)
+    core_text = core[0] if core else (item.get("title") or "")
+
+    signal_candidates = _extract_angle_candidates(
+        item.get(raw_value) or item.get(raw_preview) or item.get("title"),
+        lang=lang,
+        limit=line_limit,
+    )
+    signal_text = signal_candidates[0] if signal_candidates else ""
+
+    preview_candidates = _extract_angle_candidates(item.get(raw_preview), lang=lang, limit=90 if lang == "zh" else 160)
+    preview_text = preview_candidates[0] if preview_candidates else ""
+
+    primary_report_id = _pick_primary_report_id([item], valid_report_ids)
+    unlock = f"/{subdir}/pay/{primary_report_id}.html" if primary_report_id else "mailto:sentinel@dataspices.com"
+
+    preview_html = ""
+    if preview_text:
+        preview_html = f'<div class="premium-preview"><span class="label-gray">{preview_label}</span>{sep}{html_lib.escape(preview_text)}</div>'
+
+    return (
+        '<div class="premium-item premium-aggregate">'
+        f'<div class="premium-topic">{html_lib.escape(topic_title)}</div>'
+        f'<div class="premium-reason"><span class="label-gray">{core_label}</span>{sep}{html_lib.escape(core_text)}</div>'
+        f'<div class="premium-reason"><span class="label-gray">{signal_label}</span>{sep}{html_lib.escape(signal_text)}</div>'
+        f'{preview_html}'
+        f'<a class="premium-btn" href="{html_lib.escape(unlock)}">{html_lib.escape(btn_label)}</a>'
+        '</div>'
+    )
+
+
+def _build_home_aggregate_html(top3_data, valid_report_ids, daily_report, lang="zh"):
     items = top3_data.get("items") if isinstance(top3_data, dict) else []
     if not isinstance(items, list) or not items:
         if lang == "zh":
@@ -562,106 +825,169 @@ def _build_home_aggregate_html(top3_data, valid_report_ids, lang="zh"):
 
     if lang == "zh":
         topic_title = "今日重点专题"
-        reason_label = "要点"
+        core_label = "核心结论"
+        view_label = "三视角"
+        opp_label = "机会窗口"
+        anchor_label = "证据锚点"
         preview_label = "报告包含"
         btn_label = "解锁深度报告"
         subdir = "cn"
         sep = "："
         line_limit = 60
-        preview_limit = 110
+        preview_limit = 96
+        min_len = 260
+        max_len = 420
         raw_key_value = "value_zh"
         raw_key_preview = "report_contains_zh"
         raw_key_title = "title_zh"
-        fallback_title = "title"
     else:
         topic_title = "Today's Focus"
-        reason_label = "Key signals"
+        core_label = "Conclusion"
+        view_label = "Three angles"
+        opp_label = "Opportunity"
+        anchor_label = "Evidence"
         preview_label = "Includes"
         btn_label = "Unlock Deep Report"
         subdir = "en"
         sep = ": "
         line_limit = 140
-        preview_limit = 180
+        preview_limit = 170
+        min_len = 220
+        max_len = 620
         raw_key_value = "value_en"
         raw_key_preview = "report_contains_en"
         raw_key_title = "title_en"
-        fallback_title = "title"
 
-    reasons = []
-    preview_text = ""
+    ordered_views = ["policy", "industry", "capital"]
+    candidates_by_view = {"policy": [], "industry": [], "capital": []}
+    pool = []
+    used = []
 
-    for idx, item in enumerate(items[:3]):
-        raw = (
-            item.get(raw_key_value)
-            or item.get(raw_key_preview)
-            or item.get(raw_key_title)
-            or item.get(fallback_title)
-            or ""
-        )
-        line = _extract_angle_line(raw, lang=lang, limit=line_limit)
+    for item in items[:3]:
+        view = _view_from_report_id(item.get("report_id"))
+        candidates = _collect_item_candidates(item, lang=lang, line_limit=line_limit)
+        if view in candidates_by_view:
+            candidates_by_view[view].extend(candidates)
+        pool.extend(candidates)
+
+    view_lines = []
+    for idx, view in enumerate(ordered_views):
+        merged_candidates = candidates_by_view.get(view, []) + pool
+        line = _pick_distinct_line(merged_candidates, used)
         if not line:
-            line = _extract_angle_line(
-                item.get(raw_key_title) or item.get(fallback_title) or "",
+            fallback_title = _extract_angle_candidates(
+                (items[idx].get(raw_key_title) if idx < len(items) else "")
+                or (items[idx].get("title") if idx < len(items) else ""),
                 lang=lang,
                 limit=line_limit,
             )
-        emoji, label = _angle_meta(item.get("report_id"), idx, lang=lang)
-        if line:
-            reasons.append(
-                f'<div class="premium-reason"><span class="label-gray">{html_lib.escape(emoji + " " + label)}</span>{sep}{html_lib.escape(line)}</div>'
-            )
-        else:
-            reasons.append(
-                f'<div class="premium-reason"><span class="label-gray">{html_lib.escape(emoji + " " + label)}</span></div>'
-            )
+            line = fallback_title[0] if fallback_title else ""
+        emoji, label = _angle_meta(view, idx, lang=lang)
+        view_lines.append((emoji, label, line))
 
-        if not preview_text:
-            candidate_preview = _extract_angle_line(
-                item.get(raw_key_preview) or "",
-                lang=lang,
-                limit=preview_limit,
-            )
-            preview_text = candidate_preview
+    if sum(1 for _, _, line in view_lines if line) < 2:
+        return _build_home_top1_fallback(_select_top1_item(items), valid_report_ids, lang=lang)
 
-    preview_html = ""
-    if preview_text:
-        preview_html = (
-            f'<div class="premium-preview"><span class="label-gray">{preview_label}</span>{sep}{html_lib.escape(preview_text)}</div>'
+    core_candidates = _extract_angle_candidates(
+        items[0].get(raw_key_title)
+        or items[0].get(raw_key_value)
+        or items[0].get("title"),
+        lang=lang,
+        limit=74 if lang == "zh" else 150,
+    )
+    core_text = core_candidates[0] if core_candidates else (items[0].get("title") or "")
+
+    topic_text = " ".join([core_text] + [line for _, _, line in view_lines if line])
+    opp_text = _pick_opportunity_window(daily_report, topic_text, lang=lang)
+    anchor_text = _build_evidence_anchor(items, lang=lang)
+
+    preview_text = ""
+    preview_candidates = _extract_angle_candidates(
+        items[0].get(raw_key_preview) or "",
+        lang=lang,
+        limit=preview_limit,
+    )
+    if preview_candidates:
+        preview_text = preview_candidates[0]
+
+    approx_len = len(core_text) + sum(len(line) for _, _, line in view_lines)
+    approx_len += len(opp_text) + len(anchor_text) + len(preview_text)
+
+    if approx_len > max_len:
+        core_text = _clip_text(core_text, 64 if lang == "zh" else 130)
+        view_lines = [
+            (emoji, label, _clip_text(line, 50 if lang == "zh" else 120))
+            for emoji, label, line in view_lines
+        ]
+        opp_text = _clip_text(opp_text, 52 if lang == "zh" else 120)
+        anchor_text = _clip_text(anchor_text, 44 if lang == "zh" else 110)
+        if lang == "zh":
+            preview_text = ""
+
+    if approx_len < min_len and not preview_text:
+        preview_candidates = _extract_angle_candidates(
+            items[0].get(raw_key_value) or "",
+            lang=lang,
+            limit=preview_limit,
         )
+        if preview_candidates:
+            preview_text = preview_candidates[0]
 
     primary_report_id = _pick_primary_report_id(items, valid_report_ids)
-    if primary_report_id:
-        unlock = f"/{subdir}/pay/{primary_report_id}.html"
-    else:
-        unlock = "mailto:sentinel@dataspices.com"
+    unlock = f"/{subdir}/pay/{primary_report_id}.html" if primary_report_id else "mailto:sentinel@dataspices.com"
 
-    reasons_html = "".join(reasons)
+    lines_html = []
+    lines_html.append(
+        f'<div class="premium-reason"><span class="label-gray">{core_label}</span>{sep}{html_lib.escape(_normalize_punct(core_text))}</div>'
+    )
+    lines_html.append(
+        f'<div class="premium-reason"><span class="label-gray">{view_label}</span></div>'
+    )
+    for emoji, label, line in view_lines:
+        lines_html.append(
+            f'<div class="premium-reason"><span class="label-gray">{html_lib.escape(emoji + " " + label)}</span>{sep}{html_lib.escape(_normalize_punct(line))}</div>'
+        )
+
+    if opp_text:
+        lines_html.append(
+            f'<div class="premium-reason"><span class="label-gray">{opp_label}</span>{sep}{html_lib.escape(_normalize_punct(opp_text))}</div>'
+        )
+    if anchor_text:
+        lines_html.append(
+            f'<div class="premium-preview"><span class="label-gray">{anchor_label}</span>{sep}{html_lib.escape(_normalize_punct(anchor_text))}</div>'
+        )
+    if preview_text:
+        lines_html.append(
+            f'<div class="premium-preview"><span class="label-gray">{preview_label}</span>{sep}{html_lib.escape(_normalize_punct(preview_text))}</div>'
+        )
+
     return (
         '<div class="premium-item premium-aggregate">'
         f'<div class="premium-topic">{html_lib.escape(topic_title)}</div>'
-        f'<div class="premium-reason"><span class="label-gray">{reason_label}</span></div>'
-        f'{reasons_html}'
-        f'{preview_html}'
+        f'{"".join(lines_html)}'
         f'<a class="premium-btn" href="{html_lib.escape(unlock)}">{html_lib.escape(btn_label)}</a>'
         '</div>'
     )
 
 
-def _replace_top_tracks_section(raw_html, section_title, aggregate_html):
-    pattern = re.compile(
-        r'(<section class="section">\s*<div class="section-title">'
-        + re.escape(section_title)
-        + r"</div>)(.*?)(</section>)",
-        re.S,
-    )
-    if not pattern.search(raw_html):
-        return raw_html, False
-    replaced = pattern.sub(
-        lambda m: f"{m.group(1)}\n    {aggregate_html}\n  {m.group(3)}",
-        raw_html,
-        count=1,
-    )
-    return replaced, True
+def _replace_top_tracks_section(raw_html, title_candidates, new_title, aggregate_html):
+    for title in title_candidates:
+        pattern = re.compile(
+            r'(<section class="section">\s*<div class="section-title">)'
+            + re.escape(title)
+            + r'(</div>)(.*?)(</section>)',
+            re.S,
+        )
+        if not pattern.search(raw_html):
+            continue
+
+        replaced = pattern.sub(
+            lambda m: f"{m.group(1)}{new_title}{m.group(2)}\n    {aggregate_html}\n  {m.group(4)}",
+            raw_html,
+            count=1,
+        )
+        return replaced, True
+    return raw_html, False
 
 
 def _postprocess_home_top_tracks(config):
@@ -673,20 +999,38 @@ def _postprocess_home_top_tracks(config):
     reports_index_path = os.path.join(config.premium_dir, "reports_index.jsonl")
     valid_report_ids = _load_reports_index_ids(reports_index_path)
 
+    daily_zh = _load_json_dict(os.path.join(config.data_dir, "status", "daily_report_zh.json"))
+    daily_en = _load_json_dict(os.path.join(config.data_dir, "status", "daily_report_en.json"))
+
     aggregate_cn = _build_home_aggregate_html(
-        top3_data, valid_report_ids, lang="zh"
+        top3_data, valid_report_ids, daily_zh, lang="zh"
     )
     aggregate_en = _build_home_aggregate_html(
-        top3_data, valid_report_ids, lang="en"
+        top3_data, valid_report_ids, daily_en, lang="en"
     )
 
     targets = [
-        (os.path.join(config.static_dir, "index.html"), "zh", "今日重点追踪（Top 3）", aggregate_cn),
-        (os.path.join(config.static_dir, "cn", "index.html"), "zh", "今日重点追踪（Top 3）", aggregate_cn),
-        (os.path.join(config.static_dir, "en", "index.html"), "en", "Top Tracks (Top 3)", aggregate_en),
+        (
+            os.path.join(config.static_dir, "index.html"),
+            ["今日重点追踪（Top 3）", "今日重点专题"],
+            "今日重点专题",
+            aggregate_cn,
+        ),
+        (
+            os.path.join(config.static_dir, "cn", "index.html"),
+            ["今日重点追踪（Top 3）", "今日重点专题"],
+            "今日重点专题",
+            aggregate_cn,
+        ),
+        (
+            os.path.join(config.static_dir, "en", "index.html"),
+            ["Top Tracks (Top 3)", "Today's Focus"],
+            "Today's Focus",
+            aggregate_en,
+        ),
     ]
 
-    for path, _lang, title, aggregate_html in targets:
+    for path, title_candidates, new_title, aggregate_html in targets:
         if not os.path.exists(path):
             continue
         try:
@@ -696,7 +1040,7 @@ def _postprocess_home_top_tracks(config):
             continue
 
         updated_html, replaced = _replace_top_tracks_section(
-            raw_html, title, aggregate_html
+            raw_html, title_candidates, new_title, aggregate_html
         )
         if not replaced:
             continue
