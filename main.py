@@ -1,4 +1,5 @@
 import argparse
+import html as html_lib
 import json
 import os
 import re
@@ -25,6 +26,22 @@ from src.telegram import post_telegram_records, post_telegram_top3_due
 CANDIDATE_CONFIDENCE_MIN = 60
 CANDIDATE_LEN_MIN = 2
 CANDIDATE_LEN_MAX = 80
+
+_TOP3_PREFIXES = [
+    "要点：",
+    "要点:",
+    "要点",
+    "今日要点：",
+    "今日要点",
+    "TL;DR:",
+    "TL;DR",
+    "Key angles:",
+    "Key angles",
+    "Key points:",
+    "Key points",
+    "Highlights:",
+    "Highlights",
+]
 
 
 def _context_lines(context_summary, limit=0):
@@ -422,6 +439,275 @@ def _write_top3_list(config, items, date_key):
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
 
+def _load_json_dict(path):
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _load_reports_index_ids(path):
+    ids = set()
+    if not os.path.exists(path):
+        return ids
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            report_id = str(row.get("report_id") or "").strip()
+            if report_id:
+                ids.add(report_id)
+    return ids
+
+
+def _normalize_punct(text):
+    return (
+        str(text or "")
+        .replace("。;", "。")
+        .replace("；;", "；")
+        .replace(".;", ".")
+        .replace(";;", ";")
+    )
+
+
+def _strip_top3_prefixes(text):
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+    lowered = raw.lower()
+    for prefix in _TOP3_PREFIXES:
+        if lowered.startswith(prefix.lower()):
+            raw = raw[len(prefix):].lstrip(" :：-—•*\t")
+            break
+    raw = re.sub(r"^[\-\*\u2022]+\s*", "", raw)
+    return raw.strip()
+
+
+def _extract_angle_line(raw, lang="zh", limit=60):
+    text = _strip_top3_prefixes(raw)
+    if not text:
+        return ""
+    text = _normalize_punct(text)
+    text = text.replace("\r", "\n")
+    parts = [seg.strip() for seg in re.split(r"[•\n]+", text) if seg.strip()]
+    if parts:
+        text = parts[0]
+    text = re.sub(r"^[\-\*\u2022]+\s*", "", text)
+    text = text.strip(" \t-—:：")
+    text = re.sub(r"\s+", " ", text)
+
+    if lang == "zh":
+        for sep in ("。", "；", "！", "？"):
+            if sep in text:
+                text = text.split(sep)[0].strip()
+                break
+    else:
+        for sep in (".", ";", "!", "?"):
+            if sep in text:
+                text = text.split(sep)[0].strip()
+                break
+
+    if limit and len(text) > limit:
+        text = text[:limit].rstrip("，。;；, .") + "…"
+    return text
+
+
+def _angle_meta(report_id, idx, lang="zh"):
+    rid = str(report_id or "").lower()
+    if rid.endswith("-policy") or rid.endswith("_policy"):
+        return ("📜", "政策" if lang == "zh" else "Policy")
+    if rid.endswith("-industry") or rid.endswith("_industry"):
+        return ("🏭", "产业" if lang == "zh" else "Industry")
+    if rid.endswith("-capital") or rid.endswith("_capital"):
+        return ("💰", "资本" if lang == "zh" else "Capital")
+
+    fallback_zh = [("📜", "信号一"), ("🏭", "信号二"), ("💰", "信号三")]
+    fallback_en = [("📜", "Signal 1"), ("🏭", "Signal 2"), ("💰", "Signal 3")]
+    fallback = fallback_zh if lang == "zh" else fallback_en
+    if idx < len(fallback):
+        return fallback[idx]
+    return ("🔹", "要点" if lang == "zh" else "Signal")
+
+
+def _pick_primary_report_id(top_items, valid_report_ids):
+    ids = []
+    for item in top_items:
+        report_id = str((item or {}).get("report_id") or "").strip()
+        if report_id:
+            ids.append(report_id)
+    if not ids:
+        return ""
+    if valid_report_ids:
+        for report_id in ids:
+            if report_id in valid_report_ids:
+                return report_id
+    return ids[0]
+
+
+def _build_home_aggregate_html(top3_data, valid_report_ids, lang="zh"):
+    items = top3_data.get("items") if isinstance(top3_data, dict) else []
+    if not isinstance(items, list) or not items:
+        if lang == "zh":
+            return '<div class="meta">暂无重点追踪</div>'
+        return '<div class="meta">No top track yet.</div>'
+
+    if lang == "zh":
+        topic_title = "今日重点专题"
+        reason_label = "要点"
+        preview_label = "报告包含"
+        btn_label = "解锁深度报告"
+        subdir = "cn"
+        sep = "："
+        line_limit = 60
+        preview_limit = 110
+        raw_key_value = "value_zh"
+        raw_key_preview = "report_contains_zh"
+        raw_key_title = "title_zh"
+        fallback_title = "title"
+    else:
+        topic_title = "Today's Focus"
+        reason_label = "Key signals"
+        preview_label = "Includes"
+        btn_label = "Unlock Deep Report"
+        subdir = "en"
+        sep = ": "
+        line_limit = 140
+        preview_limit = 180
+        raw_key_value = "value_en"
+        raw_key_preview = "report_contains_en"
+        raw_key_title = "title_en"
+        fallback_title = "title"
+
+    reasons = []
+    preview_text = ""
+
+    for idx, item in enumerate(items[:3]):
+        raw = (
+            item.get(raw_key_value)
+            or item.get(raw_key_preview)
+            or item.get(raw_key_title)
+            or item.get(fallback_title)
+            or ""
+        )
+        line = _extract_angle_line(raw, lang=lang, limit=line_limit)
+        if not line:
+            line = _extract_angle_line(
+                item.get(raw_key_title) or item.get(fallback_title) or "",
+                lang=lang,
+                limit=line_limit,
+            )
+        emoji, label = _angle_meta(item.get("report_id"), idx, lang=lang)
+        if line:
+            reasons.append(
+                f'<div class="premium-reason"><span class="label-gray">{html_lib.escape(emoji + " " + label)}</span>{sep}{html_lib.escape(line)}</div>'
+            )
+        else:
+            reasons.append(
+                f'<div class="premium-reason"><span class="label-gray">{html_lib.escape(emoji + " " + label)}</span></div>'
+            )
+
+        if not preview_text:
+            candidate_preview = _extract_angle_line(
+                item.get(raw_key_preview) or "",
+                lang=lang,
+                limit=preview_limit,
+            )
+            preview_text = candidate_preview
+
+    preview_html = ""
+    if preview_text:
+        preview_html = (
+            f'<div class="premium-preview"><span class="label-gray">{preview_label}</span>{sep}{html_lib.escape(preview_text)}</div>'
+        )
+
+    primary_report_id = _pick_primary_report_id(items, valid_report_ids)
+    if primary_report_id:
+        unlock = f"/{subdir}/pay/{primary_report_id}.html"
+    else:
+        unlock = "mailto:sentinel@dataspices.com"
+
+    reasons_html = "".join(reasons)
+    return (
+        '<div class="premium-item premium-aggregate">'
+        f'<div class="premium-topic">{html_lib.escape(topic_title)}</div>'
+        f'<div class="premium-reason"><span class="label-gray">{reason_label}</span></div>'
+        f'{reasons_html}'
+        f'{preview_html}'
+        f'<a class="premium-btn" href="{html_lib.escape(unlock)}">{html_lib.escape(btn_label)}</a>'
+        '</div>'
+    )
+
+
+def _replace_top_tracks_section(raw_html, section_title, aggregate_html):
+    pattern = re.compile(
+        r'(<section class="section">\s*<div class="section-title">'
+        + re.escape(section_title)
+        + r"</div>)(.*?)(</section>)",
+        re.S,
+    )
+    if not pattern.search(raw_html):
+        return raw_html, False
+    replaced = pattern.sub(
+        lambda m: f"{m.group(1)}\n    {aggregate_html}\n  {m.group(3)}",
+        raw_html,
+        count=1,
+    )
+    return replaced, True
+
+
+def _postprocess_home_top_tracks(config):
+    top3_path = os.path.join(config.data_dir, "status", "top3_list.json")
+    top3_data = _load_json_dict(top3_path)
+    if not top3_data.get("items"):
+        return
+
+    reports_index_path = os.path.join(config.premium_dir, "reports_index.jsonl")
+    valid_report_ids = _load_reports_index_ids(reports_index_path)
+
+    aggregate_cn = _build_home_aggregate_html(
+        top3_data, valid_report_ids, lang="zh"
+    )
+    aggregate_en = _build_home_aggregate_html(
+        top3_data, valid_report_ids, lang="en"
+    )
+
+    targets = [
+        (os.path.join(config.static_dir, "index.html"), "zh", "今日重点追踪（Top 3）", aggregate_cn),
+        (os.path.join(config.static_dir, "cn", "index.html"), "zh", "今日重点追踪（Top 3）", aggregate_cn),
+        (os.path.join(config.static_dir, "en", "index.html"), "en", "Top Tracks (Top 3)", aggregate_en),
+    ]
+
+    for path, _lang, title, aggregate_html in targets:
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                raw_html = f.read()
+        except OSError:
+            continue
+
+        updated_html, replaced = _replace_top_tracks_section(
+            raw_html, title, aggregate_html
+        )
+        if not replaced:
+            continue
+
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(updated_html)
+        except OSError:
+            continue
+
+
 def _build_context_builder(config, records):
     mode = (config.context_mode or "token").strip().lower()
     if mode == "vector":
@@ -667,6 +953,7 @@ def run_pipeline(config):
                 print(f"[top3] error: {exc}")
 
         reporter.rebuild(storage)
+        _postprocess_home_top_tracks(config)
         try:
             posted, total = post_telegram_records(new_records, config)
             if total:
@@ -696,6 +983,7 @@ def _run_rebuild(config):
     storage = Storage(config)
     reporter = Reporter(config)
     reporter.rebuild(storage)
+    _postprocess_home_top_tracks(config)
 
 
 def _run_build_datasets(config):
