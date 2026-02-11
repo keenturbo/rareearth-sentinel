@@ -55,8 +55,8 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
   <div class="grid">
     <div class="column">
       <section class="section">
-        <div class="section-title">中文外链版</div>
-        <div class="meta">适合雪球 / 微博 / 公众号 · 含链接 + 私信提示</div>
+        <div class="section-title">中文外链版（引流）</div>
+        <div class="meta">适合雪球 / 微博 / 公众号 · 钩子 + 风险提示 + 链接</div>
         <textarea id="copy-cn-link" readonly>{{SOCIAL_COPY_CN_LINK}}</textarea>
         <div class="actions">
           <button class="btn primary" data-copy="copy-cn-link" data-status="status-cn-link">复制外链版</button>
@@ -65,8 +65,8 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
       </section>
 
       <section class="section">
-        <div class="section-title">中文私信版</div>
-        <div class="meta">适合雪球禁外链场景 · 无链接版本</div>
+        <div class="section-title">中文私信版（引流）</div>
+        <div class="meta">禁外链场景 · 钩子 + 风险提示 + 私信承接</div>
         <textarea id="copy-cn-dm" readonly>{{SOCIAL_COPY_CN_DM}}</textarea>
         <div class="actions">
           <button class="btn primary" data-copy="copy-cn-dm" data-status="status-cn-dm">复制私信版</button>
@@ -77,8 +77,8 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
 
     <div class="column">
       <section class="section">
-        <div class="section-title">English (With Link)</div>
-        <div class="meta">For LinkedIn / X · Includes link + DM line</div>
+        <div class="section-title">English (Hook + Link)</div>
+        <div class="meta">For LinkedIn / X · Hook + risk note + link</div>
         <textarea id="copy-en-link" readonly>{{SOCIAL_COPY_EN_LINK}}</textarea>
         <div class="actions">
           <button class="btn primary" data-copy="copy-en-link" data-status="status-en-link">Copy Link Version</button>
@@ -87,8 +87,8 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
       </section>
 
       <section class="section">
-        <div class="section-title">English (DM Version)</div>
-        <div class="meta">No link · Short version for LinkedIn / X</div>
+        <div class="section-title">English (Hook + DM)</div>
+        <div class="meta">No link · short DM funnel version</div>
         <textarea id="copy-en-dm" readonly>{{SOCIAL_COPY_EN_DM}}</textarea>
         <div class="actions">
           <button class="btn primary" data-copy="copy-en-dm" data-status="status-en-dm">Copy DM Version</button>
@@ -100,198 +100,194 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
 </div>
 <script>
 (function(){
-  const ADVISORY_ZH = ['警惕','减持','建议','布局','关注','谨慎','增配','回避'];
-
-  const cleanPunct = (s) => (s || '')
+  const clean = (s='') => s
+    .replace(/\r/g, ' ')
+    .replace(/\u00A0/g, ' ')
     .replace(/。\s*[；;]/g, '。')
     .replace(/([。！？!?])\s*[；;]/g, '$1')
     .replace(/\.{1}\s*;/g, '.')
-    .replace(/；\s*；+/g, '；')
-    .replace(/;\s*;+/g, ';')
     .replace(/\s+/g, ' ')
     .trim();
 
-  const protectDecimals = (s) => (s || '').replace(/(\d)\.(\d)/g, '$1__DEC__$2');
-  const restoreDecimals = (s) => (s || '').replace(/__DEC__/g, '.');
+  const stripNoise = (s='') => clean(s)
+    .replace(/\bTL\s*;\s*DR\s*:\s*/ig, '')
+    .replace(/\bKey\s*angles?\s*:\s*/ig, '')
+    .replace(/^\s*(要点|三视角|Three angles|Conclusion|核心结论|Report includes)\s*[:：]?\s*/i, '')
+    .replace(/^[•\-*\u2022]+\s*/g, '')
+    .replace(/(影响路径|Impact path)\s*[:：].*$/i, '')
+    .trim();
 
-  const stripNoise = (s) => {
-    let t = (s || '').trim();
-    t = t.replace(/\bTL\s*;\s*DR\s*:\s*/ig, '');
-    t = t.replace(/^\s*(Policy|Industry|Capital|要点|三视角|Key angles?)\s*[:：]\s*/ig, '');
-    t = t.replace(/^[•\-\*\u2022]+\s*/g, '');
-    t = t.replace(/(Impact path|影响路径)\s*[:：].*$/i, '');
-    return cleanPunct(t);
+  const parseLines = (raw='') => raw.split('\n').map(x => x.trim()).filter(Boolean);
+
+  const getField = (lines, prefixes=[]) => {
+    for (const line of lines) {
+      for (const p of prefixes) {
+        if (line.startsWith(p)) return stripNoise(line.slice(p.length));
+      }
+    }
+    return '';
   };
 
-  const firstBullet = (s) => {
-    const raw = stripNoise(s || '');
-    if (!raw) return '';
-    return stripNoise(raw.split('•')[0]);
+  const getLink = (raw='') => {
+    const m = raw.match(/https?:\/\/\S+/);
+    return m ? m[0] : '';
   };
 
-  const splitFacts = (line, lang='zh') => {
-    const bodyRaw = stripNoise((line || '').replace(/^\s*(报告包含|Report includes)\s*[:：]\s*/i, ''));
-    if (!bodyRaw) return [];
+  const firstFact = (text='') => {
+    const t = stripNoise(text);
+    if (!t) return '';
+    const parts = t.split(/[；;。.!?]/).map(x => stripNoise(x)).filter(Boolean);
+    const fact = parts.find(x => /\d/.test(x)) || parts[0] || '';
+    return fact;
+  };
 
-    let body = protectDecimals(bodyRaw)
-      .replace(/\bU\.S\./g, 'US')
-      .replace(/\bU\.K\./g, 'UK')
-      .replace(/\bE\.U\./g, 'EU');
+  const norm = (s='') => stripNoise(s).toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '');
+  const similar = (a,b) => {
+    const x = norm(a), y = norm(b);
+    if (!x || !y) return false;
+    if (x === y || x.includes(y) || y.includes(x)) return true;
+    return x.slice(0, 24) === y.slice(0, 24);
+  };
 
-    const delimiter = lang === 'zh' ? /[•\n。；;]/ : /[•\n;.!?]/;
-    const rawParts = body.split(delimiter)
-      .map(x => stripNoise(restoreDecimals(x)))
-      .filter(Boolean);
+  const clipCn = (s='', n=32) => {
+    const t = stripNoise(s);
+    if (!t) return '';
+    return t.length > n ? `${t.slice(0, n).replace(/[，。；;,\s]+$/g, '')}…` : t;
+  };
 
-    const out = [];
-    for (const p of rawParts) {
-      if (!/\d/.test(p)) continue;
-      if (lang === 'zh' && ADVISORY_ZH.some(k => p.includes(k))) continue;
-      if (lang === 'en' && /\$?\d+$/.test(p)) continue;
-      if (out.some(x => x === p || x.includes(p) || p.includes(x))) continue;
-      out.push(p);
-      if (out.length >= 3) break;
+  const clipWords = (s='', n=14) => {
+    const t = stripNoise(s);
+    if (!t) return '';
+    const ws = t.split(/\s+/);
+    return ws.length > n ? `${ws.slice(0, n).join(' ').replace(/[;,\.\s]+$/g,'')}...` : t;
+  };
+
+  const enforceCn220 = (lines, limit=220) => {
+    let out = [...lines];
+    const length = () => out.join('\n').length;
+    const targets = [
+      ['💰 资本：', 28],
+      ['🏭 产业：', 28],
+      ['📜 政策：', 28],
+      ['【战争金属信号】', 24]
+    ];
+    for (const [prefix, n] of targets) {
+      if (length() <= limit) break;
+      const i = out.findIndex(x => x.startsWith(prefix));
+      if (i >= 0) {
+        const body = out[i].replace(prefix, '');
+        out[i] = prefix + clipCn(body, n);
+      }
+    }
+    if (length() > limit) {
+      out = out.filter(x => !x.startsWith('#'));
     }
     return out;
   };
 
-  const linesOf = (text) => (text || '').split('\n');
-  const joinLines = (arr) => arr.map(x => cleanPunct(x)).join('\n').replace(/\n{3,}/g, '\n\n').trim();
-
-  const findLine = (lines, prefix) => {
-    const idx = lines.findIndex(l => l.startsWith(prefix));
-    if (idx < 0) return { idx: -1, value: '' };
-    return { idx, value: stripNoise(lines[idx].slice(prefix.length)) };
+  const enforceEn120Words = (lines, limit=120) => {
+    let out = [...lines];
+    const wc = () => out.join(' ').split(/\s+/).filter(Boolean).length;
+    const reduce = (prefix, n) => {
+      const i = out.findIndex(x => x.startsWith(prefix));
+      if (i >= 0) out[i] = `${prefix}${clipWords(out[i].slice(prefix.length), n)}`;
+    };
+    if (wc() > limit) reduce('💰 Capital: ', 10);
+    if (wc() > limit) reduce('🏭 Industry: ', 10);
+    if (wc() > limit) reduce('📜 Policy: ', 10);
+    if (wc() > limit) reduce('War-Metal Signal: ', 10);
+    if (wc() > limit) out = out.filter(x => !x.startsWith('#'));
+    return out;
   };
 
-  const setLine = (lines, prefix, value) => {
-    const i = lines.findIndex(l => l.startsWith(prefix));
-    if (i >= 0) lines[i] = `${prefix}${stripNoise(value)}`;
+  const buildCnHook = (raw, withLink=true) => {
+    const lines = parseLines(raw || '');
+    if (!lines.length) return '';
+
+    let core = getField(lines, ['核心结论：', 'Conclusion:']);
+    let policy = getField(lines, ['📜 政策：', '📜 Policy:']);
+    let industry = getField(lines, ['🏭 产业：', '🏭 Industry:']);
+    let capital = getField(lines, ['💰 资本：', '💰 Capital:']);
+    const includes = getField(lines, ['报告包含：', 'Report includes:']);
+    const evidence = getField(lines, ['证据锚点：', 'Evidence anchors:']);
+    const link = getLink(raw);
+
+    const fallbackFact = firstFact(includes) || firstFact(evidence) || '关注资金、政策与供应链三条线索。';
+
+    core = clipCn(core || '所谓“战争金属”升温，先看风险阈值再行动。', 28);
+    policy = clipCn(policy || fallbackFact, 32);
+    industry = clipCn(industry || fallbackFact, 32);
+    capital = clipCn(capital || fallbackFact, 32);
+
+    if (similar(industry, policy)) industry = clipCn(firstFact(includes) || '供应链与产能结构正在重排。', 32);
+    if (similar(capital, policy) || similar(capital, industry)) capital = clipCn(firstFact(evidence) || '资金流向将分化高低质量资产。', 32);
+
+    let out = [
+      `【战争金属信号】${core}`,
+      '先看3点',
+      `📜 政策：${policy}`,
+      `🏭 产业：${industry}`,
+      `💰 资本：${capital}`,
+      '⚠️ 风险提示：不构成投资建议，请按风险承受能力决策。'
+    ];
+
+    out = enforceCn220(out, 220);
+
+    if (withLink && link) out.push('', '👉 完整版：', link);
+    out.push('私信回复【稀土】获取完整版', '#稀土 #关键矿产 #供应链');
+
+    return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
   };
 
-  const normForCompare = (s) => stripNoise(s).toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '');
-  const similar = (a, b) => {
-    const x = normForCompare(a);
-    const y = normForCompare(b);
-    if (!x || !y) return false;
-    if (x === y || x.includes(y) || y.includes(x)) return true;
-    const min = Math.min(x.length, y.length);
-    if (min < 8) return false;
-    return x.slice(0, 24) === y.slice(0, 24);
+  const buildEnHook = (raw, withLink=true) => {
+    const lines = parseLines(raw || '');
+    if (!lines.length) return '';
+
+    let core = getField(lines, ['Conclusion:', '核心结论：']);
+    let policy = getField(lines, ['📜 Policy:', '📜 政策：']);
+    let industry = getField(lines, ['🏭 Industry:', '🏭 产业：']);
+    let capital = getField(lines, ['💰 Capital:', '💰 资本：']);
+    const includes = getField(lines, ['Report includes:', '报告包含：']);
+    const evidence = getField(lines, ['Evidence anchors:', '证据锚点：']);
+    const link = getLink(raw);
+
+    const fallbackFact = clipWords(firstFact(includes) || firstFact(evidence) || 'Track policy, supply chain, and capital flow triggers.', 14);
+
+    core = clipWords(core || 'War-metal narratives are rising, but risk control matters first.', 12);
+    policy = clipWords(policy || fallbackFact, 14);
+    industry = clipWords(industry || fallbackFact, 14);
+    capital = clipWords(capital || fallbackFact, 14);
+
+    if (similar(industry, policy)) industry = clipWords(firstFact(includes) || 'Processing capacity and downstream bottlenecks are repricing.', 14);
+    if (similar(capital, policy) || similar(capital, industry)) capital = clipWords(firstFact(evidence) || 'Funding and valuation are diverging across the chain.', 14);
+
+    let out = [
+      `War-Metal Signal: ${core}`,
+      '3 things to watch:',
+      `📜 Policy: ${policy}`,
+      `🏭 Industry: ${industry}`,
+      `💰 Capital: ${capital}`,
+      '⚠️ Risk note: Not investment advice. Manage triggers and position size.'
+    ];
+
+    out = enforceEn120Words(out, 120);
+
+    if (withLink && link) out.push('', 'Full brief:', link);
+    out.push('DM for full report', '#RareEarth #CriticalMinerals #SupplyChain');
+    return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
   };
 
-  const clipZh = (s, n=60) => {
-    const t = stripNoise(firstBullet(s));
-    if (!t) return '';
-    return t.length > n ? `${t.slice(0, n).replace(/[，。；;,.\s]+$/g, '')}…` : t;
-  };
+  const cnLink = document.getElementById('copy-cn-link');
+  const cnDm = document.getElementById('copy-cn-dm');
+  const enLink = document.getElementById('copy-en-link');
+  const enDm = document.getElementById('copy-en-dm');
 
-  const clipEnWords = (s, n=20) => {
-    const t = stripNoise(firstBullet(s));
-    if (!t) return '';
-    const ws = t.split(/\s+/);
-    return ws.length > n ? `${ws.slice(0, n).join(' ').replace(/[;,.\s]+$/g, '')}...` : t;
-  };
-
-  const normalizeCnBlock = (text) => {
-    let lines = linesOf(text).map(stripNoise);
-
-    const policy = findLine(lines, '📜 政策：');
-    const industry = findLine(lines, '🏭 产业：');
-    const capital = findLine(lines, '💰 资本：');
-    const includes = findLine(lines, '报告包含：');
-    const evidence = findLine(lines, '证据锚点：');
-    const facts = splitFacts(includes.value, 'zh');
-
-    if (policy.value) setLine(lines, '📜 政策：', clipZh(policy.value));
-    if (industry.value) setLine(lines, '🏭 产业：', clipZh(industry.value));
-    if (capital.value) setLine(lines, '💰 资本：', clipZh(capital.value));
-
-    if (!capital.value) {
-      const fill = facts[0] || findLine(lines, '🏭 产业：').value || findLine(lines, '📜 政策：').value || '关注资金与估值变化。';
-      setLine(lines, '💰 资本：', clipZh(fill));
-    }
-
-    if (!findLine(lines, '📜 政策：').value && findLine(lines, '🏭 产业：').value) {
-      setLine(lines, '📜 政策：', clipZh(findLine(lines, '🏭 产业：').value));
-    }
-    if (!findLine(lines, '🏭 产业：').value && findLine(lines, '📜 政策：').value) {
-      setLine(lines, '🏭 产业：', clipZh(findLine(lines, '📜 政策：').value));
-    }
-
-    const p2 = findLine(lines, '📜 政策：').value;
-    const i2 = findLine(lines, '🏭 产业：').value;
-    const c2 = findLine(lines, '💰 资本：').value;
-
-    if (similar(i2, p2) && facts[1]) setLine(lines, '🏭 产业：', clipZh(facts[1]));
-    if ((similar(c2, p2) || similar(c2, findLine(lines, '🏭 产业：').value)) && facts[0]) {
-      const alt = facts.find(f => !similar(f, p2) && !similar(f, findLine(lines, '🏭 产业：').value)) || facts[0];
-      setLine(lines, '💰 资本：', clipZh(alt));
-    }
-
-    const ev = evidence.value;
-    if (evidence.idx >= 0) {
-      const advisory = ADVISORY_ZH.some(k => ev.includes(k));
-      const hasNum = /\d/.test(ev);
-      if (!ev || advisory || !hasNum) {
-        const replacement = facts.slice(0,2).join('；') || clipZh(includes.value, 90);
-        if (replacement) setLine(lines, '证据锚点：', replacement);
-      }
-    }
-
-    lines = lines.map(line => line.replace(/^要点\s*[:：]\s*$/,'要点'));
-    return joinLines(lines);
-  };
-
-  const normalizeEnBlock = (text) => {
-    let lines = linesOf(text).map(stripNoise);
-
-    const policy = findLine(lines, '📜 Policy:');
-    const industry = findLine(lines, '🏭 Industry:');
-    const capital = findLine(lines, '💰 Capital:');
-    const includes = findLine(lines, 'Report includes:');
-    const facts = splitFacts(includes.value, 'en').map(x => clipEnWords(x, 16));
-
-    let p = clipEnWords(policy.value, 20);
-    let i = clipEnWords(industry.value, 20);
-    let c = clipEnWords(capital.value, 20);
-
-    if (!i) i = facts[0] || p;
-    if (!c) c = facts[1] || facts[0] || i || p;
-
-    if (similar(i, p)) {
-      const alt = facts.find(f => !similar(f, p));
-      if (alt) i = alt;
-    }
-    if (similar(c, p) || similar(c, i)) {
-      const alt = facts.find(f => !similar(f, p) && !similar(f, i));
-      if (alt) c = alt;
-    }
-
-    if (!i) i = 'Domestic processing and magnet capacity become the bottleneck.';
-    if (!c) c = 'Valuation and funding pressure are moving to downstream processing assets.';
-
-    setLine(lines, '📜 Policy:', p);
-    setLine(lines, '🏭 Industry:', i);
-    setLine(lines, '💰 Capital:', c);
-
-    return joinLines(lines);
-  };
-
-  const normalizeTextarea = (id, fn) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.value = fn(el.value || '');
-  };
-
-  normalizeTextarea('copy-cn-link', normalizeCnBlock);
-  normalizeTextarea('copy-cn-dm', normalizeCnBlock);
-  normalizeTextarea('copy-en-link', normalizeEnBlock);
-  normalizeTextarea('copy-en-dm', normalizeEnBlock);
+  if (cnLink) cnLink.value = buildCnHook(cnLink.value, true);
+  if (cnDm) cnDm.value = buildCnHook(cnDm.value, false);
+  if (enLink) enLink.value = buildEnHook(enLink.value, true);
+  if (enDm) enDm.value = buildEnHook(enDm.value, false);
 
   const buttons = document.querySelectorAll('[data-copy]');
-  if (!buttons.length) return;
-
   const copyText = async (text) => {
     if (navigator.clipboard && window.isSecureContext) {
       await navigator.clipboard.writeText(text);
@@ -302,31 +298,27 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
 
   buttons.forEach((btn) => {
     btn.addEventListener('click', async () => {
-      const targetId = btn.dataset.copy;
-      const statusId = btn.dataset.status;
-      const target = document.getElementById(targetId);
-      const status = document.getElementById(statusId);
+      const target = document.getElementById(btn.dataset.copy);
+      const status = document.getElementById(btn.dataset.status);
       if (!target) return;
-      const text = target.value || '';
+
       const setStatus = (msg) => {
         if (!status) return;
         status.textContent = msg;
         setTimeout(() => { status.textContent = ''; }, 2000);
       };
+
       try {
-        const ok = await copyText(text);
-        if (ok) {
-          setStatus('已复制');
-          return;
-        }
-      } catch (err) {
-      }
+        const ok = await copyText(target.value || '');
+        if (ok) return setStatus('已复制');
+      } catch (_) {}
+
       target.focus();
       target.select();
       try {
         document.execCommand('copy');
         setStatus('已复制');
-      } catch (err) {
+      } catch (_) {
         setStatus('复制失败');
       }
     });
