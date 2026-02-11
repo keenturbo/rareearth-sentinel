@@ -404,6 +404,10 @@ def _normalize_compare(text):
     return re.sub(r"\s+", " ", raw).strip()
 
 
+def _normalize_compare_any(text):
+    return re.sub(r"[^\w\u4e00-\u9fff]+", "", str(text or "").lower())
+
+
 def _is_similar_en(a, b):
     na = _normalize_compare(a)
     nb = _normalize_compare(b)
@@ -419,6 +423,20 @@ def _is_similar_en(a, b):
     ap = " ".join(a_words[:prefix_len])
     bp = " ".join(b_words[:prefix_len])
     return bool(ap and ap == bp)
+
+
+def _is_similar_any(a, b):
+    na = _normalize_compare_any(a)
+    nb = _normalize_compare_any(b)
+    if not na or not nb:
+        return False
+    if na == nb or na in nb or nb in na:
+        return True
+    sa, sb = set(na), set(nb)
+    union = sa | sb
+    if not union:
+        return False
+    return (len(sa & sb) / len(union)) >= 0.72
 
 
 def _pick_angle_bullet(bullets, label, lang="zh"):
@@ -453,6 +471,20 @@ def _short_social_line(text, limit=80, prefixes=None):
     if limit and len(raw) > limit:
         raw = raw[:limit].rstrip("，。;；, .") + "…"
     return raw
+
+
+def _clip_words(text, max_words=22):
+    raw = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not raw:
+        return ""
+    words = raw.split(" ")
+    if len(words) <= max_words:
+        return raw
+    return " ".join(words[:max_words]).rstrip(" ,;:.") + "..."
+
+
+def _word_count(text):
+    return len(re.findall(r"\S+", str(text or "")))
 
 
 def _first_text(value):
@@ -512,6 +544,24 @@ def _angle_meta(report_id, idx, lang="zh"):
     return "🔹", "要点" if lang == "zh" else "Angle"
 
 
+def _view_from_report_id(report_id):
+    rid = str(report_id or "").lower()
+    if rid.endswith("-policy") or rid.endswith("_policy"):
+        return "policy"
+    if rid.endswith("-industry") or rid.endswith("_industry"):
+        return "industry"
+    if rid.endswith("-capital") or rid.endswith("_capital"):
+        return "capital"
+    return ""
+
+
+def _to_int(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _build_pay_link(base_url, subdir, report_id):
     report_id = str(report_id or "").strip()
     if not report_id:
@@ -540,50 +590,267 @@ def _pick_primary_report_id(items, reports_index):
     return candidates[0]
 
 
+def _select_top1_item(items):
+    if not items:
+        return None
+    pref = {"policy": 2, "industry": 1, "capital": 0}
+
+    def key_fn(item):
+        risk = _to_int((item or {}).get("risk_score"))
+        impact = _to_int((item or {}).get("impact_score"))
+        view = _view_from_report_id((item or {}).get("report_id"))
+        return (risk, impact, pref.get(view, -1))
+
+    return sorted(items, key=key_fn, reverse=True)[0]
+
+
+def _collect_angles(items, lang="zh"):
+    mapping = {
+        "zh": ["政策", "产业", "资本"],
+        "en": ["Policy", "Industry", "Capital"],
+    }
+    labels = mapping[lang]
+    by_label = {label: "" for label in labels}
+    pool = []
+
+    for idx, item in enumerate(items[:3]):
+        view = _view_from_report_id(item.get("report_id"))
+        if lang == "zh":
+            label = {"policy": "政策", "industry": "产业", "capital": "资本"}.get(view)
+            raw = item.get("value_zh") or item.get("report_contains_zh") or item.get("title_zh") or item.get("title")
+            prefixes = SOCIAL_PREFIXES_CN
+            limit = 62
+        else:
+            label = {"policy": "Policy", "industry": "Industry", "capital": "Capital"}.get(view)
+            raw = item.get("value_en") or item.get("report_contains_en") or item.get("title_en") or item.get("title")
+            prefixes = SOCIAL_PREFIXES_EN
+            limit = 180
+
+        if not label:
+            label = labels[min(idx, len(labels) - 1)]
+
+        bullets = _extract_bullets(raw, prefixes=prefixes)
+        candidate = _pick_angle_bullet(bullets, label, lang=lang)
+        if lang == "zh":
+            line = _compact_bullet(candidate, limit=limit)
+        else:
+            line = _clip_words(_compact_bullet(candidate, limit=220), max_words=20)
+
+        if line:
+            if not by_label[label]:
+                by_label[label] = line
+            pool.append(line)
+
+    used = []
+    for label in labels:
+        line = by_label[label]
+        if line and not any(_is_similar_any(line, u) for u in used):
+            used.append(line)
+            continue
+        by_label[label] = ""
+
+    for label in labels:
+        if by_label[label]:
+            continue
+        for candidate in pool:
+            if not any(_is_similar_any(candidate, u) for u in used):
+                by_label[label] = candidate
+                used.append(candidate)
+                break
+
+    return by_label
+
+
+def _build_evidence(items, lang="zh"):
+    out = []
+    if lang == "zh":
+        keys = ("title_zh", "title")
+        clip = 28
+        sep = "；"
+    else:
+        keys = ("title_en", "title")
+        clip = 64
+        sep = "; "
+
+    for item in items[:3]:
+        text = ""
+        for key in keys:
+            v = str(item.get(key) or "").strip()
+            if v:
+                text = v
+                break
+        text = _compact_bullet(text, limit=clip)
+        if text and not any(_is_similar_any(text, p) for p in out):
+            out.append(text)
+        if len(out) >= 2:
+            break
+    return sep.join(out)
+
+
+def _build_report_includes(items, lang="zh"):
+    if not items:
+        return ""
+    item = items[0]
+    if lang == "zh":
+        raw = item.get("report_contains_zh") or item.get("value_zh") or ""
+        parts = _extract_bullets(raw, prefixes=SOCIAL_PREFIXES_CN)
+        picked = parts[0] if parts else raw
+        return _compact_bullet(picked, limit=120)
+    raw = item.get("report_contains_en") or item.get("value_en") or ""
+    parts = _extract_bullets(raw, prefixes=SOCIAL_PREFIXES_EN)
+    picked = parts[0] if parts else raw
+    return _clip_words(_compact_bullet(picked, limit=320), max_words=28)
+
+
+def _build_structured_payload(items, daily, lang="zh"):
+    if not items:
+        return None
+
+    first = items[0]
+    fallback_title = str(first.get("title_zh") or first.get("title_en") or first.get("title") or "").strip()
+    headline = _extract_daily_headline(daily, fallback_title)
+
+    if lang == "zh":
+        core = _short_social_line(headline, limit=76)
+    else:
+        core = _clip_words(_compact_bullet(headline, limit=260), max_words=18)
+
+    angles = _collect_angles(items, lang=lang)
+    filled_angles = [v for v in angles.values() if v]
+    if len(filled_angles) < 2:
+        return None
+
+    opportunity = _extract_opportunity(daily)
+    if lang == "zh":
+        opportunity = _short_social_line(opportunity, limit=84)
+    else:
+        opportunity = _clip_words(_compact_bullet(opportunity, limit=260), max_words=22)
+
+    evidence = _build_evidence(items, lang=lang)
+    includes = _build_report_includes(items, lang=lang)
+
+    return {
+        "core": core,
+        "angles": angles,
+        "opportunity": opportunity,
+        "evidence": evidence,
+        "includes": includes,
+    }
+
+
+def _build_social_fallback_cn(items, daily, site_base_url, reports_index, with_link=True):
+    top1 = _select_top1_item(items)
+    if not top1:
+        msg = "今日重点专题暂不可用，请稍后再试。"
+        return msg
+
+    report_id = _pick_primary_report_id([top1], reports_index or {})
+    link = _build_pay_link(site_base_url, "cn", report_id)
+    title = _extract_daily_headline(daily, str(top1.get("title_zh") or top1.get("title") or "稀土情报").strip())
+    signal = _compact_bullet(top1.get("value_zh") or top1.get("report_contains_zh") or top1.get("title_zh") or top1.get("title"), limit=88)
+    includes = _build_report_includes([top1], lang="zh")
+
+    lines = [
+        f"【今日重点专题】{title}",
+        f"核心结论：{_short_social_line(title, limit=72)}",
+        f"三视角",
+        f"📜 政策：{signal}",
+        f"🏭 产业：{signal}",
+        f"💰 资本：{signal}",
+    ]
+    if includes:
+        lines.append(f"报告包含：{includes}")
+    if with_link and link:
+        lines.extend(["", "👉 解锁深度报告：", link])
+    lines.extend(["私信回复【稀土】获取完整版", "#稀土 #关键矿产 #供应链"])
+    return "\n".join(lines)
+
+
+def _build_social_fallback_en(items, daily, site_base_url, reports_index, with_link=True):
+    top1 = _select_top1_item(items)
+    if not top1:
+        msg = "Today's focus is unavailable right now. Please check later."
+        return msg
+
+    report_id = _pick_primary_report_id([top1], reports_index or {})
+    link = _build_pay_link(site_base_url, "en", report_id)
+    title = _extract_daily_headline(daily, str(top1.get("title_en") or top1.get("title") or "Rare Earth Signals").strip())
+    signal = _clip_words(_compact_bullet(top1.get("value_en") or top1.get("report_contains_en") or top1.get("title_en") or top1.get("title"), limit=260), max_words=18)
+    includes = _build_report_includes([top1], lang="en")
+
+    lines = [
+        "Today's Focus",
+        f"Conclusion: {_clip_words(title, max_words=18)}",
+        "Three angles",
+        f"📜 Policy: {signal}",
+        f"🏭 Industry: {signal}",
+        f"💰 Capital: {signal}",
+    ]
+    if includes:
+        lines.append(f"Report includes: {includes}")
+    if with_link and link:
+        lines.extend(["", "Unlock full report:", link])
+    lines.extend(["DM for full report", "#RareEarth #CriticalMinerals #SupplyChain"])
+    return "\n".join(lines)
+
+
 def _build_social_copy_cn(top3, daily, site_base_url, reports_index=None):
     items = top3.get("items") if isinstance(top3, dict) else []
     if not items:
         msg = "今日 Top3 尚未生成，请稍后再试。"
         return msg, msg
 
-    first = items[0] if items else {}
-    fallback_title = str(first.get("title_zh") or first.get("title_en") or "稀土情报").strip()
-    headline = _extract_daily_headline(daily, fallback_title)
-
-    lines = [f"【重磅】{headline}", "", "要点"]
-
-    for idx, item in enumerate(items[:3]):
-        raw = (
-            item.get("value_zh")
-            or item.get("report_contains_zh")
-            or item.get("value_en")
-            or item.get("report_contains_en")
+    payload = _build_structured_payload(items, daily, lang="zh")
+    if not payload:
+        return (
+            _build_social_fallback_cn(items, daily, site_base_url, reports_index, with_link=True),
+            _build_social_fallback_cn(items, daily, site_base_url, reports_index, with_link=False),
         )
-        bullets = _extract_bullets(raw, prefixes=SOCIAL_PREFIXES_CN)
-        emoji, label = _angle_meta(item.get("report_id"), idx, lang="zh")
-        candidate = _pick_angle_bullet(bullets, label, lang="zh")
-        angle = _compact_bullet(candidate, limit=60) if candidate else ""
-        if not angle:
-            angle = _compact_bullet(item.get("title_zh") or item.get("title_en"), limit=60)
-        if angle:
-            lines.append(f"{emoji} {label}：{angle}")
-        else:
-            lines.append(f"{emoji} {label}")
 
-    opportunity = _extract_opportunity(daily)
-    opportunity = _short_social_line(opportunity, limit=80)
-    if opportunity:
-        lines.extend(["", f"机会窗口：{opportunity}"])
-
-    link_lines = list(lines)
     report_id = _pick_primary_report_id(items, reports_index or {})
     link = _build_pay_link(site_base_url, "cn", report_id)
+
+    core = payload.get("core") or ""
+    policy = payload.get("angles", {}).get("政策", "")
+    industry = payload.get("angles", {}).get("产业", "")
+    capital = payload.get("angles", {}).get("资本", "")
+    opportunity = payload.get("opportunity") or ""
+    evidence = payload.get("evidence") or ""
+    includes = payload.get("includes") or ""
+
+    base_lines = [
+        "【今日重点专题】",
+        f"核心结论：{core}",
+        "三视角",
+        f"📜 政策：{policy}",
+        f"🏭 产业：{industry}",
+        f"💰 资本：{capital}",
+    ]
+    if opportunity:
+        base_lines.append(f"机会窗口：{opportunity}")
+    if evidence:
+        base_lines.append(f"证据锚点：{evidence}")
+    if includes:
+        base_lines.append(f"报告包含：{includes}")
+
+    narrative = "\n".join(base_lines)
+    narrative_len = len(narrative)
+    if narrative_len > 420 and includes:
+        includes = _compact_bullet(includes, limit=90)
+        base_lines[-1] = f"报告包含：{includes}"
+        narrative = "\n".join(base_lines)
+    if len(narrative) < 260 and items:
+        extend = _compact_bullet(items[0].get("report_contains_zh") or items[0].get("value_zh"), limit=120)
+        if extend and (not includes or not _is_similar_any(extend, includes)):
+            base_lines.append(f"补充：{extend}")
+
+    link_lines = list(base_lines)
     if link:
-        link_lines.extend(["", "👉 完整报告（含阈值/情景/行动清单）：", link])
+        link_lines.extend(["", "👉 解锁深度报告：", link])
     link_lines.extend(["私信回复【稀土】获取完整版", "#稀土 #关键矿产 #供应链"])
 
-    dm_lines = list(lines)
-    dm_lines.extend(["", "私信回复【稀土】获取完整版", "#稀土 #关键矿产 #供应链"])
+    dm_lines = list(base_lines)
+    dm_lines.extend(["私信回复【稀土】获取完整版", "#稀土 #关键矿产 #供应链"])
 
     return "\n".join(link_lines), "\n".join(dm_lines)
 
@@ -594,55 +861,60 @@ def _build_social_copy_en(top3, daily, site_base_url, reports_index=None):
         msg = "Top 3 not ready yet. Please check later."
         return msg, msg
 
-    first = items[0] if items else {}
-    fallback_title = str(first.get("title_en") or first.get("title_zh") or "Rare Earth Signals").strip()
-    headline = _extract_daily_headline(daily, fallback_title)
-
-    lines = ["Rare Earth Signals | Top 3", f"Lead: {headline}", "", "Key angles"]
-    prev_angle = ""
-
-    for idx, item in enumerate(items[:3]):
-        raw = (
-            item.get("value_en")
-            or item.get("report_contains_en")
-            or item.get("value_zh")
-            or item.get("report_contains_zh")
+    payload = _build_structured_payload(items, daily, lang="en")
+    if not payload:
+        return (
+            _build_social_fallback_en(items, daily, site_base_url, reports_index, with_link=True),
+            _build_social_fallback_en(items, daily, site_base_url, reports_index, with_link=False),
         )
-        bullets = _extract_bullets(raw, prefixes=SOCIAL_PREFIXES_EN)
-        emoji, label = _angle_meta(item.get("report_id"), idx, lang="en")
 
-        candidate = _pick_angle_bullet(bullets, label, lang="en")
-        if candidate and prev_angle and _is_similar_en(candidate, prev_angle) and len(bullets) > 1:
-            for alt in bullets:
-                if alt == candidate:
-                    continue
-                if not _is_similar_en(alt, prev_angle):
-                    candidate = alt
-                    break
-
-        angle = _compact_bullet(candidate, limit=140)
-        if not angle:
-            angle = _compact_bullet(item.get("title_en") or item.get("title_zh"), limit=140)
-        if angle:
-            lines.append(f"{emoji} {label}: {angle}")
-            prev_angle = angle
-        else:
-            lines.append(f"{emoji} {label}")
-
-    opportunity = _extract_opportunity(daily)
-    opportunity = _short_social_line(opportunity, limit=140)
-    if opportunity:
-        lines.extend(["", f"Opportunity: {opportunity}"])
-
-    link_lines = list(lines)
     report_id = _pick_primary_report_id(items, reports_index or {})
     link = _build_pay_link(site_base_url, "en", report_id)
+
+    core = payload.get("core") or ""
+    policy = payload.get("angles", {}).get("Policy", "")
+    industry = payload.get("angles", {}).get("Industry", "")
+    capital = payload.get("angles", {}).get("Capital", "")
+    opportunity = payload.get("opportunity") or ""
+    evidence = payload.get("evidence") or ""
+    includes = payload.get("includes") or ""
+
+    base_lines = [
+        "Today's Focus",
+        f"Conclusion: {core}",
+        "Three angles",
+        f"📜 Policy: {policy}",
+        f"🏭 Industry: {industry}",
+        f"💰 Capital: {capital}",
+    ]
+    if opportunity:
+        base_lines.append(f"Opportunity window: {opportunity}")
+    if evidence:
+        base_lines.append(f"Evidence anchors: {evidence}")
+    if includes:
+        base_lines.append(f"Report includes: {includes}")
+
+    # keep 120~220 words in narrative part
+    wc = _word_count(" ".join(base_lines))
+    if wc > 220 and includes:
+        includes = _clip_words(includes, max_words=18)
+        for i, line in enumerate(base_lines):
+            if line.startswith("Report includes:"):
+                base_lines[i] = f"Report includes: {includes}"
+                break
+    wc = _word_count(" ".join(base_lines))
+    if wc < 120 and items:
+        extra = _clip_words(items[0].get("report_contains_en") or items[0].get("value_en") or "", max_words=20)
+        if extra and (not includes or not _is_similar_en(extra, includes)):
+            base_lines.append(f"Extra context: {extra}")
+
+    link_lines = list(base_lines)
     if link:
-        link_lines.extend(["", "Full report:", link])
+        link_lines.extend(["", "Unlock full report:", link])
     link_lines.extend(["DM for full report", "#RareEarth #CriticalMinerals #SupplyChain"])
 
-    dm_lines = list(lines)
-    dm_lines.extend(["", "DM for full report", "#RareEarth #CriticalMinerals #SupplyChain"])
+    dm_lines = list(base_lines)
+    dm_lines.extend(["DM for full report", "#RareEarth #CriticalMinerals #SupplyChain"])
 
     return "\n".join(link_lines), "\n".join(dm_lines)
 
