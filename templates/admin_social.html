@@ -100,8 +100,169 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
 </div>
 <script>
 (function(){
+  const ADVISORY_ZH = ['警惕','减持','建议','布局','关注','谨慎','增配','回避'];
+
+  const cleanPunct = (s) => (s || '')
+    .replace(/。\s*[；;]/g, '。')
+    .replace(/([。！？!?])\s*[；;]/g, '$1')
+    .replace(/\.{1}\s*;/g, '.')
+    .replace(/；\s*；+/g, '；')
+    .replace(/;\s*;+/g, ';')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const stripNoise = (s) => {
+    let t = (s || '').trim();
+    t = t.replace(/\bTL\s*;\s*DR\s*:\s*/ig, '');
+    t = t.replace(/^\s*(Policy|Industry|Capital|要点|三视角|Key angles?)\s*[:：]\s*/ig, '');
+    t = t.replace(/^[•\-\*\u2022]+\s*/g, '');
+    t = t.replace(/\b(Impact path|影响路径)\s*[:：].*$/i, '');
+    return cleanPunct(t);
+  };
+
+  const splitFacts = (line, lang='zh') => {
+    const body = stripNoise((line || '').replace(/^\s*(报告包含|Report includes)\s*[:：]\s*/i, ''));
+    const rawParts = body.split(/[•\n。；;.!?]/).map(x => stripNoise(x)).filter(Boolean);
+    const out = [];
+    for (const p of rawParts) {
+      if (!/\d/.test(p)) continue;
+      if (lang === 'zh' && ADVISORY_ZH.some(k => p.includes(k))) continue;
+      if (out.some(x => x === p || x.includes(p) || p.includes(x))) continue;
+      out.push(p);
+      if (out.length >= 3) break;
+    }
+    return out;
+  };
+
+  const linesOf = (text) => (text || '').split('\n');
+  const joinLines = (arr) => arr.map(x => cleanPunct(x)).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+
+  const findLine = (lines, prefix) => {
+    const idx = lines.findIndex(l => l.startsWith(prefix));
+    if (idx < 0) return { idx: -1, value: '' };
+    return { idx, value: stripNoise(lines[idx].slice(prefix.length)) };
+  };
+
+  const setLine = (lines, prefix, value) => {
+    const i = lines.findIndex(l => l.startsWith(prefix));
+    if (i >= 0) lines[i] = `${prefix}${stripNoise(value)}`;
+  };
+
+  const normForCompare = (s) => stripNoise(s).toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '');
+  const similar = (a, b) => {
+    const x = normForCompare(a);
+    const y = normForCompare(b);
+    if (!x || !y) return false;
+    if (x === y || x.includes(y) || y.includes(x)) return true;
+    const min = Math.min(x.length, y.length);
+    if (min < 8) return false;
+    return x.slice(0, 24) === y.slice(0, 24);
+  };
+
+  const clipZh = (s, n=60) => {
+    const t = stripNoise(s);
+    if (!t) return '';
+    return t.length > n ? `${t.slice(0, n).replace(/[，。；;,.\s]+$/g, '')}…` : t;
+  };
+
+  const clipEnWords = (s, n=20) => {
+    const t = stripNoise(s);
+    if (!t) return '';
+    const ws = t.split(/\s+/);
+    return ws.length > n ? `${ws.slice(0, n).join(' ').replace(/[;,.\s]+$/g, '')}...` : t;
+  };
+
+  const normalizeCnBlock = (text) => {
+    let lines = linesOf(text).map(stripNoise);
+
+    const policy = findLine(lines, '📜 政策：');
+    const industry = findLine(lines, '🏭 产业：');
+    const capital = findLine(lines, '💰 资本：');
+    const includes = findLine(lines, '报告包含：');
+    const evidence = findLine(lines, '证据锚点：');
+    const facts = splitFacts(includes.value, 'zh');
+
+    if (!capital.value) {
+      const fill = facts[0] || industry.value || policy.value || '关注资金与估值变化。';
+      setLine(lines, '💰 资本：', clipZh(fill));
+    }
+
+    if (!policy.value && industry.value) setLine(lines, '📜 政策：', clipZh(industry.value));
+    if (!industry.value && policy.value) setLine(lines, '🏭 产业：', clipZh(policy.value));
+
+    const p2 = findLine(lines, '📜 政策：').value;
+    const i2 = findLine(lines, '🏭 产业：').value;
+    const c2 = findLine(lines, '💰 资本：').value;
+
+    if (similar(i2, p2) && facts[1]) setLine(lines, '🏭 产业：', clipZh(facts[1]));
+    if ((similar(c2, p2) || similar(c2, findLine(lines, '🏭 产业：').value)) && facts[0]) {
+      const alt = facts.find(f => !similar(f, p2) && !similar(f, findLine(lines, '🏭 产业：').value)) || facts[0];
+      setLine(lines, '💰 资本：', clipZh(alt));
+    }
+
+    const ev = evidence.value;
+    if (evidence.idx >= 0) {
+      const advisory = ADVISORY_ZH.some(k => ev.includes(k));
+      const hasNum = /\d/.test(ev);
+      if (!ev || advisory || !hasNum) {
+        const replacement = facts.slice(0,2).join('；') || clipZh(includes.value, 90);
+        if (replacement) setLine(lines, '证据锚点：', replacement);
+      }
+    }
+
+    lines = lines.map(line => line.replace(/^要点\s*[:：]\s*$/,'要点'));
+    return joinLines(lines);
+  };
+
+  const normalizeEnBlock = (text) => {
+    let lines = linesOf(text).map(stripNoise);
+
+    const policy = findLine(lines, '📜 Policy:');
+    const industry = findLine(lines, '🏭 Industry:');
+    const capital = findLine(lines, '💰 Capital:');
+    const includes = findLine(lines, 'Report includes:');
+    const facts = splitFacts(includes.value, 'en').map(x => clipEnWords(x, 16));
+
+    const p = clipEnWords(policy.value, 20);
+    let i = clipEnWords(industry.value, 20);
+    let c = clipEnWords(capital.value, 20);
+
+    if (!i) i = facts[0] || p;
+    if (!c) c = facts[1] || facts[0] || i || p;
+
+    if (similar(i, p)) {
+      const alt = facts.find(f => !similar(f, p));
+      if (alt) i = alt;
+    }
+    if (similar(c, p) || similar(c, i)) {
+      const alt = facts.find(f => !similar(f, p) && !similar(f, i));
+      if (alt) c = alt;
+    }
+
+    if (!i) i = 'Domestic processing and magnet capacity become the bottleneck.';
+    if (!c) c = 'Valuation and funding pressure are moving to downstream processing assets.';
+
+    setLine(lines, '📜 Policy:', p);
+    setLine(lines, '🏭 Industry:', i);
+    setLine(lines, '💰 Capital:', c);
+
+    return joinLines(lines);
+  };
+
+  const normalizeTextarea = (id, fn) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.value = fn(el.value || '');
+  };
+
+  normalizeTextarea('copy-cn-link', normalizeCnBlock);
+  normalizeTextarea('copy-cn-dm', normalizeCnBlock);
+  normalizeTextarea('copy-en-link', normalizeEnBlock);
+  normalizeTextarea('copy-en-dm', normalizeEnBlock);
+
   const buttons = document.querySelectorAll('[data-copy]');
   if (!buttons.length) return;
+
   const copyText = async (text) => {
     if (navigator.clipboard && window.isSecureContext) {
       await navigator.clipboard.writeText(text);
@@ -109,6 +270,7 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     }
     return false;
   };
+
   buttons.forEach((btn) => {
     btn.addEventListener('click', async () => {
       const targetId = btn.dataset.copy;
