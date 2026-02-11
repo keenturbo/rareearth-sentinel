@@ -111,22 +111,43 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     .replace(/\s+/g, ' ')
     .trim();
 
+  const protectDecimals = (s) => (s || '').replace(/(\d)\.(\d)/g, '$1__DEC__$2');
+  const restoreDecimals = (s) => (s || '').replace(/__DEC__/g, '.');
+
   const stripNoise = (s) => {
     let t = (s || '').trim();
     t = t.replace(/\bTL\s*;\s*DR\s*:\s*/ig, '');
     t = t.replace(/^\s*(Policy|Industry|Capital|要点|三视角|Key angles?)\s*[:：]\s*/ig, '');
     t = t.replace(/^[•\-\*\u2022]+\s*/g, '');
-    t = t.replace(/\b(Impact path|影响路径)\s*[:：].*$/i, '');
+    t = t.replace(/(Impact path|影响路径)\s*[:：].*$/i, '');
     return cleanPunct(t);
   };
 
+  const firstBullet = (s) => {
+    const raw = stripNoise(s || '');
+    if (!raw) return '';
+    return stripNoise(raw.split('•')[0]);
+  };
+
   const splitFacts = (line, lang='zh') => {
-    const body = stripNoise((line || '').replace(/^\s*(报告包含|Report includes)\s*[:：]\s*/i, ''));
-    const rawParts = body.split(/[•\n。；;.!?]/).map(x => stripNoise(x)).filter(Boolean);
+    const bodyRaw = stripNoise((line || '').replace(/^\s*(报告包含|Report includes)\s*[:：]\s*/i, ''));
+    if (!bodyRaw) return [];
+
+    let body = protectDecimals(bodyRaw)
+      .replace(/\bU\.S\./g, 'US')
+      .replace(/\bU\.K\./g, 'UK')
+      .replace(/\bE\.U\./g, 'EU');
+
+    const delimiter = lang === 'zh' ? /[•\n。；;]/ : /[•\n;.!?]/;
+    const rawParts = body.split(delimiter)
+      .map(x => stripNoise(restoreDecimals(x)))
+      .filter(Boolean);
+
     const out = [];
     for (const p of rawParts) {
       if (!/\d/.test(p)) continue;
       if (lang === 'zh' && ADVISORY_ZH.some(k => p.includes(k))) continue;
+      if (lang === 'en' && /\$?\d+$/.test(p)) continue;
       if (out.some(x => x === p || x.includes(p) || p.includes(x))) continue;
       out.push(p);
       if (out.length >= 3) break;
@@ -160,13 +181,13 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
   };
 
   const clipZh = (s, n=60) => {
-    const t = stripNoise(s);
+    const t = stripNoise(firstBullet(s));
     if (!t) return '';
     return t.length > n ? `${t.slice(0, n).replace(/[，。；;,.\s]+$/g, '')}…` : t;
   };
 
   const clipEnWords = (s, n=20) => {
-    const t = stripNoise(s);
+    const t = stripNoise(firstBullet(s));
     if (!t) return '';
     const ws = t.split(/\s+/);
     return ws.length > n ? `${ws.slice(0, n).join(' ').replace(/[;,.\s]+$/g, '')}...` : t;
@@ -182,13 +203,21 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     const evidence = findLine(lines, '证据锚点：');
     const facts = splitFacts(includes.value, 'zh');
 
+    if (policy.value) setLine(lines, '📜 政策：', clipZh(policy.value));
+    if (industry.value) setLine(lines, '🏭 产业：', clipZh(industry.value));
+    if (capital.value) setLine(lines, '💰 资本：', clipZh(capital.value));
+
     if (!capital.value) {
-      const fill = facts[0] || industry.value || policy.value || '关注资金与估值变化。';
+      const fill = facts[0] || findLine(lines, '🏭 产业：').value || findLine(lines, '📜 政策：').value || '关注资金与估值变化。';
       setLine(lines, '💰 资本：', clipZh(fill));
     }
 
-    if (!policy.value && industry.value) setLine(lines, '📜 政策：', clipZh(industry.value));
-    if (!industry.value && policy.value) setLine(lines, '🏭 产业：', clipZh(policy.value));
+    if (!findLine(lines, '📜 政策：').value && findLine(lines, '🏭 产业：').value) {
+      setLine(lines, '📜 政策：', clipZh(findLine(lines, '🏭 产业：').value));
+    }
+    if (!findLine(lines, '🏭 产业：').value && findLine(lines, '📜 政策：').value) {
+      setLine(lines, '🏭 产业：', clipZh(findLine(lines, '📜 政策：').value));
+    }
 
     const p2 = findLine(lines, '📜 政策：').value;
     const i2 = findLine(lines, '🏭 产业：').value;
@@ -223,7 +252,7 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     const includes = findLine(lines, 'Report includes:');
     const facts = splitFacts(includes.value, 'en').map(x => clipEnWords(x, 16));
 
-    const p = clipEnWords(policy.value, 20);
+    let p = clipEnWords(policy.value, 20);
     let i = clipEnWords(industry.value, 20);
     let c = clipEnWords(capital.value, 20);
 
