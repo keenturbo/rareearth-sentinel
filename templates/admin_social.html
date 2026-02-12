@@ -134,6 +134,8 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
   };
 
   const isAdvice = (s='') => /(减持|增配|超配|规避|建议|布局|关注|谨慎|买入|卖出|加仓|建仓|止盈|止损|avoid|overweight|underweight|buy|sell|trim|add position|reduce exposure|not investment advice)/i.test(s);
+  const isActionLeadEn = (s='') => /^(secure|track|watch|rebalance|hedge|buy|sell|trim|add(?:\s+position)?|reduce(?:\s+exposure)?|avoid|overweight|underweight|prioritize|focus on|rotate|accumulate|de-risk)\b/i.test(stripNoise(s));
+  const isTruncated = (s='') => /(?:\.\.\.|…)\s*$/.test((s || '').trim());
 
   const splitSentencesCn = (s='') => stripNoise(s).split(/[。！？；;]+/).map(x => stripNoise(x)).filter(Boolean);
 
@@ -156,8 +158,13 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
 
   const firstFactEn = (text='') => {
     const parts = splitSentencesEn(text);
-    const fact = parts.find(x => /\d|\$|billion|million|project|agreement|funding|investment|loan|equity|stockpile|reserve/i.test(x) && !isAdvice(x));
-    return fact || parts.find(x => !isAdvice(x)) || '';
+    const fact = parts.find(x => /\d|\$|billion|million|project|agreement|funding|investment|loan|equity|stockpile|reserve/i.test(x) && !isAdvice(x) && !isActionLeadEn(x) && !isTruncated(x));
+    return (
+      fact ||
+      parts.find(x => !isAdvice(x) && !isActionLeadEn(x) && !isTruncated(x)) ||
+      parts.find(x => !isAdvice(x) && !isActionLeadEn(x)) ||
+      ''
+    );
   };
 
   const norm = (s='') => stripNoise(s).toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '');
@@ -179,6 +186,13 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     if (!t) return '';
     const ws = t.split(/\s+/);
     return ws.length > n ? `${ws.slice(0, n).join(' ').replace(/[;,.\s]+$/g,'')}...` : t;
+  };
+
+  const clipWordsNoEllipsis = (s='', n=20) => {
+    const t = stripNoise(s).replace(/(?:\.\.\.|…)\s*$/g, '').trim();
+    if (!t) return '';
+    const ws = t.split(/\s+/);
+    return ws.length > n ? ws.slice(0, n).join(' ').replace(/[;,.\s]+$/g,'') : t;
   };
 
   const makeCn = (raw, withLink=true) => {
@@ -261,7 +275,11 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     if (!/^Counter-risk:/i.test(counter)) counter = `Counter-risk: ${counter}`;
 
     let evidence = firstFactEn(evidenceRaw) || firstFactEn(includesRaw) || fallbackFact;
-    if (!evidence || isAdvice(evidence)) evidence = fallbackFact;
+    if (!evidence || isAdvice(evidence) || isActionLeadEn(evidence) || isTruncated(evidence)) evidence = fallbackFact;
+    if (isTruncated(evidence)) {
+      const alt = firstFactEn(`${policy}; ${industry}; ${capital}`);
+      if (alt && !isActionLeadEn(alt) && !isTruncated(alt)) evidence = alt;
+    }
 
     const out = [
       `War-Metal Signal: ${clipWords(coreRaw, 12)}`,
@@ -269,7 +287,7 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
       `Impact path: ${clipWords(impact, 14)}`,
       clipWords(action, 18),
       clipWords(counter, 18),
-      `Evidence anchor: ${clipWords(evidence, 18)}`,
+      `Evidence anchor: ${clipWordsNoEllipsis(evidence, 24)}`,
       '⚠️ Risk note: Not investment advice. Manage triggers and position size.'
     ];
 
