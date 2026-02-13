@@ -136,6 +136,7 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
   const isAdvice = (s='') => /(减持|增配|超配|规避|建议|布局|关注|谨慎|买入|卖出|加仓|建仓|止盈|止损|avoid|overweight|underweight|buy|sell|trim|add position|reduce exposure|not investment advice)/i.test(s);
   const isActionLeadEn = (s='') => /^(secure|track|watch|rebalance|hedge|buy|sell|trim|add(?:\s+position)?|reduce(?:\s+exposure)?|avoid|overweight|underweight|prioritize|focus on|rotate|accumulate|de-risk)\b/i.test(stripNoise(s));
   const isTruncated = (s='') => /(?:\.\.\.|…)\s*$/.test((s || '').trim());
+  const isFactEn = (s='') => /\d|\$|billion|million|project|agreement|funding|investment|loan|equity|stockpile|reserve|department|ministry|announced|approved/i.test(s);
 
   const splitSentencesCn = (s='') => stripNoise(s).split(/[。！？；;]+/).map(x => stripNoise(x)).filter(Boolean);
 
@@ -258,7 +259,7 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     const includesRaw = getField(lines, ['Report includes:','报告包含：']);
     const link = getLink(raw);
 
-    const fallbackFact = firstFactEn(`${includesRaw}; ${evidenceRaw}`) || 'Capital is moving toward processing and magnet capacity.';
+    const fallbackFact = firstFactEn(`${includesRaw}; ${evidenceRaw}`) || 'DoD-backed funding and stockpile programs are accelerating processing build-out.';
 
     let coreFact = firstFactEn(`${policy}; ${industry}; ${capital}`) || fallbackFact;
     let impact = firstFactEn(industry) || firstFactEn(policy) || fallbackFact;
@@ -274,11 +275,26 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     let counter = firstFactEn(oppRaw) || 'Counter-risk: If project delivery lags, volatility can rise before fundamentals catch up.';
     if (!/^Counter-risk:/i.test(counter)) counter = `Counter-risk: ${counter}`;
 
-    let evidence = firstFactEn(evidenceRaw) || firstFactEn(includesRaw) || fallbackFact;
-    if (!evidence || isAdvice(evidence) || isActionLeadEn(evidence) || isTruncated(evidence)) evidence = fallbackFact;
-    if (isTruncated(evidence)) {
-      const alt = firstFactEn(`${policy}; ${industry}; ${capital}`);
-      if (alt && !isActionLeadEn(alt) && !isTruncated(alt)) evidence = alt;
+    const factPool = [
+      firstFactEn(evidenceRaw),
+      firstFactEn(includesRaw),
+      firstFactEn(`${policy}; ${industry}; ${capital}`),
+      firstFactEn(coreRaw),
+      fallbackFact
+    ].filter(Boolean);
+
+    let evidence =
+      factPool.find(x => isFactEn(x) && !isAdvice(x) && !isActionLeadEn(x) && !isTruncated(x)) ||
+      factPool.find(x => !isAdvice(x) && !isActionLeadEn(x) && !isTruncated(x)) ||
+      fallbackFact;
+
+    evidence = clipWordsNoEllipsis(evidence, 24)
+      .replace(/\bhedg(?:e|ing)?\b\s*$/i, '')
+      .replace(/\bto\s*$/i, '')
+      .trim();
+
+    if (!evidence || isAdvice(evidence) || isActionLeadEn(evidence) || isTruncated(evidence)) {
+      evidence = 'DoD-backed funding and stockpile programs are accelerating processing build-out.';
     }
 
     const out = [
@@ -287,14 +303,13 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
       `Impact path: ${clipWords(impact, 14)}`,
       clipWords(action, 18),
       clipWords(counter, 18),
-      `Evidence anchor: ${clipWordsNoEllipsis(evidence, 24)}`,
+      `Evidence anchor: ${evidence}`,
       '⚠️ Risk note: Not investment advice. Manage triggers and position size.'
     ];
 
     if (withLink && link) out.push('', 'Full brief:', link);
     out.push('DM for full report', '#RareEarth #CriticalMinerals #SupplyChain');
 
-    // keep concise for X/LinkedIn copy
     return out.join('\n').replace(/\n{3,}/g,'\n\n').trim();
   };
 
