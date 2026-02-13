@@ -137,6 +137,14 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
   const isActionLeadEn = (s='') => /^(secure|track|watch|rebalance|hedge|buy|sell|trim|add(?:\s+position)?|reduce(?:\s+exposure)?|avoid|overweight|underweight|prioritize|focus on|rotate|accumulate|de-risk)\b/i.test(stripNoise(s));
   const isTruncated = (s='') => /(?:\.\.\.|…)\s*$/.test((s || '').trim());
   const isFactEn = (s='') => /\d|\$|billion|million|project|agreement|funding|investment|loan|equity|stockpile|reserve|department|ministry|announced|approved/i.test(s);
+  const looksIncompleteEn = (s='') => {
+    const t = stripNoise(s);
+    if (!t) return true;
+    if (isTruncated(t)) return true;
+    const words = t.split(/\s+/);
+    if (words.length < 4) return true;
+    return /\b(unprecedented|significant|material|notably|including|with|without|before|after|to|for|of|in|on|at|from|than|as|by|and|or|but|while|if)\s*$/i.test(t);
+  };
 
   const splitSentencesCn = (s='') => stripNoise(s).split(/[。！？；;]+/).map(x => stripNoise(x)).filter(Boolean);
 
@@ -159,13 +167,35 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
 
   const firstFactEn = (text='') => {
     const parts = splitSentencesEn(text);
-    const fact = parts.find(x => /\d|\$|billion|million|project|agreement|funding|investment|loan|equity|stockpile|reserve/i.test(x) && !isAdvice(x) && !isActionLeadEn(x) && !isTruncated(x));
+    const fact = parts.find(x => /
+      \d|\$|billion|million|project|agreement|funding|investment|loan|equity|stockpile|reserve/i.test(x)
+      && !isAdvice(x)
+      && !isActionLeadEn(x)
+      && !looksIncompleteEn(x)
+    );
     return (
       fact ||
+      parts.find(x => !isAdvice(x) && !isActionLeadEn(x) && !looksIncompleteEn(x)) ||
       parts.find(x => !isAdvice(x) && !isActionLeadEn(x) && !isTruncated(x)) ||
-      parts.find(x => !isAdvice(x) && !isActionLeadEn(x)) ||
       ''
     );
+  };
+
+  const pickFactEn = (texts=[], deny=[]) => {
+    const denyList = (deny || []).filter(Boolean);
+    const candidates = [];
+    for (const src of texts) {
+      const parts = splitSentencesEn(src || '');
+      for (const p of parts) {
+        const t = stripNoise(p);
+        if (!t) continue;
+        if (isAdvice(t) || isActionLeadEn(t) || looksIncompleteEn(t)) continue;
+        if (denyList.some(d => similar(t, d))) continue;
+        candidates.push(t);
+      }
+    }
+    const fact = candidates.find(c => isFactEn(c));
+    return fact || candidates[0] || '';
   };
 
   const norm = (s='') => stripNoise(s).toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '');
@@ -259,33 +289,36 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     const includesRaw = getField(lines, ['Report includes:','报告包含：']);
     const link = getLink(raw);
 
-    const fallbackFact = firstFactEn(`${includesRaw}; ${evidenceRaw}`) || 'DoD-backed funding and stockpile programs are accelerating processing build-out.';
+    const fallbackFact = pickFactEn([includesRaw, evidenceRaw, policy, industry, capital, coreRaw]) || 'DoD-backed funding and stockpile programs are accelerating processing build-out.';
 
-    let coreFact = firstFactEn(`${policy}; ${industry}; ${capital}`) || fallbackFact;
-    let impact = firstFactEn(industry) || firstFactEn(policy) || fallbackFact;
-    if (similar(impact, coreFact)) impact = firstFactEn(includesRaw) || 'Supply-chain bottlenecks are shifting downstream.';
+    let coreFact = pickFactEn([coreRaw, policy, industry, capital, includesRaw, evidenceRaw]) || fallbackFact;
 
-    let action = firstFactEn(coreRaw);
+    let impact = pickFactEn([industry, policy, capital, includesRaw], [coreFact]) || 'Supply-chain bottlenecks are shifting downstream.';
+    if (similar(impact, coreFact) || looksIncompleteEn(impact)) {
+      impact = pickFactEn([includesRaw, policy, capital, coreRaw], [coreFact]) || 'Supply-chain bottlenecks are shifting downstream.';
+    }
+
+    let action = pickFactEn([coreRaw], [coreFact, impact]) || firstFactEn(coreRaw);
     if (!action || !/(track|watch|rebalance|hedge|position|window|trigger)/i.test(action)) {
       action = 'Investor action: Track funding, processing ramp-up, and trigger levels before sizing positions.';
-    } else {
+    } else if (!/^Investor action:/i.test(action)) {
       action = `Investor action: ${action}`;
     }
 
-    let counter = firstFactEn(oppRaw) || 'Counter-risk: If project delivery lags, volatility can rise before fundamentals catch up.';
+    let counter = pickFactEn([oppRaw], [coreFact, impact]) || 'Counter-risk: If project delivery lags, volatility can rise before fundamentals catch up.';
     if (!/^Counter-risk:/i.test(counter)) counter = `Counter-risk: ${counter}`;
 
     const factPool = [
-      firstFactEn(evidenceRaw),
-      firstFactEn(includesRaw),
-      firstFactEn(`${policy}; ${industry}; ${capital}`),
-      firstFactEn(coreRaw),
+      pickFactEn([evidenceRaw], [coreFact, impact, action]),
+      pickFactEn([includesRaw], [coreFact, impact, action]),
+      pickFactEn([policy, industry, capital], [coreFact, impact, action]),
+      pickFactEn([coreRaw], [coreFact, impact, action]),
       fallbackFact
     ].filter(Boolean);
 
     let evidence =
-      factPool.find(x => isFactEn(x) && !isAdvice(x) && !isActionLeadEn(x) && !isTruncated(x)) ||
-      factPool.find(x => !isAdvice(x) && !isActionLeadEn(x) && !isTruncated(x)) ||
+      factPool.find(x => isFactEn(x) && !isAdvice(x) && !isActionLeadEn(x) && !looksIncompleteEn(x)) ||
+      factPool.find(x => !isAdvice(x) && !isActionLeadEn(x) && !looksIncompleteEn(x)) ||
       fallbackFact;
 
     evidence = clipWordsNoEllipsis(evidence, 24)
@@ -293,16 +326,25 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
       .replace(/\bto\s*$/i, '')
       .trim();
 
-    if (!evidence || isAdvice(evidence) || isActionLeadEn(evidence) || isTruncated(evidence)) {
-      evidence = 'DoD-backed funding and stockpile programs are accelerating processing build-out.';
+    if (!evidence || isAdvice(evidence) || isActionLeadEn(evidence) || looksIncompleteEn(evidence) || similar(evidence, impact) || similar(evidence, coreFact)) {
+      const alt = pickFactEn([includesRaw, policy, industry, capital, coreRaw], [coreFact, impact]);
+      evidence = clipWordsNoEllipsis(alt || fallbackFact, 24)
+        .replace(/\bhedg(?:e|ing)?\b\s*$/i, '')
+        .replace(/\bto\s*$/i, '')
+        .trim();
     }
+
+    const safeCore = clipWordsNoEllipsis(coreFact, 18);
+    const safeImpact = clipWordsNoEllipsis(impact, 18);
+    const safeAction = clipWordsNoEllipsis(action, 22);
+    const safeCounter = clipWordsNoEllipsis(counter, 22);
 
     const out = [
       `War-Metal Signal: ${clipWords(coreRaw, 12)}`,
-      `Core fact: ${clipWords(coreFact, 14)}`,
-      `Impact path: ${clipWords(impact, 14)}`,
-      clipWords(action, 18),
-      clipWords(counter, 18),
+      `Core fact: ${safeCore || fallbackFact}`,
+      `Impact path: ${safeImpact || 'Supply-chain bottlenecks are shifting downstream'}`,
+      safeAction,
+      safeCounter,
       `Evidence anchor: ${evidence}`,
       '⚠️ Risk note: Not investment advice. Manage triggers and position size.'
     ];
