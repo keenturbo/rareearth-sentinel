@@ -167,8 +167,8 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
 
   const firstFactEn = (text='') => {
     const parts = splitSentencesEn(text);
-    const fact = parts.find(x => /
-      \d|\$|billion|million|project|agreement|funding|investment|loan|equity|stockpile|reserve/i.test(x)
+    const fact = parts.find(x =>
+      /\d|\$|billion|million|project|agreement|funding|investment|loan|equity|stockpile|reserve/i.test(x)
       && !isAdvice(x)
       && !isActionLeadEn(x)
       && !looksIncompleteEn(x)
