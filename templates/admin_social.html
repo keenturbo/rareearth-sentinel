@@ -100,173 +100,162 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
 </div>
 <script>
 (function(){
-  const clean = (s='') => s
+  const clean = (s='') => String(s || '')
     .replace(/\r/g, ' ')
     .replace(/\u00A0/g, ' ')
     .replace(/。\s*[；;]/g, '。')
     .replace(/([。！？!?])\s*[；;]/g, '$1')
-    .replace(/\.{1}\s*;/g, '.')
+    .replace(/\.\s*;/g, '.')
     .replace(/\s+/g, ' ')
     .trim();
 
   const stripNoise = (s='') => clean(s)
     .replace(/\bTL\s*;\s*DR\s*:\s*/ig, '')
     .replace(/\bKey\s*angles?\s*:\s*/ig, '')
-    .replace(/^\s*(要点|三视角|Three angles|Conclusion|核心结论|Report includes|Evidence anchors|证据锚点|机会窗口|Opportunity window)\s*[:：]?\s*/i, '')
-    .replace(/^[•\-*\u2022]+\s*/g, '')
+    .replace(/^\s*(要点|三视角|Three angles|Conclusion|核心结论|Report includes|Evidence anchors?|证据锚点|机会窗口|Opportunity window|影响路径|Impact path)\s*[:：]?\s*/i, '')
+    .replace(/^\s*[•\-\*\u2022]+\s*/g, '')
     .replace(/(影响路径|Impact path)\s*[:：].*$/i, '')
+    .replace(/(?:\.\.\.|…)\s*$/g, '')
     .trim();
 
-  const splitLines = (raw='') => raw.split('\n').map(x => x.trim()).filter(Boolean);
+  const lines = (raw='') => String(raw || '').split('\n').map(x => x.trim()).filter(Boolean);
 
-  const getField = (lines, prefixes=[]) => {
-    for (const line of lines) {
-      for (const p of prefixes) {
-        if (line.startsWith(p)) return stripNoise(line.slice(p.length));
+  const getField = (arr, keys=[]) => {
+    for (const l of arr) {
+      for (const k of keys) {
+        if (l.startsWith(k)) return stripNoise(l.slice(k.length));
       }
     }
     return '';
   };
 
   const getLink = (raw='') => {
-    const m = raw.match(/https?:\/\/\S+/);
+    const m = String(raw || '').match(/https?:\/\/\S+/);
     return m ? m[0] : '';
   };
 
-  const isAdvice = (s='') => /(减持|增配|超配|规避|建议|布局|关注|谨慎|买入|卖出|加仓|建仓|止盈|止损|avoid|overweight|underweight|buy|sell|trim|add position|reduce exposure|not investment advice)/i.test(s);
-  const isActionLeadEn = (s='') => /^(secure|track|watch|rebalance|hedge|buy|sell|trim|add(?:\s+position)?|reduce(?:\s+exposure)?|avoid|overweight|underweight|prioritize|focus on|rotate|accumulate|de-risk)\b/i.test(stripNoise(s));
-  const isTruncated = (s='') => /(?:\.\.\.|…)\s*$/.test((s || '').trim());
-  const isFactEn = (s='') => /\d|\$|billion|million|project|agreement|funding|investment|loan|equity|stockpile|reserve|department|ministry|announced|approved/i.test(s);
-  const looksIncompleteEn = (s='') => {
-    const t = stripNoise(s);
-    if (!t) return true;
-    if (isTruncated(t)) return true;
-    const words = t.split(/\s+/);
-    if (words.length < 4) return true;
-    return /\b(unprecedented|significant|material|notably|including|with|without|before|after|to|for|of|in|on|at|from|than|as|by|and|or|but|while|if)\s*$/i.test(t);
+  const splitBullets = (s='') => {
+    const raw = stripNoise(s);
+    if (!raw) return [];
+    if (!raw.includes('•')) return [raw];
+    return raw.split('•').map(x => stripNoise(x)).filter(Boolean);
   };
 
-  const splitSentencesCn = (s='') => stripNoise(s).split(/[。！？；;]+/).map(x => stripNoise(x)).filter(Boolean);
+  const splitSentCn = (s='') => stripNoise(s).split(/[。！？；;]+/).map(x => stripNoise(x)).filter(Boolean);
 
-  const splitSentencesEn = (s='') => {
-    let t = stripNoise(s)
+  const splitSentEn = (s='') => {
+    const t = stripNoise(s)
       .replace(/(\d)\.(\d)/g, '$1__DOT__$2')
       .replace(/\bU\.S\./g, 'US')
       .replace(/\bU\.K\./g, 'UK')
       .replace(/\be\.g\./ig, 'eg')
       .replace(/\bi\.e\./ig, 'ie');
-    const parts = t.split(/[.!?;]+/).map(x => stripNoise(x.replace(/__DOT__/g,'.'))).filter(Boolean);
-    return parts;
+    return t.split(/[.!?;]+/).map(x => stripNoise(x.replace(/__DOT__/g,'.'))).filter(Boolean);
   };
 
-  const firstFactCn = (text='') => {
-    const parts = splitSentencesCn(text);
-    const fact = parts.find(x => /\d|亿美元|亿股|万吨|项目|协议|注资|投资|储备|贷款|股权/.test(x) && !isAdvice(x));
-    return fact || parts.find(x => !isAdvice(x)) || '';
-  };
-
-  const firstFactEn = (text='') => {
-    const parts = splitSentencesEn(text);
-    const fact = parts.find(x =>
-      /\d|\$|billion|million|project|agreement|funding|investment|loan|equity|stockpile|reserve/i.test(x)
-      && !isAdvice(x)
-      && !isActionLeadEn(x)
-      && !looksIncompleteEn(x)
-    );
-    return (
-      fact ||
-      parts.find(x => !isAdvice(x) && !isActionLeadEn(x) && !looksIncompleteEn(x)) ||
-      parts.find(x => !isAdvice(x) && !isActionLeadEn(x) && !isTruncated(x)) ||
-      ''
-    );
-  };
-
-  const pickFactEn = (texts=[], deny=[]) => {
-    const denyList = (deny || []).filter(Boolean);
-    const candidates = [];
-    for (const src of texts) {
-      const parts = splitSentencesEn(src || '');
-      for (const p of parts) {
-        const t = stripNoise(p);
-        if (!t) continue;
-        if (isAdvice(t) || isActionLeadEn(t) || looksIncompleteEn(t)) continue;
-        if (denyList.some(d => similar(t, d))) continue;
-        candidates.push(t);
-      }
-    }
-    const fact = candidates.find(c => isFactEn(c));
-    return fact || candidates[0] || '';
-  };
+  const isAdvice = (s='') => /(减持|增配|超配|规避|建议|布局|关注|谨慎|买入|卖出|加仓|建仓|止盈|止损|avoid|overweight|underweight|buy|sell|trim|add position|reduce exposure|not investment advice)/i.test(s);
+  const isFactCn = (s='') => /(\d|亿美元|亿元|万吨|项目|协议|注资|投资|储备|贷款|股权|国防部|商务部)/.test(s);
+  const isFactEn = (s='') => /(\d|\$|billion|million|project|agreement|funding|investment|loan|equity|stockpile|reserve|department|ministry|announced|approved)/i.test(s);
+  const isBadTailEn = (s='') => /(?:\.\.\.|…|\bhedg(?:e|ing)?|\bto)\s*$/i.test(s);
+  const isActionLeadEn = (s='') => /^(secure|track|watch|rebalance|hedge|buy|sell|trim|add|reduce|avoid|overweight|underweight|prioritize|focus on|rotate|accumulate|de-risk)\b/i.test(s);
 
   const norm = (s='') => stripNoise(s).toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '');
   const similar = (a,b) => {
     const x = norm(a), y = norm(b);
     if (!x || !y) return false;
-    if (x === y || x.includes(y) || y.includes(x)) return true;
-    return x.slice(0, 28) === y.slice(0, 28);
+    return x === y || x.includes(y) || y.includes(x) || x.slice(0,28) === y.slice(0,28);
   };
 
-  const clipCn = (s='', n=34) => {
+  const clipCn = (s='', n=36) => {
     const t = stripNoise(s);
     if (!t) return '';
-    return t.length > n ? `${t.slice(0, n).replace(/[，。；;,\s]+$/g, '')}…` : t;
+    return t.length > n ? t.slice(0, n).replace(/[，。；;,\s]+$/g, '') : t;
   };
 
-  const clipWords = (s='', n=15) => {
-    const t = stripNoise(s);
-    if (!t) return '';
-    const ws = t.split(/\s+/);
-    return ws.length > n ? `${ws.slice(0, n).join(' ').replace(/[;,.\s]+$/g,'')}...` : t;
-  };
-
-  const clipWordsNoEllipsis = (s='', n=20) => {
+  const clipWords = (s='', n=20) => {
     const t = stripNoise(s).replace(/(?:\.\.\.|…)\s*$/g, '').trim();
     if (!t) return '';
     const ws = t.split(/\s+/);
-    return ws.length > n ? ws.slice(0, n).join(' ').replace(/[;,.\s]+$/g,'') : t;
+    return ws.length > n ? ws.slice(0,n).join(' ').replace(/[;,\.\s]+$/g,'') : t;
+  };
+
+  const pickFactCn = (...texts) => {
+    const pool = texts.flatMap(t => splitSentCn(t || '')).map(stripNoise).filter(Boolean);
+    return pool.find(x => isFactCn(x) && !isAdvice(x)) || pool.find(x => !isAdvice(x)) || '';
+  };
+
+  const pickFactEn = (...texts) => {
+    const pool = texts.flatMap(t => splitSentEn(t || '')).map(stripNoise).filter(Boolean)
+      .filter(x => !isAdvice(x) && !isActionLeadEn(x) && !isBadTailEn(x));
+    return pool.find(isFactEn) || pool[0] || '';
+  };
+
+  const pickAngles = (rawPolicy, rawIndustry, rawCapital, lang='cn') => {
+    const src = [rawPolicy, rawIndustry, rawCapital].map(x => splitBullets(x || ''));
+    const out = [];
+    for (let i=0;i<3;i++) {
+      let cand = '';
+      for (const v of src[i]) {
+        const c = stripNoise(v);
+        if (!c) continue;
+        if (out.some(o => similar(o, c))) continue;
+        cand = c; break;
+      }
+      if (!cand) {
+        for (const arr of src) {
+          for (const v of arr) {
+            const c = stripNoise(v);
+            if (!c) continue;
+            if (out.some(o => similar(o, c))) continue;
+            cand = c; break;
+          }
+          if (cand) break;
+        }
+      }
+      out.push(cand || '');
+    }
+    if (lang === 'cn') return out.map(x => clipCn(x, 34));
+    return out.map(x => clipWords(x, 16));
   };
 
   const makeCn = (raw, withLink=true) => {
-    const lines = splitLines(raw || '');
-    if (!lines.length) return '';
+    const arr = lines(raw || '');
+    if (!arr.length) return '';
 
-    const coreRaw = getField(lines, ['核心结论：','Conclusion:']) || lines[0];
-    const policy = getField(lines, ['📜 政策：','📜 Policy:']);
-    const industry = getField(lines, ['🏭 产业：','🏭 Industry:']);
-    const capital = getField(lines, ['💰 资本：','💰 Capital:']);
-    const oppRaw = getField(lines, ['机会窗口：','Opportunity window:']);
-    const evidenceRaw = getField(lines, ['证据锚点：','Evidence anchors:']);
-    const includesRaw = getField(lines, ['报告包含：','Report includes:']);
+    const coreRaw = getField(arr, ['核心结论：','Conclusion:']) || arr[0].replace(/^【.*?】/, '');
+    const pRaw = getField(arr, ['📜 政策：','📜 Policy:']);
+    const iRaw = getField(arr, ['🏭 产业：','🏭 Industry:']);
+    const cRaw = getField(arr, ['💰 资本：','💰 Capital:']);
+    const oppRaw = getField(arr, ['机会窗口：','Opportunity window:']);
+    const evRaw = getField(arr, ['证据锚点：','Evidence anchors:']);
+    const incRaw = getField(arr, ['报告包含：','Report includes:']);
     const link = getLink(raw);
 
-    const fallbackFact = firstFactCn(`${includesRaw}；${evidenceRaw}`) || '资金与产能重排正在加速。';
+    let [policy, industry, capital] = pickAngles(pRaw, iRaw, cRaw, 'cn');
+    const fallback = pickFactCn(incRaw, evRaw, coreRaw, pRaw, iRaw, cRaw) || '关键矿产链条重构正在加速。';
+    if (!policy) policy = clipCn(pickFactCn(pRaw, coreRaw) || fallback, 34);
+    if (!industry) industry = clipCn(pickFactCn(iRaw, incRaw) || fallback, 34);
+    if (!capital) capital = clipCn(pickFactCn(cRaw, incRaw) || fallback, 34);
 
-    let coreFact = firstFactCn(`${policy}；${industry}；${capital}`) || fallbackFact;
-    let impact = firstFactCn(industry) || firstFactCn(policy) || fallbackFact;
-    let action = firstFactCn(coreRaw);
+    const title = clipCn(coreRaw, 26);
+    const coreFact = clipCn(pickFactCn(policy, industry, capital, coreRaw) || fallback, 36);
+    let impact = clipCn(pickFactCn(industry, policy, incRaw) || fallback, 36);
+    if (similar(impact, coreFact)) impact = clipCn(pickFactCn(incRaw, policy, capital) || '供应链重排速度提升。', 36);
+    let action = clipCn(pickFactCn(coreRaw, oppRaw), 42);
     if (!action || !/(跟踪|观察|评估|控制|分散|配置|对冲|仓位|窗口)/.test(action)) {
-      action = '投资动作：优先跟踪政策资金与加工产能兑现节点。';
-    } else {
-      action = `投资动作：${action}`;
+      action = '优先跟踪政策资金与加工产能兑现节点。';
     }
-    let counter = firstFactCn(oppRaw) || '反方风险：若海外供给兑现慢于预期，短期波动会放大。';
-    if (!counter.startsWith('反方风险')) counter = `反方风险：${counter}`;
-
-    let evidence = firstFactCn(evidenceRaw) || firstFactCn(includesRaw) || fallbackFact;
-    if (!evidence || isAdvice(evidence)) evidence = fallbackFact;
-
-    coreFact = clipCn(coreFact, 34);
-    impact = clipCn(impact, 34);
-    if (similar(impact, coreFact)) impact = clipCn(firstFactCn(includesRaw) || '供给链从资源端向加工端迁移。', 34);
-    evidence = clipCn(evidence, 44);
-    const title = clipCn(coreRaw.replace(/^【.*?】/, ''), 30);
+    let counter = clipCn(pickFactCn(oppRaw, incRaw), 42);
+    if (!counter) counter = '若海外供给兑现慢于预期，短期波动会放大。';
+    let evidence = clipCn(pickFactCn(evRaw, incRaw, policy, industry, capital), 46);
+    if (!evidence || isAdvice(evidence)) evidence = clipCn(fallback, 46);
 
     const out = [
       `【战争金属信号】${title}`,
       `核心事实：${coreFact}`,
       `影响路径：${impact}`,
-      action,
-      counter,
+      `投资动作：${action}`,
+      `反方风险：${counter}`,
       `证据锚点：${evidence}`,
       '⚠️ 风险提示：不构成投资建议，请按风险承受能力决策。'
     ];
@@ -277,93 +266,73 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
   };
 
   const makeEn = (raw, withLink=true) => {
-    const lines = splitLines(raw || '');
-    if (!lines.length) return '';
+    const arr = lines(raw || '');
+    if (!arr.length) return '';
 
-    const coreRaw = getField(lines, ['Conclusion:','核心结论：']) || lines[0];
-    const policy = getField(lines, ['📜 Policy:','📜 政策：']);
-    const industry = getField(lines, ['🏭 Industry:','🏭 产业：']);
-    const capital = getField(lines, ['💰 Capital:','💰 资本：']);
-    const oppRaw = getField(lines, ['Opportunity window:','机会窗口：']);
-    const evidenceRaw = getField(lines, ['Evidence anchors:','证据锚点：']);
-    const includesRaw = getField(lines, ['Report includes:','报告包含：']);
+    const coreRaw = getField(arr, ['Conclusion:','核心结论：']) || arr[0];
+    const pRaw = getField(arr, ['📜 Policy:','📜 政策：']);
+    const iRaw = getField(arr, ['🏭 Industry:','🏭 产业：']);
+    const cRaw = getField(arr, ['💰 Capital:','💰 资本：']);
+    const oppRaw = getField(arr, ['Opportunity window:','机会窗口：']);
+    const evRaw = getField(arr, ['Evidence anchors:','Evidence anchor:','证据锚点：']);
+    const incRaw = getField(arr, ['Report includes:','报告包含：']);
     const link = getLink(raw);
 
-    const fallbackFact = pickFactEn([includesRaw, evidenceRaw, policy, industry, capital, coreRaw]) || 'DoD-backed funding and stockpile programs are accelerating processing build-out.';
+    let [policy, industry, capital] = pickAngles(pRaw, iRaw, cRaw, 'en');
+    const fallback = clipWords(pickFactEn(incRaw, evRaw, coreRaw, pRaw, iRaw, cRaw) || 'DoD-backed funding and stockpile programs are accelerating processing build-out.', 20);
+    if (!policy) policy = clipWords(pickFactEn(pRaw, coreRaw) || fallback, 14);
+    if (!industry) industry = clipWords(pickFactEn(iRaw, incRaw) || fallback, 14);
+    if (!capital) capital = clipWords(pickFactEn(cRaw, incRaw) || fallback, 14);
 
-    let coreFact = pickFactEn([coreRaw, policy, industry, capital, includesRaw, evidenceRaw]) || fallbackFact;
+    const title = clipWords(coreRaw, 12);
+    const coreFact = clipWords(pickFactEn(coreRaw, policy, industry, capital) || fallback, 18);
+    let impact = clipWords(pickFactEn(industry, policy, incRaw) || fallback, 18);
+    if (similar(impact, coreFact)) impact = clipWords(pickFactEn(incRaw, policy, capital) || 'Supply-chain bottlenecks are shifting downstream.', 18);
 
-    let impact = pickFactEn([industry, policy, capital, includesRaw], [coreFact]) || 'Supply-chain bottlenecks are shifting downstream.';
-    if (similar(impact, coreFact) || looksIncompleteEn(impact)) {
-      impact = pickFactEn([includesRaw, policy, capital, coreRaw], [coreFact]) || 'Supply-chain bottlenecks are shifting downstream.';
-    }
-
-    let action = pickFactEn([coreRaw], [coreFact, impact]) || firstFactEn(coreRaw);
+    let action = clipWords(pickFactEn(coreRaw, oppRaw), 22);
     if (!action || !/(track|watch|rebalance|hedge|position|window|trigger)/i.test(action)) {
-      action = 'Investor action: Track funding, processing ramp-up, and trigger levels before sizing positions.';
-    } else if (!/^Investor action:/i.test(action)) {
-      action = `Investor action: ${action}`;
+      action = 'Track funding, processing ramp-up, and trigger levels before sizing positions';
     }
 
-    let counter = pickFactEn([oppRaw], [coreFact, impact]) || 'Counter-risk: If project delivery lags, volatility can rise before fundamentals catch up.';
-    if (!/^Counter-risk:/i.test(counter)) counter = `Counter-risk: ${counter}`;
+    let counter = clipWords(pickFactEn(oppRaw, incRaw), 22);
+    if (!counter) counter = 'If project delivery lags, volatility can rise before fundamentals catch up';
 
-    const factPool = [
-      pickFactEn([evidenceRaw], [coreFact, impact, action]),
-      pickFactEn([includesRaw], [coreFact, impact, action]),
-      pickFactEn([policy, industry, capital], [coreFact, impact, action]),
-      pickFactEn([coreRaw], [coreFact, impact, action]),
-      fallbackFact
-    ].filter(Boolean);
-
-    let evidence =
-      factPool.find(x => isFactEn(x) && !isAdvice(x) && !isActionLeadEn(x) && !looksIncompleteEn(x)) ||
-      factPool.find(x => !isAdvice(x) && !isActionLeadEn(x) && !looksIncompleteEn(x)) ||
-      fallbackFact;
-
-    evidence = clipWordsNoEllipsis(evidence, 24)
+    let evidence = clipWords(pickFactEn(evRaw, incRaw, policy, industry, capital), 24)
       .replace(/\bhedg(?:e|ing)?\b\s*$/i, '')
-      .replace(/\bto\s*$/i, '')
+      .replace(/\bto\b\s*$/i, '')
       .trim();
-
-    if (!evidence || isAdvice(evidence) || isActionLeadEn(evidence) || looksIncompleteEn(evidence) || similar(evidence, impact) || similar(evidence, coreFact)) {
-      const alt = pickFactEn([includesRaw, policy, industry, capital, coreRaw], [coreFact, impact]);
-      evidence = clipWordsNoEllipsis(alt || fallbackFact, 24)
-        .replace(/\bhedg(?:e|ing)?\b\s*$/i, '')
-        .replace(/\bto\s*$/i, '')
-        .trim();
+    if (!evidence || isAdvice(evidence) || isActionLeadEn(evidence) || isBadTailEn(evidence) || similar(evidence, impact) || similar(evidence, coreFact)) {
+      evidence = clipWords(pickFactEn(incRaw, policy, industry, capital, coreRaw) || fallback, 24);
     }
-
-    const safeCore = clipWordsNoEllipsis(coreFact, 18);
-    const safeImpact = clipWordsNoEllipsis(impact, 18);
-    const safeAction = clipWordsNoEllipsis(action, 22);
-    const safeCounter = clipWordsNoEllipsis(counter, 22);
 
     const out = [
-      `War-Metal Signal: ${clipWords(coreRaw, 12)}`,
-      `Core fact: ${safeCore || fallbackFact}`,
-      `Impact path: ${safeImpact || 'Supply-chain bottlenecks are shifting downstream'}`,
-      safeAction,
-      safeCounter,
+      `War-Metal Signal: ${title}`,
+      `Core fact: ${coreFact || fallback}`,
+      `Impact path: ${impact || 'Supply-chain bottlenecks are shifting downstream'}`,
+      `Investor action: ${action}`,
+      `Counter-risk: ${counter}`,
       `Evidence anchor: ${evidence}`,
       '⚠️ Risk note: Not investment advice. Manage triggers and position size.'
     ];
 
     if (withLink && link) out.push('', 'Full brief:', link);
     out.push('DM for full report', '#RareEarth #CriticalMinerals #SupplyChain');
-
     return out.join('\n').replace(/\n{3,}/g,'\n\n').trim();
   };
 
-  const cnLink = document.getElementById('copy-cn-link');
-  const cnDm = document.getElementById('copy-cn-dm');
-  const enLink = document.getElementById('copy-en-link');
-  const enDm = document.getElementById('copy-en-dm');
+  try {
+    const cnLink = document.getElementById('copy-cn-link');
+    const cnDm = document.getElementById('copy-cn-dm');
+    const enLink = document.getElementById('copy-en-link');
+    const enDm = document.getElementById('copy-en-dm');
 
-  if (cnLink) cnLink.value = makeCn(cnLink.value, true);
-  if (cnDm) cnDm.value = makeCn(cnDm.value, false);
-  if (enLink) enLink.value = makeEn(enLink.value, true);
-  if (enDm) enDm.value = makeEn(enDm.value, false);
+    if (cnLink) cnLink.value = makeCn(cnLink.value, true);
+    if (cnDm) cnDm.value = makeCn(cnDm.value, false);
+    if (enLink) enLink.value = makeEn(enLink.value, true);
+    if (enDm) enDm.value = makeEn(enDm.value, false);
+  } catch (e) {
+    console.error('social copy transform failed', e);
+  }
 
   const buttons = document.querySelectorAll('[data-copy]');
   const copyText = async (text) => {
