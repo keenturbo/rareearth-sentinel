@@ -110,6 +110,15 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     .replace(/\s+/g, ' ')
     .trim();
 
+  const keepStructured = (raw='') => {
+    const t = String(raw || '');
+    const isCn = /核心事实[:：]/.test(t) && /影响路径[:：]/.test(t) && /投资动作[:：]/.test(t) && /证据锚点[:：]/.test(t);
+    const isEn = /Core fact:\s*/i.test(t) && /Impact path:\s*/i.test(t) && /Investor action:\s*/i.test(t) && /Evidence anchor:\s*/i.test(t);
+    return isCn || isEn;
+  };
+
+  // Keep already-structured server output as-is (v2.8 AI path);
+  // fallback transformation remains for old raw text.
   const stripNoise = (s='') => clean(s)
     .replace(/\bTL\s*;\s*DR\s*:\s*/ig, '')
     .replace(/\bKey\s*angles?\s*:\s*/ig, '')
@@ -119,7 +128,6 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     .trim();
 
   const lines = (raw='') => String(raw || '').split('\n').map(x => x.trim()).filter(Boolean);
-
   const getField = (arr, keys=[]) => {
     for (const l of arr) {
       for (const k of keys) {
@@ -128,21 +136,17 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     }
     return '';
   };
-
   const getLink = (raw='') => {
     const m = String(raw || '').match(/https?:\/\/\S+/);
     return m ? m[0] : '';
   };
-
   const splitBullets = (s='') => {
     const raw = stripNoise(s);
     if (!raw) return [];
     if (!raw.includes('•')) return [raw];
     return raw.split('•').map(x => stripNoise(x)).filter(Boolean);
   };
-
   const splitSentCn = (s='') => stripNoise(s).split(/[。！？；;]+/).map(x => stripNoise(x)).filter(Boolean);
-
   const splitSentEn = (s='') => {
     const t = stripNoise(s)
       .replace(/(\d)\.(\d)/g, '$1__DOT__$2')
@@ -152,34 +156,29 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
       .replace(/\bi\.e\./ig, 'ie');
     return t.split(/[.!?;]+/).map(x => stripNoise(x.replace(/__DOT__/g,'.'))).filter(Boolean);
   };
-
   const isAdvice = (s='') => /(减持|增配|超配|规避|建议|布局|关注|谨慎|买入|卖出|加仓|建仓|止盈|止损|avoid|overweight|underweight|buy|sell|trim|add position|reduce exposure|not investment advice)/i.test(s);
   const isFactCn = (s='') => /(\d|亿美元|亿元|万吨|项目|协议|注资|投资|储备|贷款|股权|国防部|商务部|关税|终裁|确认|宣布|启动)/.test(s);
   const isFactEn = (s='') => /(\d|\$|billion|million|project|agreement|funding|investment|loan|equity|stockpile|reserve|department|ministry|announced|approved|tariff|duty|confirmed)/i.test(s);
   const isRiskEn = (s='') => /(if|unless|risk|volatility|lag|delay|shortfall|slowdown|shock)/i.test(s);
   const isBadTailEn = (s='') => /(?:\b(unprecedented|strict|directly|to|with|for|of|and)\s*$)/i.test(s);
   const isActionLeadEn = (s='') => /^(secure|track|watch|rebalance|hedge|buy|sell|trim|add|reduce|avoid|overweight|underweight|prioritize|focus on|rotate|accumulate|de-risk)\b/i.test(s);
-
   const norm = (s='') => stripNoise(s).toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '');
   const similar = (a,b) => {
     const x = norm(a), y = norm(b);
     if (!x || !y) return false;
     return x === y || x.includes(y) || y.includes(x) || x.slice(0,28) === y.slice(0,28);
   };
-
   const clipCn = (s='', n=36) => {
     const t = stripNoise(s);
     if (!t) return '';
     return t.length > n ? t.slice(0, n).replace(/[，。；;,\s]+$/g, '') : t;
   };
-
   const clipWords = (s='', n=20) => {
     const t = stripNoise(s).trim();
     if (!t) return '';
     const ws = t.split(/\s+/);
     return ws.length > n ? ws.slice(0,n).join(' ').replace(/[;,\.\s]+$/g,'') : t;
   };
-
   const isCompleteEn = (s='') => {
     const t = stripNoise(s);
     if (!t) return false;
@@ -188,18 +187,15 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     if (isBadTailEn(t)) return false;
     return true;
   };
-
   const pickFactCn = (...texts) => {
     const pool = texts.flatMap(t => splitSentCn(t || '')).map(stripNoise).filter(Boolean);
     return pool.find(x => isFactCn(x) && !isAdvice(x)) || pool.find(x => !isAdvice(x)) || '';
   };
-
   const pickFactEn = (...texts) => {
     const pool = texts.flatMap(t => splitSentEn(t || '')).map(stripNoise).filter(Boolean)
       .filter(x => !isAdvice(x) && !isActionLeadEn(x) && !isBadTailEn(x));
     return pool.find(isFactEn) || pool[0] || '';
   };
-
   const pickDistinct = (arr, fallback='') => {
     const out = [];
     for (const cand of arr) {
@@ -210,13 +206,10 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     }
     while (out.length < 3) {
       if (!fallback) { out.push(''); continue; }
-      let f = fallback;
-      if (out.some(o => similar(o, f))) f = `${fallback}`;
-      out.push(f);
+      out.push(fallback);
     }
     return out.slice(0,3);
   };
-
   const pickAngles = (rawPolicy, rawIndustry, rawCapital, lang='cn') => {
     const src = [rawPolicy, rawIndustry, rawCapital].map(x => splitBullets(x || ''));
     const cand = [];
@@ -230,6 +223,7 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
   };
 
   const makeCn = (raw, withLink=true) => {
+    if (keepStructured(raw)) return clean(raw);
     const arr = lines(raw || '');
     if (!arr.length) return '';
 
@@ -279,6 +273,7 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
   };
 
   const makeEn = (raw, withLink=true) => {
+    if (keepStructured(raw)) return clean(raw);
     const arr = lines(raw || '');
     if (!arr.length) return '';
 
