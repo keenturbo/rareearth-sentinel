@@ -23,6 +23,11 @@ from src.datasets import build_datasets
 from src.premium import generate_daily_briefs, backfill_daily_briefs
 from src.telegram import post_telegram_records, post_telegram_top3_due
 
+try:
+    from src.social_copy_ai import generate_social_copy_bundle
+except Exception:
+    generate_social_copy_bundle = None
+
 CANDIDATE_CONFIDENCE_MIN = 60
 CANDIDATE_LEN_MIN = 2
 CANDIDATE_LEN_MAX = 80
@@ -807,7 +812,7 @@ def _build_home_top1_fallback(item, valid_report_ids, lang="zh"):
 
     return (
         '<div class="premium-item premium-aggregate">'
-        f'<div class="premium-topic">{html_lib.escape(topic_title)}</div>'
+        
         f'<div class="premium-reason"><span class="label-gray">{core_label}</span>{sep}{html_lib.escape(core_text)}</div>'
         f'<div class="premium-reason"><span class="label-gray">{signal_label}</span>{sep}{html_lib.escape(signal_text)}</div>'
         f'{preview_html}'
@@ -963,12 +968,83 @@ def _build_home_aggregate_html(top3_data, valid_report_ids, daily_report, lang="
 
     return (
         '<div class="premium-item premium-aggregate">'
-        f'<div class="premium-topic">{html_lib.escape(topic_title)}</div>'
+        
         f'{"".join(lines_html)}'
         f'<a class="premium-btn" href="{html_lib.escape(unlock)}">{html_lib.escape(btn_label)}</a>'
         '</div>'
     )
 
+
+
+
+def _build_home_ai_topic_html(topic_text, items, valid_report_ids, lang="zh"):
+    raw = str(topic_text or "").strip()
+    if not raw:
+        return ""
+
+    lines = []
+    for line in raw.splitlines():
+        s = _normalize_punct(line).strip()
+        if not s:
+            continue
+        low = s.lower()
+        if re.search(r"https?://", s):
+            continue
+        if s.startswith("#"):
+            continue
+        if s.startswith("私信回复") or low.startswith("dm for full report"):
+            continue
+        if low in {"today's focus", "todays focus", "top tracks"}:
+            continue
+        if s.startswith("【") and s.endswith("】"):
+            continue
+        s = s.replace("...", "").replace("…", "").strip()
+        if s:
+            lines.append(s)
+
+    if not lines:
+        return ""
+
+    if lang == "zh":
+        subdir = "cn"
+        btn_label = "解锁深度报告"
+        sep = "："
+    else:
+        subdir = "en"
+        btn_label = "Unlock Deep Report"
+        sep = ": "
+
+    primary_report_id = _pick_primary_report_id(items or [], valid_report_ids)
+    unlock = f"/{subdir}/pay/{primary_report_id}.html" if primary_report_id else "mailto:sentinel@dataspices.com"
+
+    out = []
+    for s in lines[:8]:
+        if "：" in s:
+            k, v = s.split("：", 1)
+            k = k.strip()
+            v = v.strip()
+            if k and v and len(k) <= 16:
+                out.append(
+                    f'<div class="premium-reason"><span class="label-gray">{html_lib.escape(k)}</span>{sep}{html_lib.escape(v)}</div>'
+                )
+                continue
+        if ":" in s and lang == "en":
+            k, v = s.split(":", 1)
+            k = k.strip()
+            v = v.strip()
+            if k and v and len(k) <= 20:
+                out.append(
+                    f'<div class="premium-reason"><span class="label-gray">{html_lib.escape(k)}</span>{sep}{html_lib.escape(v)}</div>'
+                )
+                continue
+        out.append(f'<div class="premium-reason">{html_lib.escape(s)}</div>')
+
+    return (
+        '<div class="premium-item premium-aggregate">'
+        + ''.join(out)
+        + f'<a class="premium-btn" href="{html_lib.escape(unlock)}">{html_lib.escape(btn_label)}</a>'
+        + '</div>'
+    )
 
 def _replace_top_tracks_section(raw_html, title_candidates, new_title, aggregate_html):
     for title in title_candidates:
@@ -1002,12 +1078,50 @@ def _postprocess_home_top_tracks(config):
     daily_zh = _load_json_dict(os.path.join(config.data_dir, "status", "daily_report_zh.json"))
     daily_en = _load_json_dict(os.path.join(config.data_dir, "status", "daily_report_en.json"))
 
-    aggregate_cn = _build_home_aggregate_html(
-        top3_data, valid_report_ids, daily_zh, lang="zh"
-    )
-    aggregate_en = _build_home_aggregate_html(
-        top3_data, valid_report_ids, daily_en, lang="en"
-    )
+    social_bundle = None
+    if callable(generate_social_copy_bundle):
+        try:
+            social_bundle = generate_social_copy_bundle(
+                config,
+                top3_data,
+                daily_zh,
+                daily_en,
+                valid_report_ids,
+                timeout_seconds=8,
+            )
+        except Exception:
+            social_bundle = None
+
+    if not social_bundle:
+        try:
+            _social_cache_path = os.path.join(config.data_dir, "status", "social_copy_generated.json")
+            with open(_social_cache_path, "r", encoding="utf-8") as _f:
+                _cached_bundle = json.load(_f)
+            if isinstance(_cached_bundle, dict) and (_cached_bundle.get("cn_topic") or _cached_bundle.get("en_topic")):
+                social_bundle = _cached_bundle
+        except Exception:
+            pass
+
+    top_items = top3_data.get("items") if isinstance(top3_data, dict) else []
+
+    aggregate_cn = ""
+    aggregate_en = ""
+    if social_bundle:
+        aggregate_cn = _build_home_ai_topic_html(
+            social_bundle.get("cn_topic"), top_items, valid_report_ids, lang="zh"
+        )
+        aggregate_en = _build_home_ai_topic_html(
+            social_bundle.get("en_topic"), top_items, valid_report_ids, lang="en"
+        )
+
+    if not aggregate_cn:
+        aggregate_cn = _build_home_aggregate_html(
+            top3_data, valid_report_ids, daily_zh, lang="zh"
+        )
+    if not aggregate_en:
+        aggregate_en = _build_home_aggregate_html(
+            top3_data, valid_report_ids, daily_en, lang="en"
+        )
 
     targets = [
         (
