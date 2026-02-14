@@ -13,6 +13,11 @@ if ROOT not in sys.path:
 from src.config import Config
 from src.utils import now_cst, isoformat
 
+try:
+    from src.social_copy_ai import generate_social_copy_bundle
+except Exception:
+    generate_social_copy_bundle = None
+
 
 SOCIAL_PREFIXES_CN = ["要点：", "要点:", "要点", "今日要点：", "今日要点", "要点摘要：", "要点摘要"]
 SOCIAL_PREFIXES_EN = [
@@ -100,7 +105,6 @@ def _read_jsonl(path):
             order_id = entry.get("order_id")
             if not order_id:
                 continue
-            # Later entries overwrite earlier ones
             entries[order_id] = entry
     return list(entries.values())
 
@@ -590,6 +594,45 @@ def _pick_primary_report_id(items, reports_index):
     return candidates[0]
 
 
+def _strip_ai_tail(text):
+    lines = []
+    for raw in str(text or "").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if re.search(r"https?://", line):
+            continue
+        low = line.lower()
+        if low.startswith("dm for full report"):
+            continue
+        if line.startswith("私信回复【稀土】获取完整版"):
+            continue
+        if line.startswith("#"):
+            continue
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+
+def _format_ai_social(base_text, link, lang="zh", with_link=True):
+    base = _strip_ai_tail(base_text)
+    if not base:
+        return ""
+
+    out = [base]
+    if with_link and link:
+        if lang == "zh":
+            out.extend(["", "👉 解锁深度报告：", link])
+        else:
+            out.extend(["", "Unlock full report:", link])
+
+    if lang == "zh":
+        out.extend(["私信回复【稀土】获取完整版", "#稀土 #关键矿产 #供应链"])
+    else:
+        out.extend(["DM for full report", "#RareEarth #CriticalMinerals #SupplyChain"])
+
+    return "\n".join(out).strip()
+
+
 def _select_top1_item(items):
     if not items:
         return None
@@ -894,7 +937,6 @@ def _build_social_copy_en(top3, daily, site_base_url, reports_index=None):
     if includes:
         base_lines.append(f"Report includes: {includes}")
 
-    # keep 120~220 words in narrative part
     wc = _word_count(" ".join(base_lines))
     if wc > 220 and includes:
         includes = _clip_words(includes, max_words=18)
@@ -1022,8 +1064,37 @@ def main():
     top3_data = _read_json(top3_path)
     daily_zh = _read_json(daily_zh_path)
     daily_en = _read_json(daily_en_path)
-    social_cn_link, social_cn_dm = _build_social_copy_cn(top3_data, daily_zh, config.site_base_url, reports)
-    social_en_link, social_en_dm = _build_social_copy_en(top3_data, daily_en, config.site_base_url, reports)
+
+    social_cn_link = social_cn_dm = social_en_link = social_en_dm = ""
+    social_bundle = None
+    if callable(generate_social_copy_bundle):
+        try:
+            social_bundle = generate_social_copy_bundle(
+                config,
+                top3_data,
+                daily_zh,
+                daily_en,
+                set(reports.keys()),
+                timeout_seconds=8,
+            )
+        except Exception:
+            social_bundle = None
+
+    if social_bundle:
+        top_items = top3_data.get("items") if isinstance(top3_data, dict) else []
+        primary_id = _pick_primary_report_id(top_items or [], reports)
+        cn_link = _build_pay_link(config.site_base_url, "cn", primary_id)
+        en_link = _build_pay_link(config.site_base_url, "en", primary_id)
+
+        social_cn_link = _format_ai_social(social_bundle.get("cn_social", ""), cn_link, lang="zh", with_link=True)
+        social_cn_dm = _format_ai_social(social_bundle.get("cn_social", ""), cn_link, lang="zh", with_link=False)
+        social_en_link = _format_ai_social(social_bundle.get("en_social", ""), en_link, lang="en", with_link=True)
+        social_en_dm = _format_ai_social(social_bundle.get("en_social", ""), en_link, lang="en", with_link=False)
+
+    if not all([social_cn_link, social_cn_dm, social_en_link, social_en_dm]):
+        social_cn_link, social_cn_dm = _build_social_copy_cn(top3_data, daily_zh, config.site_base_url, reports)
+        social_en_link, social_en_dm = _build_social_copy_en(top3_data, daily_en, config.site_base_url, reports)
+
     _build_social_page(
         social_template,
         social_output,
