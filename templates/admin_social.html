@@ -106,6 +106,7 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     .replace(/。\s*[；;]/g, '。')
     .replace(/([。！？!?])\s*[；;]/g, '$1')
     .replace(/\.\s*;/g, '.')
+    .replace(/(?:\.\.\.|…)/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -115,7 +116,6 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     .replace(/^\s*(要点|三视角|Three angles|Conclusion|核心结论|Report includes|Evidence anchors?|证据锚点|机会窗口|Opportunity window|影响路径|Impact path)\s*[:：]?\s*/i, '')
     .replace(/^\s*[•\-\*\u2022]+\s*/g, '')
     .replace(/(影响路径|Impact path)\s*[:：].*$/i, '')
-    .replace(/(?:\.\.\.|…)\s*$/g, '')
     .trim();
 
   const lines = (raw='') => String(raw || '').split('\n').map(x => x.trim()).filter(Boolean);
@@ -154,9 +154,10 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
   };
 
   const isAdvice = (s='') => /(减持|增配|超配|规避|建议|布局|关注|谨慎|买入|卖出|加仓|建仓|止盈|止损|avoid|overweight|underweight|buy|sell|trim|add position|reduce exposure|not investment advice)/i.test(s);
-  const isFactCn = (s='') => /(\d|亿美元|亿元|万吨|项目|协议|注资|投资|储备|贷款|股权|国防部|商务部)/.test(s);
-  const isFactEn = (s='') => /(\d|\$|billion|million|project|agreement|funding|investment|loan|equity|stockpile|reserve|department|ministry|announced|approved)/i.test(s);
-  const isBadTailEn = (s='') => /(?:\.\.\.|…|\bhedg(?:e|ing)?|\bto)\s*$/i.test(s);
+  const isFactCn = (s='') => /(\d|亿美元|亿元|万吨|项目|协议|注资|投资|储备|贷款|股权|国防部|商务部|关税|终裁|确认|宣布|启动)/.test(s);
+  const isFactEn = (s='') => /(\d|\$|billion|million|project|agreement|funding|investment|loan|equity|stockpile|reserve|department|ministry|announced|approved|tariff|duty|confirmed)/i.test(s);
+  const isRiskEn = (s='') => /(if|unless|risk|volatility|lag|delay|shortfall|slowdown|shock)/i.test(s);
+  const isBadTailEn = (s='') => /(?:\b(unprecedented|strict|directly|to|with|for|of|and)\s*$)/i.test(s);
   const isActionLeadEn = (s='') => /^(secure|track|watch|rebalance|hedge|buy|sell|trim|add|reduce|avoid|overweight|underweight|prioritize|focus on|rotate|accumulate|de-risk)\b/i.test(s);
 
   const norm = (s='') => stripNoise(s).toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '');
@@ -173,10 +174,19 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
   };
 
   const clipWords = (s='', n=20) => {
-    const t = stripNoise(s).replace(/(?:\.\.\.|…)\s*$/g, '').trim();
+    const t = stripNoise(s).trim();
     if (!t) return '';
     const ws = t.split(/\s+/);
     return ws.length > n ? ws.slice(0,n).join(' ').replace(/[;,\.\s]+$/g,'') : t;
+  };
+
+  const isCompleteEn = (s='') => {
+    const t = stripNoise(s);
+    if (!t) return false;
+    const words = t.split(/\s+/);
+    if (words.length < 6) return false;
+    if (isBadTailEn(t)) return false;
+    return true;
   };
 
   const pickFactCn = (...texts) => {
@@ -190,32 +200,33 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     return pool.find(isFactEn) || pool[0] || '';
   };
 
+  const pickDistinct = (arr, fallback='') => {
+    const out = [];
+    for (const cand of arr) {
+      const c = stripNoise(cand);
+      if (!c) continue;
+      if (out.some(o => similar(o, c))) continue;
+      out.push(c);
+    }
+    while (out.length < 3) {
+      if (!fallback) { out.push(''); continue; }
+      let f = fallback;
+      if (out.some(o => similar(o, f))) f = `${fallback}`;
+      out.push(f);
+    }
+    return out.slice(0,3);
+  };
+
   const pickAngles = (rawPolicy, rawIndustry, rawCapital, lang='cn') => {
     const src = [rawPolicy, rawIndustry, rawCapital].map(x => splitBullets(x || ''));
-    const out = [];
+    const cand = [];
     for (let i=0;i<3;i++) {
-      let cand = '';
-      for (const v of src[i]) {
-        const c = stripNoise(v);
-        if (!c) continue;
-        if (out.some(o => similar(o, c))) continue;
-        cand = c; break;
-      }
-      if (!cand) {
-        for (const arr of src) {
-          for (const v of arr) {
-            const c = stripNoise(v);
-            if (!c) continue;
-            if (out.some(o => similar(o, c))) continue;
-            cand = c; break;
-          }
-          if (cand) break;
-        }
-      }
-      out.push(cand || '');
+      for (const v of src[i]) cand.push(v);
     }
-    if (lang === 'cn') return out.map(x => clipCn(x, 34));
-    return out.map(x => clipWords(x, 16));
+    const fallback = lang === 'cn' ? '关键矿产链条重构正在加速' : 'Critical-mineral supply-chain reconfiguration is accelerating';
+    const lines = pickDistinct(cand, fallback);
+    if (lang === 'cn') return lines.map(x => clipCn(x, 34));
+    return lines.map(x => clipWords(x, 16));
   };
 
   const makeCn = (raw, withLink=true) => {
@@ -246,9 +257,11 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
       action = '优先跟踪政策资金与加工产能兑现节点。';
     }
     let counter = clipCn(pickFactCn(oppRaw, incRaw), 42);
-    if (!counter) counter = '若海外供给兑现慢于预期，短期波动会放大。';
+    if (!counter || similar(counter, impact)) counter = '若海外供给兑现慢于预期，短期波动会放大。';
     let evidence = clipCn(pickFactCn(evRaw, incRaw, policy, industry, capital), 46);
-    if (!evidence || isAdvice(evidence)) evidence = clipCn(fallback, 46);
+    if (!evidence || isAdvice(evidence) || similar(evidence, impact) || similar(evidence, coreFact)) {
+      evidence = clipCn(pickFactCn(incRaw, policy, industry, capital, coreRaw) || fallback, 46);
+    }
 
     const out = [
       `【战争金属信号】${title}`,
@@ -283,11 +296,14 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     if (!policy) policy = clipWords(pickFactEn(pRaw, coreRaw) || fallback, 14);
     if (!industry) industry = clipWords(pickFactEn(iRaw, incRaw) || fallback, 14);
     if (!capital) capital = clipWords(pickFactEn(cRaw, incRaw) || fallback, 14);
+    if (similar(policy, industry)) industry = clipWords(pickFactEn(iRaw, incRaw, coreRaw) || 'Processing bottlenecks remain the key constraint', 14);
+    if (similar(capital, policy) || similar(capital, industry)) capital = clipWords(pickFactEn(cRaw, incRaw, evRaw) || 'Funding is rotating toward deliverable capacity', 14);
 
     const title = clipWords(coreRaw, 12);
-    const coreFact = clipWords(pickFactEn(coreRaw, policy, industry, capital) || fallback, 18);
+    let coreFact = clipWords(pickFactEn(coreRaw, policy, industry, capital) || fallback, 18);
+    if (!isCompleteEn(coreFact)) coreFact = clipWords(pickFactEn(incRaw, evRaw, policy, industry, capital) || fallback, 18);
     let impact = clipWords(pickFactEn(industry, policy, incRaw) || fallback, 18);
-    if (similar(impact, coreFact)) impact = clipWords(pickFactEn(incRaw, policy, capital) || 'Supply-chain bottlenecks are shifting downstream.', 18);
+    if (similar(impact, coreFact)) impact = clipWords(pickFactEn(incRaw, policy, capital) || 'Supply-chain bottlenecks are shifting downstream', 18);
 
     let action = clipWords(pickFactEn(coreRaw, oppRaw), 22);
     if (!action || !/(track|watch|rebalance|hedge|position|window|trigger)/i.test(action)) {
@@ -295,7 +311,9 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     }
 
     let counter = clipWords(pickFactEn(oppRaw, incRaw), 22);
-    if (!counter) counter = 'If project delivery lags, volatility can rise before fundamentals catch up';
+    if (!counter || similar(counter, impact) || !isRiskEn(counter)) {
+      counter = 'If project delivery lags, volatility can rise before fundamentals catch up';
+    }
 
     let evidence = clipWords(pickFactEn(evRaw, incRaw, policy, industry, capital), 24)
       .replace(/\bhedg(?:e|ing)?\b\s*$/i, '')
