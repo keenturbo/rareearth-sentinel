@@ -19,8 +19,27 @@ FORBIDDEN_PROMISE_WORDS = [
     "risk-free",
 ]
 
-SUBJECT_HINTS_ZH = ["投资者", "采购方", "政策", "政府", "企业", "供应链团队"]
-SUBJECT_HINTS_EN = ["investor", "procurement", "policy", "government", "company", "supply-chain"]
+SUBJECT_HINTS_ZH = [
+    "投资者",
+    "投资动作",
+    "投资",
+    "采购方",
+    "采购",
+    "政策",
+    "政府",
+    "企业",
+    "供应链团队",
+]
+SUBJECT_HINTS_EN = [
+    "investor",
+    "investor action",
+    "procurement",
+    "policy",
+    "policy actor",
+    "government",
+    "company",
+    "supply-chain",
+]
 ADVICE_HINTS = ["超配", "减持", "规避", "buy", "sell", "overweight", "underweight"]
 
 
@@ -65,7 +84,23 @@ def _is_fact_sentence(text):
     if any(k in t.lower() for k in ADVICE_HINTS):
         return False
     fact_tokens = [
-        r"\d", r"%", r"亿美元", r"亿元", r"million", r"billion", r"project", r"tariff", r"duty", r"confirmed", r"announced", r"终裁", r"宣布", r"确认", r"启动", r"注资", r"投资",
+        r"\d",
+        r"%",
+        r"亿美元",
+        r"亿元",
+        r"million",
+        r"billion",
+        r"project",
+        r"tariff",
+        r"duty",
+        r"confirmed",
+        r"announced",
+        r"终裁",
+        r"宣布",
+        r"确认",
+        r"启动",
+        r"注资",
+        r"投资",
     ]
     return any(re.search(tok, t, re.I) for tok in fact_tokens)
 
