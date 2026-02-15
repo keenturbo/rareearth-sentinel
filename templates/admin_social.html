@@ -123,7 +123,16 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     return { label: m[1].trim(), body: clean(m[2] || '') };
   };
 
-  const isActionBody = (body='') => /^(减持|增配|加仓|减仓|回避|配置|锁定|trim|reduce|add|hedge|rotate|de-risk)\b/i.test(String(body || '').replace(/^\d+\.\s*/, '').trim());
+  const containsActionToken = (body='') => /(减持|增配|加仓|减仓|规避|回避|布局|配置|锁定|优先跟踪|trim|reduce|add|hedge|rotate|de-risk|buy|sell|overweight|underweight)/i.test(String(body || ''));
+
+  const isActionBody = (body='') => {
+    const b = String(body || '').replace(/^\d+\.\s*/, '').trim();
+    if (!b) return false;
+    if (/^(减持|增配|加仓|减仓|规避|回避|布局|配置|锁定|优先跟踪)/i.test(b)) return true;
+    if (/^(trim|reduce|add|hedge|rotate|de-risk|buy|sell|overweight|underweight)\b/i.test(b)) return true;
+    return containsActionToken(b);
+  };
+
   const isRiskBody = (body='') => {
     const b = String(body || '').trim();
     return /^\d+\.\s*/.test(b) || /^(若|如果|if\b|unless\b)/i.test(b) || /概率\s*\d+%/.test(b) || /(回撤|下行|不及预期|volatility|pullback)/i.test(b);
@@ -205,10 +214,10 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
       labels['Impact path'] = 'Supply-chain repricing is widening external premiums and domestic revaluation expectations.';
     }
 
-    if (labels['证据锚点'] && isActionBody(labels['证据锚点'])) {
+    if (labels['证据锚点'] && (isActionBody(labels['证据锚点']) || containsActionToken(labels['证据锚点']))) {
       labels['证据锚点'] = labels['核心事实'] || labels['影响路径'] || '根据最新公开信息，供给不确定性仍在上升。';
     }
-    if (labels['Evidence anchor'] && isActionBody(labels['Evidence anchor'])) {
+    if (labels['Evidence anchor'] && (isActionBody(labels['Evidence anchor']) || containsActionToken(labels['Evidence anchor']))) {
       labels['Evidence anchor'] = labels['Core fact'] || labels['Impact path'] || 'According to current public disclosures, supply uncertainty remains elevated.';
     }
 
