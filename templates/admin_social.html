@@ -138,6 +138,13 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     return /^\d+\.\s*/.test(b) || /^(若|如果|if\b|unless\b)/i.test(b) || /概率\s*\d+%/.test(b) || /(回撤|下行|不及预期|volatility|pullback)/i.test(b);
   };
 
+  const stripRiskNumbering = (s='') => {
+    let t = clean(String(s || ''));
+    t = t.replace(/(^|[；;])\s*\d+\.\s*/g, '$1');
+    t = t.replace(/[；;]{2,}/g, '；').replace(/^；+/, '');
+    return t.trim();
+  };
+
   const normalizeStructured = (raw='') => {
     const t = String(raw || '');
     const lines = t.split('\n').map(x => x.trim()).filter(Boolean);
@@ -183,9 +190,10 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
       const body = parsed ? parsed.body : line.replace(/^\d+\.\s*/, '').trim();
       const isAction = isActionBody(body);
       const isRisk = isRiskBody(body);
+      const riskBody = isRisk ? stripRiskNumbering(body) : body;
 
       if (isAction && appendToNearest(/^(投资动作[:：]|Investor action[:：])/i, body)) continue;
-      if (isRisk && appendToNearest(/^(反方风险[:：]|Counter-risk[:：])/i, body)) continue;
+      if (isRisk && appendToNearest(/^(反方风险[:：]|Counter-risk[:：])/i, riskBody)) continue;
 
       merged.push(line);
     }
@@ -220,6 +228,9 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     if (labels['Evidence anchor'] && (isActionBody(labels['Evidence anchor']) || containsActionToken(labels['Evidence anchor']))) {
       labels['Evidence anchor'] = labels['Core fact'] || labels['Impact path'] || 'According to current public disclosures, supply uncertainty remains elevated.';
     }
+
+    if (labels['反方风险']) labels['反方风险'] = stripRiskNumbering(labels['反方风险']);
+    if (labels['Counter-risk']) labels['Counter-risk'] = stripRiskNumbering(labels['Counter-risk']);
 
     const zhOrder = ['核心事实','影响路径','投资动作','反方风险','证据锚点','⚠️ 风险提示'];
     const enOrder = ['Core fact','Impact path','Investor action','Counter-risk','Evidence anchor','⚠️ Risk note'];
