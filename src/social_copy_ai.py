@@ -9,7 +9,7 @@ import google.generativeai as genai
 
 from .utils import extract_json
 
-GENERATOR_VERSION = "v2.8.9"
+GENERATOR_VERSION = "v2.8.10"
 
 FORBIDDEN_PROMISE_WORDS = [
     "稳赚",
@@ -211,6 +211,23 @@ def _sanitize_freshness(text, lang="zh"):
 
 
 
+def _looks_like_numbered_scenario(text, lang="zh"):
+    t = str(text or "").strip()
+    if not t:
+        return False
+    low = t.lower()
+    if re.match(r"^\s*(\d+[\.)]|[一二三四五六七八九十]+[、\.])", t):
+        return True
+    if lang == "zh":
+        if ("触发条件" in t and "概率" in t) or re.search(r"概率\s*\d+%?", t):
+            return True
+    else:
+        if ("trigger condition" in low and "probability" in low) or re.search(r"\bprobability\s*\d+%?", low):
+            return True
+    return False
+
+
+
 def _harden_core_fact_line(text, lang="zh"):
     lines = str(text or "").splitlines()
     out = []
@@ -363,6 +380,7 @@ def _build_rule_fallback_bundle(top3_data, daily_zh, daily_en, fingerprint, reas
         _is_similar_any(zh_evidence, zh_impact)
         or _is_similar_any(zh_evidence, zh_core)
         or any(k in zh_evidence for k in ["减持", "增配", "规避", "布局", "配置", "优先跟踪", "锁定"])
+        or _looks_like_numbered_scenario(zh_evidence, lang="zh")
     ):
         zh_evidence = "根据最新公开政策与市场数据，关键矿产贸易许可与关税约束仍在持续。"
 
@@ -378,6 +396,7 @@ def _build_rule_fallback_bundle(top3_data, daily_zh, daily_en, fingerprint, reas
         _is_similar_any(en_evidence, en_impact)
         or _is_similar_any(en_evidence, en_core)
         or any(k in en_evidence.lower() for k in ["buy", "sell", "overweight", "underweight", "trim", "reduce", "add", "hedge", "rotate", "de-risk"])
+        or _looks_like_numbered_scenario(en_evidence, lang="en")
     ):
         en_evidence = "According to current public disclosures, trade licensing and tariff constraints in critical minerals remain in effect."
 
@@ -464,6 +483,10 @@ def _validate_payload(payload):
 
     cn_ev = _extract_line(cn_social + "\n" + cn_topic, ["证据锚点：", "证据锚点:"])
     en_ev = _extract_line(en_social + "\n" + en_topic, ["Evidence anchor:", "Evidence anchors:"])
+    if _looks_like_numbered_scenario(cn_ev, lang="zh"):
+        return False, "evidence_zh_numbered"
+    if _looks_like_numbered_scenario(en_ev, lang="en"):
+        return False, "evidence_en_numbered"
     if not _is_fact_sentence(cn_ev):
         return False, "evidence_zh"
     if not _is_fact_sentence(en_ev):
@@ -659,6 +682,7 @@ Hard rules:
 8) Avoid absolute stale claims like "formally suspended exports" unless a dated official source is explicitly provided.
 9) Core fact must include a time/source qualifier (e.g., 根据/据/最新公开信息 or according to/based on/current disclosure).
 10) Impact path and Evidence anchor must be non-duplicate; do not repeat the same sentence across fields.
+11) Evidence anchor must not begin with numbered scenario bullets (e.g., "1.", "2.").
 
 Length:
 - cn_social <= 220 Chinese chars (excluding line breaks)
