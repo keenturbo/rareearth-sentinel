@@ -7,6 +7,23 @@ from .utils import extract_json, normalize_analysis, normalize_analysis_en
 
 AUDIENCE_FIT = {"investor", "industry", "policy", "mixed"}
 
+PERSONA_ZH_INTEL = (
+    "你是『关键矿产情报主笔』，服务对象是机构投资者、供应链负责人与政策研究者。"
+    "写作要求：短句、先事实后判断、避免口号与模板化空话。"
+)
+PERSONA_EN_INTEL = (
+    "You are the lead critical-minerals intelligence editor for institutional investors, "
+    "supply-chain operators, and policy teams. Write in concise, evidence-first prose."
+)
+PERSONA_ZH_DAILY = (
+    "你是『关键矿产晨报主笔』，负责将复杂事件压缩为可执行日报。"
+    "风格：信息密度高但可读，避免重复与拼接感。"
+)
+PERSONA_EN_DAILY = (
+    "You are the daily intelligence editor for critical minerals. "
+    "Produce concise, non-redundant, publish-ready daily summaries."
+)
+
 
 def _safe_response_text(response):
     try:
@@ -80,6 +97,10 @@ class GeminiExtractor:
 
         if self.prompt_version == "v2":
             prompt = f"""
+Role (persona):
+- Chinese: {PERSONA_ZH_INTEL}
+- English: {PERSONA_EN_INTEL}
+
 You are a rare earths and critical minerals intelligence analyst.
 Your analysis must be from China's strategic perspective (national interest and supply-chain advantage).
 Analyze the article and return ONLY a JSON object (no markdown, no commentary).
@@ -154,6 +175,10 @@ Article:
 """
         else:
             prompt = f"""
+Role (persona):
+- Chinese: {PERSONA_ZH_INTEL}
+- English: {PERSONA_EN_INTEL}
+
 You are a rare earths and critical minerals intelligence analyst.
 Your analysis must be from China's strategic perspective (national interest and supply-chain advantage).
 Analyze the article and return ONLY a JSON object (no markdown, no commentary).
@@ -261,6 +286,10 @@ Article:
 
         if self.prompt_version == "v2":
             prompt = f"""
+Role (persona):
+- Chinese: {PERSONA_ZH_INTEL}
+- English: {PERSONA_EN_INTEL}
+
 You are a rare earths and critical minerals intelligence analyst serving Western governments, investors, and corporations.
 Your analysis must focus on supply-chain security, de-risking from China, and competitive positioning.
 Analyze the article and return ONLY a JSON object (no markdown, no commentary).
@@ -315,6 +344,10 @@ Article:
 """
         else:
             prompt = f"""
+Role (persona):
+- Chinese: {PERSONA_ZH_INTEL}
+- English: {PERSONA_EN_INTEL}
+
 You are a rare earths and critical minerals intelligence analyst serving Western governments, investors, and corporations.
 Your analysis must focus on supply-chain security, de-risking from China, and competitive positioning.
 Analyze the article and return ONLY a JSON object (no markdown, no commentary).
@@ -427,6 +460,8 @@ Article:
         if lang == "en":
             if self.prompt_version == "v2":
                 prompt = f"""
+Role (persona): {PERSONA_EN_DAILY}
+
 You are an intelligence editor. Write a concise daily report in English for Western decision makers.
 Use the event list below. Output ONLY JSON with fields: headline, body, bullets.
 Constraints:
@@ -440,6 +475,8 @@ Event list:
 """
             else:
                 prompt = f"""
+Role (persona): {PERSONA_EN_DAILY}
+
 You are an intelligence editor. Write a concise daily report in English for Western decision makers.
 Use the event list below. Output ONLY JSON with fields: headline, body, bullets.
 Constraints:
@@ -454,6 +491,8 @@ Event list:
         else:
             if self.prompt_version == "v2":
                 prompt = f"""
+角色设定：{PERSONA_ZH_DAILY}
+
 你是情报编辑，请基于事件清单撰写中文日报（给中国决策者）。
 只输出 JSON，字段为：headline, body, bullets。
 要求：
@@ -467,6 +506,8 @@ Event list:
 """
             else:
                 prompt = f"""
+角色设定：{PERSONA_ZH_DAILY}
+
 You are an intelligence editor. Write a concise daily report in Chinese for Chinese decision makers.
 Use the event list below. Output ONLY JSON with fields: headline, body, bullets.
 Constraints:
