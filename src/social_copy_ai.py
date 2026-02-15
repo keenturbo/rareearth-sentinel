@@ -9,7 +9,7 @@ import google.generativeai as genai
 
 from .utils import extract_json
 
-GENERATOR_VERSION = "v2.8.2"
+GENERATOR_VERSION = "v2.8.3"
 
 FORBIDDEN_PROMISE_WORDS = [
     "稳赚",
@@ -74,6 +74,7 @@ def _iso_now():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+
 def _clean_text(text):
     text = str(text or "")
     text = text.replace("\r", "\n")
@@ -87,15 +88,18 @@ def _clean_text(text):
     return text.strip()
 
 
+
 def _has_subject(text, lang="zh"):
     low = str(text or "").lower()
     hints = SUBJECT_HINTS_ZH if lang == "zh" else SUBJECT_HINTS_EN
     return any(h.lower() in low for h in hints)
 
 
+
 def _has_forbidden(text):
     low = str(text or "").lower()
     return any(w.lower() in low for w in FORBIDDEN_PROMISE_WORDS)
+
 
 
 def _extract_line(text, prefixes):
@@ -107,6 +111,7 @@ def _extract_line(text, prefixes):
     return ""
 
 
+
 def _contains_stale_absolute_claim(text):
     t = str(text or "")
     low = t.lower()
@@ -115,6 +120,7 @@ def _contains_stale_absolute_claim(text):
     if any(re.search(p, low, re.I) for p in STALE_ABSOLUTE_PATTERNS_EN):
         return True
     return False
+
 
 
 def _has_fresh_anchor(text, lang="zh"):
@@ -131,6 +137,7 @@ def _has_fresh_anchor(text, lang="zh"):
     source_hints = ["according to", "based on", "latest", "current", "public", "announced", "reported", "disclosure"]
     time_hints = [r"20\d{2}", r"as of", r"q[1-4]", r"month", r"week", r"yoy", r"mom"]
     return any(h in low for h in source_hints) or any(re.search(p, low) for p in time_hints)
+
 
 
 def _sanitize_freshness(text, lang="zh"):
@@ -174,6 +181,7 @@ def _sanitize_freshness(text, lang="zh"):
     return t
 
 
+
 def _harden_core_fact_line(text, lang="zh"):
     lines = str(text or "").splitlines()
     out = []
@@ -195,6 +203,7 @@ def _harden_core_fact_line(text, lang="zh"):
                 raw = f"{prefix} {core}"
         out.append(raw)
     return "\n".join(out).strip()
+
 
 
 def _is_fact_sentence(text):
@@ -227,12 +236,35 @@ def _is_fact_sentence(text):
     return any(re.search(tok, t, re.I) for tok in fact_tokens)
 
 
+
 def _word_count(text):
     return len(re.findall(r"\S+", str(text or "")))
 
 
+
 def _char_count_no_space(text):
     return len(re.sub(r"\s+", "", str(text or "")))
+
+
+
+def _norm_compare_any(text):
+    return re.sub(r"[^\w\u4e00-\u9fff]+", "", str(text or "").lower())
+
+
+
+def _is_similar_any(a, b):
+    na = _norm_compare_any(a)
+    nb = _norm_compare_any(b)
+    if not na or not nb:
+        return False
+    if na == nb or na in nb or nb in na:
+        return True
+    sa, sb = set(na), set(nb)
+    union = sa | sb
+    if not union:
+        return False
+    return (len(sa & sb) / len(union)) >= 0.72
+
 
 
 def _validate_payload(payload):
@@ -281,6 +313,18 @@ def _validate_payload(payload):
     if not _is_fact_sentence(en_ev):
         return False, "evidence_en"
 
+    # Cross-field dedupe guard (v2.8.3)
+    cn_impact = _extract_line(cn_social + "\n" + cn_topic, ["影响路径：", "影响路径:"])
+    en_impact = _extract_line(en_social + "\n" + en_topic, ["Impact path:"])
+    if _is_similar_any(cn_impact, cn_ev):
+        return False, "dup_cn_impact_evidence"
+    if _is_similar_any(en_impact, en_ev):
+        return False, "dup_en_impact_evidence"
+    if _is_similar_any(cn_core, cn_ev):
+        return False, "dup_cn_core_evidence"
+    if _is_similar_any(en_core, en_ev):
+        return False, "dup_en_core_evidence"
+
     # Label completeness
     if not all(lbl in cn_topic for lbl in REQUIRED_CN_LABELS):
         return False, "missing_cn_labels"
@@ -316,6 +360,7 @@ def _validate_payload(payload):
     return True, "ok"
 
 
+
 def _compute_fingerprint(top3_data, daily_zh, daily_en, report_ids):
     base = {
         "generator_version": GENERATOR_VERSION,
@@ -328,8 +373,10 @@ def _compute_fingerprint(top3_data, daily_zh, daily_en, report_ids):
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+
 def _cache_path(config):
     return os.path.join(config.data_dir, "status", "social_copy_generated.json")
+
 
 
 def _load_cache(path):
@@ -343,10 +390,12 @@ def _load_cache(path):
     return data if isinstance(data, dict) else {}
 
 
+
 def _save_cache(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
 
 
 def _cache_usable(cached, fingerprint):
@@ -365,6 +414,7 @@ def _cache_usable(cached, fingerprint):
         str(cached.get("en_topic") or ""),
     ])
     return not _contains_stale_absolute_claim(combined)
+
 
 
 def _build_prompt(top3_data, daily_zh, daily_en):
@@ -423,6 +473,7 @@ Hard rules:
 7) No machine-assembly artifacts: no "要点 •", no duplicated labels, no repeated "影响路径".
 8) Avoid absolute stale claims like "formally suspended exports" unless a dated official source is explicitly provided.
 9) Core fact must include a time/source qualifier (e.g., 根据/据/最新公开信息 or according to/based on/current disclosure).
+10) Impact path and Evidence anchor must be non-duplicate; do not repeat the same sentence across fields.
 
 Length:
 - cn_social <= 220 Chinese chars (excluding line breaks)
@@ -452,10 +503,12 @@ Input data JSON:
 """
 
 
+
 def _generate_with_timeout(model, prompt, timeout_seconds):
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(model.generate_content, prompt)
         return future.result(timeout=timeout_seconds)
+
 
 
 def _response_text(resp):
@@ -469,6 +522,7 @@ def _response_text(resp):
         return "".join(getattr(p, "text", "") for p in parts if getattr(p, "text", ""))
     except Exception:
         return ""
+
 
 
 def generate_social_copy_bundle(config, top3_data, daily_zh, daily_en, report_ids, timeout_seconds=8):
