@@ -113,9 +113,21 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
   const stripLineNoise = (s='') => clean(s)
     .replace(/\bTL\s*;\s*DR\s*:\s*/ig, '')
     .replace(/\bKey\s*angles?\s*:\s*/ig, '')
-    .replace(/^\s*(要点|三视角|Three angles|Conclusion|核心结论|Report includes|Evidence anchors?|证据锚点|机会窗口|Opportunity window|影响路径|Impact path)\s*[:：]?\s*/i, '')
+    .replace(/^\s*(要点|三视角|Three angles|Conclusion|核心结论|Report includes|Opportunity window|机会窗口)\s*[:：]?\s*/i, '')
     .replace(/^\s*[•\-\*\u2022]+\s*/g, '')
     .trim();
+
+  const parseLabeledLine = (line='') => {
+    const m = String(line || '').match(/^\s*([^:：]{2,30})[:：]\s*(.*)$/);
+    if (!m) return null;
+    return { label: m[1].trim(), body: clean(m[2] || '') };
+  };
+
+  const isActionBody = (body='') => /^(减持|增配|加仓|减仓|回避|配置|锁定|trim|reduce|add|hedge|rotate|de-risk)\b/i.test(String(body || '').replace(/^\d+\.\s*/, '').trim());
+  const isRiskBody = (body='') => {
+    const b = String(body || '').trim();
+    return /^\d+\.\s*/.test(b) || /^(若|如果|if\b|unless\b)/i.test(b) || /概率\s*\d+%/.test(b) || /(回撤|下行|不及预期|volatility|pullback)/i.test(b);
+  };
 
   const normalizeStructured = (raw='') => {
     const t = String(raw || '');
@@ -158,18 +170,73 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
       let line = String(ln || '').trim();
       if (!line) continue;
 
-      const noNum = line.replace(/^\d+\.\s*/, '').trim();
-      const isAction = /^(减持|增配|加仓|减仓|回避|配置|锁定|trim|reduce|add|hedge|rotate|de-risk)\b/i.test(noNum);
-      const isRisk = /^(若|如果|if\b|unless\b)/i.test(noNum) || /概率\s*\d+%/.test(noNum) || /(回撤|下行|不及预期|volatility|pullback)/i.test(noNum);
+      const parsed = parseLabeledLine(line);
+      const body = parsed ? parsed.body : line.replace(/^\d+\.\s*/, '').trim();
+      const isAction = isActionBody(body);
+      const isRisk = isRiskBody(body);
 
-      if (isAction && appendToNearest(/^(投资动作[:：]|Investor action[:：])/i, noNum)) continue;
-
-      if ((/^\d+\.\s*/.test(line) || isRisk) && appendToNearest(/^(反方风险[:：]|Counter-risk[:：])/i, noNum)) continue;
+      if (isAction && appendToNearest(/^(投资动作[:：]|Investor action[:：])/i, body)) continue;
+      if (isRisk && appendToNearest(/^(反方风险[:：]|Counter-risk[:：])/i, body)) continue;
 
       merged.push(line);
     }
 
-    return merged.join('\n').replace(/\n{3,}/g,'\n\n').trim();
+    const labels = {};
+    const extras = [];
+    for (const ln of merged) {
+      const parsed = parseLabeledLine(ln);
+      if (!parsed) {
+        extras.push(ln);
+        continue;
+      }
+      if (!(parsed.label in labels)) {
+        labels[parsed.label] = parsed.body;
+      } else if (parsed.body && !labels[parsed.label].includes(parsed.body)) {
+        labels[parsed.label] = clean(labels[parsed.label] + '；' + parsed.body);
+      }
+    }
+
+    if (labels['影响路径'] && isRiskBody(labels['影响路径'])) {
+      if (!labels['反方风险']) labels['反方风险'] = labels['影响路径'].replace(/^\d+\.\s*/, '').trim();
+      labels['影响路径'] = '供应链重排速度提升，海外溢价与国内重估预期同步增强。';
+    }
+    if (labels['Impact path'] && isRiskBody(labels['Impact path'])) {
+      if (!labels['Counter-risk']) labels['Counter-risk'] = labels['Impact path'].replace(/^\d+\.\s*/, '').trim();
+      labels['Impact path'] = 'Supply-chain repricing is widening external premiums and domestic revaluation expectations.';
+    }
+
+    if (labels['证据锚点'] && isActionBody(labels['证据锚点'])) {
+      labels['证据锚点'] = labels['核心事实'] || labels['影响路径'] || '根据最新公开信息，供给不确定性仍在上升。';
+    }
+    if (labels['Evidence anchor'] && isActionBody(labels['Evidence anchor'])) {
+      labels['Evidence anchor'] = labels['Core fact'] || labels['Impact path'] || 'According to current public disclosures, supply uncertainty remains elevated.';
+    }
+
+    const zhOrder = ['核心事实','影响路径','投资动作','反方风险','证据锚点','⚠️ 风险提示'];
+    const enOrder = ['Core fact','Impact path','Investor action','Counter-risk','Evidence anchor','⚠️ Risk note'];
+
+    const rebuilt = [];
+    const hasZh = zhOrder.some(k => labels[k]);
+    const hasEn = enOrder.some(k => labels[k]);
+
+    if (hasZh) {
+      for (const k of zhOrder) {
+        if (labels[k]) rebuilt.push(`${k}：${labels[k]}`);
+      }
+    } else if (hasEn) {
+      for (const k of enOrder) {
+        if (labels[k]) rebuilt.push(`${k}: ${labels[k]}`);
+      }
+    } else {
+      rebuilt.push(...merged);
+    }
+
+    for (const e of extras) {
+      if (!e) continue;
+      if (!rebuilt.includes(e)) rebuilt.push(e);
+    }
+
+    return rebuilt.join('\n').replace(/\n{3,}/g,'\n\n').trim();
   };
 
   try {
