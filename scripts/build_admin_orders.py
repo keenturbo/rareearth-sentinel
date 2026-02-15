@@ -530,24 +530,6 @@ def _extract_opportunity(daily):
     return ""
 
 
-def _angle_meta(report_id, idx, lang="zh"):
-    rid = str(report_id or "").lower()
-    if re.search(r"(?:-|_)policy$", rid):
-        return "📜", "政策" if lang == "zh" else "Policy"
-    if re.search(r"(?:-|_)industry$", rid):
-        return "🏭", "产业" if lang == "zh" else "Industry"
-    if re.search(r"(?:-|_)capital$", rid):
-        return "💰", "资本" if lang == "zh" else "Capital"
-    fallback_labels = [
-        ("📜", "政策" if lang == "zh" else "Policy"),
-        ("🏭", "产业" if lang == "zh" else "Industry"),
-        ("💰", "资本" if lang == "zh" else "Capital"),
-    ]
-    if idx < len(fallback_labels):
-        return fallback_labels[idx]
-    return "🔹", "要点" if lang == "zh" else "Angle"
-
-
 def _view_from_report_id(report_id):
     rid = str(report_id or "").lower()
     if rid.endswith("-policy") or rid.endswith("_policy"):
@@ -796,7 +778,7 @@ def _build_social_fallback_cn(items, daily, site_base_url, reports_index, with_l
     lines = [
         f"【今日重点专题】{title}",
         f"核心结论：{_short_social_line(title, limit=72)}",
-        f"三视角",
+        "三视角",
         f"📜 政策：{signal}",
         f"🏭 产业：{signal}",
         f"💰 资本：{signal}",
@@ -1086,10 +1068,13 @@ def main():
         cn_link = _build_pay_link(config.site_base_url, "cn", primary_id)
         en_link = _build_pay_link(config.site_base_url, "en", primary_id)
 
-        social_cn_link = _format_ai_social(social_bundle.get("cn_social", ""), cn_link, lang="zh", with_link=True)
-        social_cn_dm = _format_ai_social(social_bundle.get("cn_social", ""), cn_link, lang="zh", with_link=False)
-        social_en_link = _format_ai_social(social_bundle.get("en_social", ""), en_link, lang="en", with_link=True)
-        social_en_dm = _format_ai_social(social_bundle.get("en_social", ""), en_link, lang="en", with_link=False)
+        cn_base = social_bundle.get("cn_topic") or social_bundle.get("cn_social", "")
+        en_base = social_bundle.get("en_topic") or social_bundle.get("en_social", "")
+
+        social_cn_link = _format_ai_social(cn_base, cn_link, lang="zh", with_link=True)
+        social_cn_dm = _format_ai_social(cn_base, cn_link, lang="zh", with_link=False)
+        social_en_link = _format_ai_social(en_base, en_link, lang="en", with_link=True)
+        social_en_dm = _format_ai_social(en_base, en_link, lang="en", with_link=False)
 
     if not all([social_cn_link, social_cn_dm, social_en_link, social_en_dm]):
         social_cn_link, social_cn_dm = _build_social_copy_cn(top3_data, daily_zh, config.site_base_url, reports)
