@@ -9,7 +9,7 @@ import google.generativeai as genai
 
 from .utils import extract_json
 
-GENERATOR_VERSION = "v2.8.7"
+GENERATOR_VERSION = "v2.8.9"
 
 FORBIDDEN_PROMISE_WORDS = [
     "稳赚",
@@ -63,8 +63,10 @@ ADVICE_HINTS = [
 
 STALE_ABSOLUTE_PATTERNS_ZH = [
     r"中国正式暂停对美稀土出口",
+    r"中国暂停对美稀土出口",
     r"中国(?:已)?(?:全面)?停止对美稀土出口",
     r"对美稀土(?:出口)?全面禁运",
+    r"对美稀土出口已暂停",
 ]
 STALE_ABSOLUTE_PATTERNS_EN = [
     r"china has formally suspended rare earth exports to the united states",
@@ -166,12 +168,22 @@ def _sanitize_freshness(text, lang="zh"):
             t,
         )
         t = re.sub(
+            r"中国暂停对美稀土出口",
+            "根据最新公开政策信息，中美稀土贸易仍受许可与政策博弈影响",
+            t,
+        )
+        t = re.sub(
             r"中国(?:已)?(?:全面)?停止对美稀土出口",
             "根据最新公开政策信息，中美稀土贸易仍受许可与政策博弈影响",
             t,
         )
         t = re.sub(
             r"对美稀土(?:出口)?全面禁运",
+            "根据最新公开政策信息，中美稀土贸易仍受许可与政策博弈影响",
+            t,
+        )
+        t = re.sub(
+            r"对美稀土出口已暂停",
             "根据最新公开政策信息，中美稀土贸易仍受许可与政策博弈影响",
             t,
         )
@@ -557,7 +569,23 @@ def _cache_publishable(cached):
         str(cached.get("cn_topic") or ""),
         str(cached.get("en_topic") or ""),
     ])
-    return not _contains_stale_absolute_claim(combined)
+    if _contains_stale_absolute_claim(combined):
+        return False
+
+    cn_core = _extract_line(
+        str(cached.get("cn_topic") or "") + "\n" + str(cached.get("cn_social") or ""),
+        ["核心事实：", "核心事实:"],
+    )
+    en_core = _extract_line(
+        str(cached.get("en_topic") or "") + "\n" + str(cached.get("en_social") or ""),
+        ["Core fact:"],
+    )
+    if not _has_fresh_anchor(cn_core, lang="zh"):
+        return False
+    if not _has_fresh_anchor(en_core, lang="en"):
+        return False
+
+    return True
 
 
 
