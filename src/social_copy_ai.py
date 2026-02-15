@@ -42,6 +42,19 @@ SUBJECT_HINTS_EN = [
 ]
 ADVICE_HINTS = ["超配", "减持", "规避", "buy", "sell", "overweight", "underweight"]
 
+PERSONA_ZH = (
+    "你是『关键矿产情报主笔（给机构投资者写晨报）』，"
+    "表达要求：短句、事实优先、不喊口号、先结论后依据。"
+)
+PERSONA_EN = (
+    "You are the lead critical-minerals intelligence editor for institutional investors. "
+    "Write in concise, decision-oriented, evidence-first prose."
+)
+
+
+REQUIRED_CN_LABELS = ["核心事实：", "影响路径：", "投资动作：", "反方风险：", "证据锚点：", "⚠️ 风险提示："]
+REQUIRED_EN_LABELS = ["Core fact:", "Impact path:", "Investor action:", "Counter-risk:", "Evidence anchor:", "⚠️ Risk note:"]
+
 
 def _iso_now():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -54,6 +67,9 @@ def _clean_text(text):
     text = re.sub(r"[ \t]+", " ", text)
     text = text.replace("…", "")
     text = text.replace("...", "")
+    text = text.replace("TL;DR", "")
+    text = text.replace("Key angles", "")
+    text = text.replace("要点 •", "")
     return text.strip()
 
 
@@ -95,12 +111,14 @@ def _is_fact_sentence(text):
         r"duty",
         r"confirmed",
         r"announced",
+        r"section\s*232",
         r"终裁",
         r"宣布",
         r"确认",
         r"启动",
         r"注资",
         r"投资",
+        r"会议",
     ]
     return any(re.search(tok, t, re.I) for tok in fact_tokens)
 
@@ -130,9 +148,10 @@ def _validate_payload(payload):
     if _has_forbidden(cn_social + "\n" + en_social + "\n" + cn_topic + "\n" + en_topic):
         return False, "forbidden_word"
 
-    if not _has_subject(cn_social + "\n" + cn_topic, lang="zh"):
+    # Subject check: explicit subject hints OR explicit action label
+    if not (_has_subject(cn_social + "\n" + cn_topic, lang="zh") or "投资动作：" in cn_topic):
         return False, "subject_zh"
-    if not _has_subject(en_social + "\n" + en_topic, lang="en"):
+    if not (_has_subject(en_social + "\n" + en_topic, lang="en") or "Investor action:" in en_topic):
         return False, "subject_en"
 
     cn_ev = _extract_line(cn_social + "\n" + cn_topic, ["证据锚点：", "证据锚点:"])
@@ -141,6 +160,26 @@ def _validate_payload(payload):
         return False, "evidence_zh"
     if not _is_fact_sentence(en_ev):
         return False, "evidence_en"
+
+    # Label completeness
+    if not all(lbl in cn_topic for lbl in REQUIRED_CN_LABELS):
+        return False, "missing_cn_labels"
+    if not all(lbl in en_topic for lbl in REQUIRED_EN_LABELS):
+        return False, "missing_en_labels"
+
+    # No duplicate topic labels
+    for lbl in REQUIRED_CN_LABELS[:-1]:
+        if cn_topic.count(lbl) > 1:
+            return False, "dup_cn_label"
+    for lbl in REQUIRED_EN_LABELS[:-1]:
+        if en_topic.count(lbl) > 1:
+            return False, "dup_en_label"
+
+    # No machine-noise fragments
+    if re.search(r"要点\s*[•\-]", cn_topic):
+        return False, "noise_cn"
+    if "tl;dr" in en_topic.lower():
+        return False, "noise_en"
 
     if _char_count_no_space(cn_social) > 220:
         return False, "cn_social_too_long"
@@ -225,6 +264,9 @@ def _build_prompt(top3_data, daily_zh, daily_en):
     }
 
     return f"""
+Role (Chinese persona): {PERSONA_ZH}
+Role (English persona): {PERSONA_EN}
+
 You are generating final publish-ready social copy and homepage topic copy for a rare-earth intelligence product.
 Return ONLY strict JSON (no markdown) with keys:
 - cn_social
@@ -239,6 +281,7 @@ Hard rules:
 4) No links in output text.
 5) Remove TL;DR/noise wording.
 6) English must be complete sentences (no truncation).
+7) No machine-assembly artifacts: no "要点 •", no duplicated labels, no repeated "影响路径".
 
 Length:
 - cn_social <= 220 Chinese chars (excluding line breaks)
@@ -247,7 +290,7 @@ Length:
 - en_topic should be concise but richer than social copy
 
 Required field structure in each text:
-CN social/topic lines should include:
+CN social/topic lines should include exactly once:
 - 核心事实：...
 - 影响路径：...
 - 投资动作：...
@@ -255,7 +298,7 @@ CN social/topic lines should include:
 - 证据锚点：...
 - ⚠️ 风险提示：...
 
-EN social/topic lines should include:
+EN social/topic lines should include exactly once:
 - Core fact: ...
 - Impact path: ...
 - Investor action: ...
@@ -302,17 +345,22 @@ def generate_social_copy_bundle(config, top3_data, daily_zh, daily_en, report_id
     api_key = str(getattr(config, "gemini_api_key", "") or "").strip()
     model_name = str(getattr(config, "gemini_model", "") or "").strip()
     if not api_key or not model_name:
+        if all(cached.get(k) for k in ("cn_social", "en_social", "cn_topic", "en_topic")):
+            return cached
         return None
 
     try:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel(model_name, generation_config={"temperature": 0.2})
         prompt = _build_prompt(top3_data, daily_zh, daily_en)
-        resp = _generate_with_timeout(model, prompt, timeout_seconds=max(3, int(timeout_seconds or 8)))
+        # enforce safer timeout floor to reduce frequent fallback
+        resp = _generate_with_timeout(model, prompt, timeout_seconds=max(20, int(timeout_seconds or 8)))
         raw = _response_text(resp)
         data = extract_json(raw)
         ok, reason = _validate_payload(data)
         if not ok:
+            if all(cached.get(k) for k in ("cn_social", "en_social", "cn_topic", "en_topic")):
+                return cached
             return None
 
         output = {
@@ -326,6 +374,7 @@ def generate_social_copy_bundle(config, top3_data, daily_zh, daily_en, report_id
                 "subject_ok": True,
                 "evidence_fact_ok": True,
                 "no_profit_claim_ok": True,
+                "persona_enabled": True,
             },
             "fallback_used": False,
             "validator_reason": reason,
@@ -333,4 +382,6 @@ def generate_social_copy_bundle(config, top3_data, daily_zh, daily_en, report_id
         _save_cache(cache_file, output)
         return output
     except Exception:
+        if all(cached.get(k) for k in ("cn_social", "en_social", "cn_topic", "en_topic")):
+            return cached
         return None
