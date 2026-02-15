@@ -171,7 +171,22 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
   const clipCn = (s='', n=36) => {
     const t = stripNoise(s);
     if (!t) return '';
-    return t.length > n ? t.slice(0, n).replace(/[，。；;,\s]+$/g, '') : t;
+    if (t.length <= n) return t;
+
+    let end = n;
+    const next = t.slice(end, end + 10);
+    if (/[\d.]$/.test(t.slice(0, end)) || /^[\d.]/.test(next)) {
+      const m = next.match(/^[\d.]+/);
+      if (m) end += m[0].length;
+      while (end > 0 && /[\d.]$/.test(t.slice(0, end))) end -= 1;
+    }
+
+    let out = t.slice(0, end);
+    const p = Math.max(out.lastIndexOf('，'), out.lastIndexOf('；'), out.lastIndexOf('。'));
+    if (p >= Math.floor(n * 0.65)) out = out.slice(0, p);
+
+    out = out.replace(/[，。；;,\s]+$/g, '').replace(/[的从至]$/g, '');
+    return out;
   };
   const clipWords = (s='', n=20) => {
     const t = stripNoise(s).trim();
@@ -218,7 +233,7 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     }
     const fallback = lang === 'cn' ? '关键矿产链条重构正在加速' : 'Critical-mineral supply-chain reconfiguration is accelerating';
     const lines = pickDistinct(cand, fallback);
-    if (lang === 'cn') return lines.map(x => clipCn(x, 34));
+    if (lang === 'cn') return lines.map(x => clipCn(x, 42));
     return lines.map(x => clipWords(x, 16));
   };
 
@@ -238,23 +253,23 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
 
     let [policy, industry, capital] = pickAngles(pRaw, iRaw, cRaw, 'cn');
     const fallback = pickFactCn(incRaw, evRaw, coreRaw, pRaw, iRaw, cRaw) || '关键矿产链条重构正在加速。';
-    if (!policy) policy = clipCn(pickFactCn(pRaw, coreRaw) || fallback, 34);
-    if (!industry) industry = clipCn(pickFactCn(iRaw, incRaw) || fallback, 34);
-    if (!capital) capital = clipCn(pickFactCn(cRaw, incRaw) || fallback, 34);
+    if (!policy) policy = clipCn(pickFactCn(pRaw, coreRaw) || fallback, 42);
+    if (!industry) industry = clipCn(pickFactCn(iRaw, incRaw) || fallback, 42);
+    if (!capital) capital = clipCn(pickFactCn(cRaw, incRaw) || fallback, 42);
 
-    const title = clipCn(coreRaw, 26);
-    const coreFact = clipCn(pickFactCn(policy, industry, capital, coreRaw) || fallback, 36);
-    let impact = clipCn(pickFactCn(industry, policy, incRaw) || fallback, 36);
-    if (similar(impact, coreFact)) impact = clipCn(pickFactCn(incRaw, policy, capital) || '供应链重排速度提升。', 36);
-    let action = clipCn(pickFactCn(coreRaw, oppRaw), 42);
+    const title = clipCn(coreRaw, 30);
+    const coreFact = clipCn(pickFactCn(policy, industry, capital, coreRaw) || fallback, 48);
+    let impact = clipCn(pickFactCn(industry, policy, incRaw) || fallback, 62);
+    if (similar(impact, coreFact)) impact = clipCn(pickFactCn(incRaw, policy, capital) || '供应链重排速度提升。', 62);
+    let action = clipCn(pickFactCn(coreRaw, oppRaw), 52);
     if (!action || !/(跟踪|观察|评估|控制|分散|配置|对冲|仓位|窗口)/.test(action)) {
       action = '优先跟踪政策资金与加工产能兑现节点。';
     }
-    let counter = clipCn(pickFactCn(oppRaw, incRaw), 42);
+    let counter = clipCn(pickFactCn(oppRaw, incRaw), 52);
     if (!counter || similar(counter, impact)) counter = '若海外供给兑现慢于预期，短期波动会放大。';
-    let evidence = clipCn(pickFactCn(evRaw, incRaw, policy, industry, capital), 46);
+    let evidence = clipCn(pickFactCn(evRaw, incRaw, policy, industry, capital), 74);
     if (!evidence || isAdvice(evidence) || similar(evidence, impact) || similar(evidence, coreFact)) {
-      evidence = clipCn(pickFactCn(incRaw, policy, industry, capital, coreRaw) || fallback, 46);
+      evidence = clipCn(pickFactCn(incRaw, policy, industry, capital, coreRaw) || fallback, 74);
     }
 
     const out = [
