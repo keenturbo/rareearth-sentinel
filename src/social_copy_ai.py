@@ -9,7 +9,7 @@ import google.generativeai as genai
 
 from .utils import extract_json
 
-GENERATOR_VERSION = "v2.8.4"
+GENERATOR_VERSION = "v2.8.7"
 
 FORBIDDEN_PROMISE_WORDS = [
     "稳赚",
@@ -42,7 +42,24 @@ SUBJECT_HINTS_EN = [
     "company",
     "supply-chain",
 ]
-ADVICE_HINTS = ["超配", "减持", "规避", "buy", "sell", "overweight", "underweight"]
+ADVICE_HINTS = [
+    "超配",
+    "减持",
+    "规避",
+    "布局",
+    "配置",
+    "优先跟踪",
+    "buy",
+    "sell",
+    "overweight",
+    "underweight",
+    "trim",
+    "reduce",
+    "add",
+    "hedge",
+    "rotate",
+    "de-risk",
+]
 
 STALE_ABSOLUTE_PATTERNS_ZH = [
     r"中国正式暂停对美稀土出口",
@@ -326,17 +343,31 @@ def _build_rule_fallback_bundle(top3_data, daily_zh, daily_en, fingerprint, reas
     if not _has_fresh_anchor(zh_core, lang="zh"):
         zh_core = "根据最新公开政策信息，中美稀土贸易仍受许可与政策博弈影响，供给不确定性上升。"
     zh_impact = _clip_cn(_pick_factish(zh_val, lang="zh") or "供应链重排速度提升，海外溢价与国内重估预期同步增强。", 62)
+    if re.match(r"^\s*\d+\.", zh_impact) or "概率" in zh_impact:
+        zh_impact = "供应链重排速度提升，海外溢价与国内重估预期同步增强。"
+
     zh_evidence = _clip_cn(_pick_factish(zh_val + "。" + _pick_first_non_empty(first.get("title_zh"), ""), lang="zh") or zh_val, 72)
-    if _is_similar_any(zh_evidence, zh_impact) or any(k in zh_evidence for k in ["减持", "增配", "规避", "布局"]):
-        zh_evidence = _clip_cn(_pick_first_non_empty(first.get("title_zh"), zh_val), 72)
+    if (
+        _is_similar_any(zh_evidence, zh_impact)
+        or _is_similar_any(zh_evidence, zh_core)
+        or any(k in zh_evidence for k in ["减持", "增配", "规避", "布局", "配置", "优先跟踪", "锁定"])
+    ):
+        zh_evidence = "根据最新公开政策与市场数据，关键矿产贸易许可与关税约束仍在持续。"
 
     en_core = _sanitize_freshness(_clip_en_words(en_head or en_val, 18), lang="en")
     if not _has_fresh_anchor(en_core, lang="en"):
         en_core = "Based on current public policy disclosures, China-US rare earth trade remains subject to licensing and policy frictions."
     en_impact = _clip_en_words(_pick_factish(en_val, lang="en") or "Supply-chain repricing is widening external premiums and domestic revaluation expectations.", 20)
+    if re.match(r"^\s*\d+\.", en_impact) or "probability" in en_impact.lower():
+        en_impact = "Supply-chain repricing is widening external premiums and domestic revaluation expectations."
+
     en_evidence = _clip_en_words(_pick_factish(en_val + ". " + _pick_first_non_empty(first.get("title_en"), ""), lang="en") or en_val, 24)
-    if _is_similar_any(en_evidence, en_impact) or any(k in en_evidence.lower() for k in ["buy", "sell", "overweight", "underweight"]):
-        en_evidence = _clip_en_words(_pick_first_non_empty(first.get("title_en"), en_val), 24)
+    if (
+        _is_similar_any(en_evidence, en_impact)
+        or _is_similar_any(en_evidence, en_core)
+        or any(k in en_evidence.lower() for k in ["buy", "sell", "overweight", "underweight", "trim", "reduce", "add", "hedge", "rotate", "de-risk"])
+    ):
+        en_evidence = "According to current public disclosures, trade licensing and tariff constraints in critical minerals remain in effect."
 
     cn_topic = "\n".join([
         f"核心事实：{zh_core}",
@@ -425,9 +456,17 @@ def _validate_payload(payload):
         return False, "evidence_zh"
     if not _is_fact_sentence(en_ev):
         return False, "evidence_en"
+    if any(k in cn_ev for k in ["减持", "增配", "规避", "布局", "配置", "优先跟踪"]):
+        return False, "evidence_zh_action"
+    if any(k in en_ev.lower() for k in ["buy", "sell", "overweight", "underweight", "trim", "reduce", "add", "hedge", "rotate", "de-risk"]):
+        return False, "evidence_en_action"
 
     cn_impact = _extract_line(cn_social + "\n" + cn_topic, ["影响路径：", "影响路径:"])
     en_impact = _extract_line(en_social + "\n" + en_topic, ["Impact path:"])
+    if re.match(r"^\s*\d+\.", cn_impact):
+        return False, "impact_cn_numbered"
+    if re.match(r"^\s*\d+\.", en_impact):
+        return False, "impact_en_numbered"
     if _is_similar_any(cn_impact, cn_ev):
         return False, "dup_cn_impact_evidence"
     if _is_similar_any(en_impact, en_ev):
