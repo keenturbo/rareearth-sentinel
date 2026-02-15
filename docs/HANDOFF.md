@@ -240,4 +240,120 @@ grep -R -n -E "tier.*(99|999)" /root/rareearth-sentinel/src /root/rareearth-sent
 ### 半成品/需验证列表
 - Top3 生成逻辑：见 P0-3  
 - PayPal Webhook：见 P0-1  
-- 日报缓存：见 P1-1  
+- 日报缓存：见 P1-1
+
+---
+
+## 19) 2026-02-15 阶段性回顾（v2.8 ~ v2.8.10）
+
+### 19.1 本阶段已完成（按模块）
+
+#### A) 首页“今日重点专题”与文案链路
+- 首页已从旧的固定展示逻辑切换到可接入 AI 文案链路（含回退）。
+- 重要修复：
+  - 过时绝对化表述拦截（如“暂停对美稀土出口”类语句）。
+  - 证据锚点编号句拦截（如“证据锚点：1. ...”）。
+  - 缓存版本推进到 `v2.8.10`，避免旧缓存污染。
+- 当前已人工验证：`grep "证据锚点：1\."` 在首页无命中。
+
+#### B) Admin 社媒页 `/cn/admin/social`
+- 已实现结构化可发布输出（中英），并连续热修：
+  - 去掉旧三视角硬拼接与模板噪声（TL;DR/要点/异常标点）。
+  - 动作建议句与证据锚点分离。
+  - 编号风险句并入“反方风险”。
+  - 过时绝对化事实守卫。
+- 当前状态：文案可发布，仍需持续观察次日自动构建是否回归。
+
+#### C) Gemini 角色化（persona）
+- 已为主要生成链路注入 persona：
+  - `src/social_copy_ai.py`
+  - `src/extractor.py`（analyze/analyze_en/analyze_daily_report）
+  - `src/premium/briefs.py`
+- 目标：减少拼装感、主语更明确、可发布性更高。
+
+#### D) 运维与一致性
+- 服务器补丁已回推 GitHub，`HEAD` 与 `origin/main` 对齐。
+- 已通过 `.git/info/exclude` 处理运行产物，降低 `git pull` 冲突概率。
+
+---
+
+### 19.2 本阶段关键提交（节选）
+> 仅列核心节点，完整历史请用 `git log --oneline --since="2026-02-10"`。
+
+- `245b0adf...` admin social 自动结构化文案首版
+- `b0ae3d15...` 引流文案模板增强
+- `7ffcccdc...` / `265bd09d...` / `9a0e9446...` persona 扩展到 social/extractor/premium
+- `bf2965b...` build_admin_orders 接入 AI 文案生成器
+- `e72194e...` 服务器热修回推（main.py 接线修正）
+- `624928ed...` / `ab43f9c1...` / `783937dc...` v2.8.4 social 稳定化
+- `a248b27d...` v2.8.7 后端 fallback 根修
+- `727a5e5a...` v2.8.8 反方风险编号清洗
+- `03083537...` v2.8.9 首页新鲜度守卫增强
+- `085893ae...` v2.8.10 证据锚点编号句拦截
+
+---
+
+### 19.3 当前网站状态评估（2026-02-15）
+
+#### 1) 产品可用性
+- CN 首页、EN 首页、Admin、支付、Top3 推送链路均可运行。
+- 社媒页与首页专题达到“可发布/可读”水平，但仍需观测自动运行后的稳定一致性。
+
+#### 2) 内容质量（从“已赋予 persona 的 Gemini 角色”视角）
+- 优势：
+  - 专业框架完整（事实→路径→动作→风险→证据）。
+  - 风险提示与合规意识明显增强。
+  - 过时绝对句与编号证据句已纳入守卫。
+- 风险点：
+  - 自动运行时仍可能受超时影响触发 fallback；需继续监控。
+  - 个别日样本在“影响路径/证据锚点”仍可能出现语义靠近，需要持续回归测试。
+
+#### 3) 稳定性
+- 主要风险仍在外部超时（抓取/Gemini timeout）与缓存命中策略。
+- 已有 fallback，但建议以“次日 06:00 自动运行结果”为最终验收口径。
+
+---
+
+### 19.4 明日 06:00 自动运行后的必做核验（新增）
+
+1) 检查首页是否再出现“证据锚点编号句”
+```bash
+grep -n "证据锚点：1\\." /root/rareearth-sentinel/static/cn/index.html | head -n 20
+```
+
+2) 检查首页是否回流过时绝对表述
+```bash
+grep -n "中国暂停对美稀土出口\|中国正式暂停对美稀土出口\|对美稀土出口已暂停" /root/rareearth-sentinel/static/cn/index.html | head -n 20
+```
+
+3) 检查社媒页是否回归旧模板/坏句
+```bash
+grep -n "TL;DR\|要点 •\|证据锚点：减持\|影响路径：1\\." /root/rareearth-sentinel/static/cn/admin/social/index.html | head -n 20
+```
+
+4) 检查 AI 缓存状态
+```bash
+python3 - <<'PY'
+import os,json
+p='/root/rareearth-sentinel/data/status/social_copy_generated.json'
+print('exists:', os.path.exists(p))
+if os.path.exists(p):
+    d=json.load(open(p,'r',encoding='utf-8'))
+    print('generated_at:', d.get('generated_at'))
+    print('fallback_used:', d.get('fallback_used'))
+    print('validator_reason:', d.get('validator_reason'))
+    print('cn_topic_len:', len((d.get('cn_topic') or '').strip()))
+PY
+```
+
+5) 检查 06:00 主流程日志中的 timeout 密度
+```bash
+journalctl -u rareearth-sentinel.service --since "today 05:50:00" --until "today 09:30:00" --no-pager | grep -Ei "timeout|timed out|ReadTimeout" | tail -n 100
+```
+
+---
+
+### 19.5 仍未关闭的高优先事项
+- **PayPal Webhook ID 仍需确认 WH-REST 形态**（若未修，将影响自动验签/解锁可靠性）。
+- **抓取与模型超时治理**（外部超时仍是内容稳定性的第一风险源）。
+- **技术债**：Python 3.10 与 `google.generativeai` 弃用告警，建议规划迁移窗口。
