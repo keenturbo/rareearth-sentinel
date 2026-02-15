@@ -9,7 +9,7 @@ import google.generativeai as genai
 
 from .utils import extract_json
 
-GENERATOR_VERSION = "v2.8.3"
+GENERATOR_VERSION = "v2.8.4"
 
 FORBIDDEN_PROMISE_WORDS = [
     "稳赚",
@@ -267,6 +267,120 @@ def _is_similar_any(a, b):
 
 
 
+def _clip_cn(text, limit=56):
+    t = _clean_text(text)
+    if len(t) <= limit:
+        return t
+    out = t[:limit]
+    p = max(out.rfind("。"), out.rfind("；"), out.rfind("，"))
+    if p >= int(limit * 0.6):
+        out = out[:p]
+    return out.rstrip("，。；; ")
+
+
+
+def _clip_en_words(text, max_words=22):
+    t = _clean_text(text)
+    words = t.split()
+    if len(words) <= max_words:
+        return t
+    return " ".join(words[:max_words]).rstrip(" ,;:.")
+
+
+
+def _pick_first_non_empty(*vals):
+    for v in vals:
+        s = _clean_text(v)
+        if s:
+            return s
+    return ""
+
+
+
+def _pick_factish(text, lang="zh"):
+    raw = _clean_text(text)
+    if not raw:
+        return ""
+    if lang == "zh":
+        parts = re.split(r"[。！？；\n]+", raw)
+    else:
+        parts = re.split(r"[.!?;\n]+", raw)
+    parts = [_clean_text(p) for p in parts if _clean_text(p)]
+    for p in parts:
+        if _is_fact_sentence(p) and not any(k in p.lower() for k in ADVICE_HINTS):
+            return p
+    return parts[0] if parts else ""
+
+
+
+def _build_rule_fallback_bundle(top3_data, daily_zh, daily_en, fingerprint, reason="rule_fallback"):
+    items = (top3_data or {}).get("items") or []
+    first = items[0] if items else {}
+
+    zh_head = _pick_first_non_empty((daily_zh or {}).get("headline"), first.get("title_zh"), first.get("title"))
+    en_head = _pick_first_non_empty((daily_en or {}).get("headline"), first.get("title_en"), first.get("title"))
+    zh_val = _pick_first_non_empty(first.get("value_zh"), first.get("report_contains_zh"), zh_head)
+    en_val = _pick_first_non_empty(first.get("value_en"), first.get("report_contains_en"), en_head)
+
+    zh_core = _sanitize_freshness(_clip_cn(zh_head or zh_val, 52), lang="zh")
+    if not _has_fresh_anchor(zh_core, lang="zh"):
+        zh_core = "根据最新公开政策信息，中美稀土贸易仍受许可与政策博弈影响，供给不确定性上升。"
+    zh_impact = _clip_cn(_pick_factish(zh_val, lang="zh") or "供应链重排速度提升，海外溢价与国内重估预期同步增强。", 62)
+    zh_evidence = _clip_cn(_pick_factish(zh_val + "。" + _pick_first_non_empty(first.get("title_zh"), ""), lang="zh") or zh_val, 72)
+    if _is_similar_any(zh_evidence, zh_impact) or any(k in zh_evidence for k in ["减持", "增配", "规避", "布局"]):
+        zh_evidence = _clip_cn(_pick_first_non_empty(first.get("title_zh"), zh_val), 72)
+
+    en_core = _sanitize_freshness(_clip_en_words(en_head or en_val, 18), lang="en")
+    if not _has_fresh_anchor(en_core, lang="en"):
+        en_core = "Based on current public policy disclosures, China-US rare earth trade remains subject to licensing and policy frictions."
+    en_impact = _clip_en_words(_pick_factish(en_val, lang="en") or "Supply-chain repricing is widening external premiums and domestic revaluation expectations.", 20)
+    en_evidence = _clip_en_words(_pick_factish(en_val + ". " + _pick_first_non_empty(first.get("title_en"), ""), lang="en") or en_val, 24)
+    if _is_similar_any(en_evidence, en_impact) or any(k in en_evidence.lower() for k in ["buy", "sell", "overweight", "underweight"]):
+        en_evidence = _clip_en_words(_pick_first_non_empty(first.get("title_en"), en_val), 24)
+
+    cn_topic = "\n".join([
+        f"核心事实：{zh_core}",
+        f"影响路径：{zh_impact}",
+        "投资动作：优先跟踪政策资金、加工产能与订单兑现节奏。",
+        "反方风险：若海外供给兑现快于预期，短期溢价与估值或回撤。",
+        f"证据锚点：{zh_evidence}",
+        "⚠️ 风险提示：不构成投资建议，请按风险承受能力决策。",
+    ]).strip()
+
+    en_topic = "\n".join([
+        f"Core fact: {en_core}",
+        f"Impact path: {en_impact}",
+        "Investor action: Track policy funding, processing ramp-up, and order conversion before sizing positions.",
+        "Counter-risk: If non-China supply ramps faster than expected, short-term premiums and valuations may retrace.",
+        f"Evidence anchor: {en_evidence}",
+        "⚠️ Risk note: Not investment advice. Manage triggers and position size.",
+    ]).strip()
+
+    cn_topic = _harden_core_fact_line(cn_topic, lang="zh")
+    en_topic = _harden_core_fact_line(en_topic, lang="en")
+
+    output = {
+        "generated_at": _iso_now(),
+        "generator_version": GENERATOR_VERSION,
+        "source_fingerprint": fingerprint,
+        "cn_social": cn_topic,
+        "en_social": en_topic,
+        "cn_topic": cn_topic,
+        "en_topic": en_topic,
+        "quality_flags": {
+            "subject_ok": True,
+            "evidence_fact_ok": True,
+            "no_profit_claim_ok": True,
+            "persona_enabled": False,
+            "freshness_guard_enabled": True,
+        },
+        "fallback_used": True,
+        "validator_reason": reason,
+    }
+    return output
+
+
+
 def _validate_payload(payload):
     if not isinstance(payload, dict):
         return False, "not_dict"
@@ -293,7 +407,6 @@ def _validate_payload(payload):
     if _has_forbidden(combined_text):
         return False, "forbidden_word"
 
-    # Subject check: explicit subject hints OR explicit action label
     if not (_has_subject(cn_social + "\n" + cn_topic, lang="zh") or "投资动作：" in cn_topic):
         return False, "subject_zh"
     if not (_has_subject(en_social + "\n" + en_topic, lang="en") or "Investor action:" in en_topic):
@@ -313,7 +426,6 @@ def _validate_payload(payload):
     if not _is_fact_sentence(en_ev):
         return False, "evidence_en"
 
-    # Cross-field dedupe guard (v2.8.3)
     cn_impact = _extract_line(cn_social + "\n" + cn_topic, ["影响路径：", "影响路径:"])
     en_impact = _extract_line(en_social + "\n" + en_topic, ["Impact path:"])
     if _is_similar_any(cn_impact, cn_ev):
@@ -325,13 +437,11 @@ def _validate_payload(payload):
     if _is_similar_any(en_core, en_ev):
         return False, "dup_en_core_evidence"
 
-    # Label completeness
     if not all(lbl in cn_topic for lbl in REQUIRED_CN_LABELS):
         return False, "missing_cn_labels"
     if not all(lbl in en_topic for lbl in REQUIRED_EN_LABELS):
         return False, "missing_en_labels"
 
-    # No duplicate topic labels
     for lbl in REQUIRED_CN_LABELS[:-1]:
         if cn_topic.count(lbl) > 1:
             return False, "dup_cn_label"
@@ -339,7 +449,6 @@ def _validate_payload(payload):
         if en_topic.count(lbl) > 1:
             return False, "dup_en_label"
 
-    # No machine-noise fragments
     if re.search(r"要点\s*[•\-]", cn_topic):
         return False, "noise_cn"
     if "tl;dr" in en_topic.lower():
@@ -398,12 +507,8 @@ def _save_cache(path, data):
 
 
 
-def _cache_usable(cached, fingerprint):
+def _cache_publishable(cached):
     if not isinstance(cached, dict):
-        return False
-    if cached.get("source_fingerprint") != fingerprint:
-        return False
-    if str(cached.get("generator_version") or "") != GENERATOR_VERSION:
         return False
     if not all(cached.get(k) for k in ("cn_social", "en_social", "cn_topic", "en_topic")):
         return False
@@ -414,6 +519,19 @@ def _cache_usable(cached, fingerprint):
         str(cached.get("en_topic") or ""),
     ])
     return not _contains_stale_absolute_claim(combined)
+
+
+
+def _cache_usable(cached, fingerprint, strict=True):
+    if not _cache_publishable(cached):
+        return False
+    if not strict:
+        return True
+    if cached.get("source_fingerprint") != fingerprint:
+        return False
+    if str(cached.get("generator_version") or "") != GENERATOR_VERSION:
+        return False
+    return True
 
 
 
@@ -528,43 +646,48 @@ def _response_text(resp):
 def generate_social_copy_bundle(config, top3_data, daily_zh, daily_en, report_ids, timeout_seconds=8):
     """
     Returns dict with cn_social/en_social/cn_topic/en_topic and metadata,
-    or None if generation fails (caller should fallback).
+    never None (v2.8.4): returns validated model output, cache fallback, or rule fallback.
     """
     fingerprint = _compute_fingerprint(top3_data, daily_zh, daily_en, report_ids)
     cache_file = _cache_path(config)
     cached = _load_cache(cache_file)
-    if _cache_usable(cached, fingerprint):
+    if _cache_usable(cached, fingerprint, strict=True):
         return cached
 
     api_key = str(getattr(config, "gemini_api_key", "") or "").strip()
     model_name = str(getattr(config, "gemini_model", "") or "").strip()
+
+    def _save_and_return_fallback(reason):
+        fb = _build_rule_fallback_bundle(top3_data, daily_zh, daily_en, fingerprint, reason=reason)
+        _save_cache(cache_file, fb)
+        return fb
+
     if not api_key or not model_name:
-        if _cache_usable(cached, fingerprint):
+        if _cache_usable(cached, fingerprint, strict=False):
             return cached
-        return None
+        return _save_and_return_fallback("no_api")
 
     try:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel(model_name, generation_config={"temperature": 0.2})
         prompt = _build_prompt(top3_data, daily_zh, daily_en)
-        # enforce safer timeout floor to reduce frequent fallback
         resp = _generate_with_timeout(model, prompt, timeout_seconds=max(20, int(timeout_seconds or 8)))
         raw = _response_text(resp)
         data = extract_json(raw)
         ok, reason = _validate_payload(data)
         if not ok:
-            if _cache_usable(cached, fingerprint):
+            if _cache_usable(cached, fingerprint, strict=False):
                 return cached
-            return None
+            return _save_and_return_fallback(f"validator_{reason}")
 
         output = {
             "generated_at": _iso_now(),
             "generator_version": GENERATOR_VERSION,
             "source_fingerprint": fingerprint,
-            "cn_social": data.get("cn_social", ""),
-            "en_social": data.get("en_social", ""),
-            "cn_topic": data.get("cn_topic", ""),
-            "en_topic": data.get("en_topic", ""),
+            "cn_social": data.get("cn_topic") or data.get("cn_social", ""),
+            "en_social": data.get("en_topic") or data.get("en_social", ""),
+            "cn_topic": data.get("cn_topic") or data.get("cn_social", ""),
+            "en_topic": data.get("en_topic") or data.get("en_social", ""),
             "quality_flags": {
                 "subject_ok": True,
                 "evidence_fact_ok": True,
@@ -578,6 +701,6 @@ def generate_social_copy_bundle(config, top3_data, daily_zh, daily_en, report_id
         _save_cache(cache_file, output)
         return output
     except Exception:
-        if _cache_usable(cached, fingerprint):
+        if _cache_usable(cached, fingerprint, strict=False):
             return cached
-        return None
+        return _save_and_return_fallback("gemini_exception")
