@@ -9,6 +9,8 @@ import google.generativeai as genai
 
 from .utils import extract_json
 
+GENERATOR_VERSION = "v2.8.2"
+
 FORBIDDEN_PROMISE_WORDS = [
     "稳赚",
     "必涨",
@@ -42,6 +44,17 @@ SUBJECT_HINTS_EN = [
 ]
 ADVICE_HINTS = ["超配", "减持", "规避", "buy", "sell", "overweight", "underweight"]
 
+STALE_ABSOLUTE_PATTERNS_ZH = [
+    r"中国正式暂停对美稀土出口",
+    r"中国(?:已)?(?:全面)?停止对美稀土出口",
+    r"对美稀土(?:出口)?全面禁运",
+]
+STALE_ABSOLUTE_PATTERNS_EN = [
+    r"china has formally suspended rare earth exports to the united states",
+    r"china has (?:fully )?halted rare earth exports to the united states",
+    r"complete embargo on rare earth exports to the us",
+]
+
 PERSONA_ZH = (
     "你是『关键矿产情报主笔（给机构投资者写晨报）』，"
     "表达要求：短句、事实优先、不喊口号、先结论后依据。"
@@ -54,6 +67,7 @@ PERSONA_EN = (
 
 REQUIRED_CN_LABELS = ["核心事实：", "影响路径：", "投资动作：", "反方风险：", "证据锚点：", "⚠️ 风险提示："]
 REQUIRED_EN_LABELS = ["Core fact:", "Impact path:", "Investor action:", "Counter-risk:", "Evidence anchor:", "⚠️ Risk note:"]
+
 
 
 def _iso_now():
@@ -91,6 +105,96 @@ def _extract_line(text, prefixes):
             if raw.lower().startswith(p.lower()):
                 return raw[len(p):].strip(" ：:")
     return ""
+
+
+def _contains_stale_absolute_claim(text):
+    t = str(text or "")
+    low = t.lower()
+    if any(re.search(p, t, re.I) for p in STALE_ABSOLUTE_PATTERNS_ZH):
+        return True
+    if any(re.search(p, low, re.I) for p in STALE_ABSOLUTE_PATTERNS_EN):
+        return True
+    return False
+
+
+def _has_fresh_anchor(text, lang="zh"):
+    t = str(text or "")
+    low = t.lower()
+    if not t:
+        return False
+
+    if lang == "zh":
+        source_hints = ["根据", "据", "最新", "当前", "公开", "公告", "披露", "商务部", "海关", "会议"]
+        time_hints = [r"20\d{2}", r"\d+月", r"\d+日", r"截至", r"同比", r"环比", r"本周", r"本月"]
+        return any(h in t for h in source_hints) or any(re.search(p, t) for p in time_hints)
+
+    source_hints = ["according to", "based on", "latest", "current", "public", "announced", "reported", "disclosure"]
+    time_hints = [r"20\d{2}", r"as of", r"q[1-4]", r"month", r"week", r"yoy", r"mom"]
+    return any(h in low for h in source_hints) or any(re.search(p, low) for p in time_hints)
+
+
+def _sanitize_freshness(text, lang="zh"):
+    t = str(text or "")
+    if lang == "zh":
+        t = re.sub(
+            r"中国正式暂停对美稀土出口",
+            "根据最新公开政策信息，中美稀土贸易仍受许可与政策博弈影响",
+            t,
+        )
+        t = re.sub(
+            r"中国(?:已)?(?:全面)?停止对美稀土出口",
+            "根据最新公开政策信息，中美稀土贸易仍受许可与政策博弈影响",
+            t,
+        )
+        t = re.sub(
+            r"对美稀土(?:出口)?全面禁运",
+            "根据最新公开政策信息，中美稀土贸易仍受许可与政策博弈影响",
+            t,
+        )
+        return t
+
+    t = re.sub(
+        r"China has formally suspended rare earth exports to the United States",
+        "Based on current public policy disclosures, China-US rare earth trade remains subject to licensing and policy frictions",
+        t,
+        flags=re.I,
+    )
+    t = re.sub(
+        r"China has (?:fully )?halted rare earth exports to the United States",
+        "Based on current public policy disclosures, China-US rare earth trade remains subject to licensing and policy frictions",
+        t,
+        flags=re.I,
+    )
+    t = re.sub(
+        r"complete embargo on rare earth exports to the US",
+        "heightened policy and licensing constraints in China-US rare earth trade",
+        t,
+        flags=re.I,
+    )
+    return t
+
+
+def _harden_core_fact_line(text, lang="zh"):
+    lines = str(text or "").splitlines()
+    out = []
+    if lang == "zh":
+        prefix = "核心事实："
+        safe_fact = "根据最新公开政策信息，中美稀土贸易仍受许可与政策博弈影响，供给不确定性上升。"
+    else:
+        prefix = "Core fact:"
+        safe_fact = "Based on current public policy disclosures, China-US rare earth trade remains subject to licensing and policy frictions, with elevated supply uncertainty."
+
+    for ln in lines:
+        raw = ln.strip()
+        if raw.startswith(prefix):
+            core = raw[len(prefix):].strip()
+            core = _sanitize_freshness(core, lang=lang)
+            if _contains_stale_absolute_claim(core) or not _has_fresh_anchor(core, lang=lang):
+                raw = f"{prefix} {safe_fact}"
+            else:
+                raw = f"{prefix} {core}"
+        out.append(raw)
+    return "\n".join(out).strip()
 
 
 def _is_fact_sentence(text):
@@ -145,7 +249,16 @@ def _validate_payload(payload):
     cn_topic = _clean_text(payload.get("cn_topic"))
     en_topic = _clean_text(payload.get("en_topic"))
 
-    if _has_forbidden(cn_social + "\n" + en_social + "\n" + cn_topic + "\n" + en_topic):
+    cn_social = _sanitize_freshness(cn_social, lang="zh")
+    en_social = _sanitize_freshness(en_social, lang="en")
+    cn_topic = _harden_core_fact_line(_sanitize_freshness(cn_topic, lang="zh"), lang="zh")
+    en_topic = _harden_core_fact_line(_sanitize_freshness(en_topic, lang="en"), lang="en")
+
+    combined_text = cn_social + "\n" + en_social + "\n" + cn_topic + "\n" + en_topic
+    if _contains_stale_absolute_claim(combined_text):
+        return False, "stale_claim"
+
+    if _has_forbidden(combined_text):
         return False, "forbidden_word"
 
     # Subject check: explicit subject hints OR explicit action label
@@ -153,6 +266,13 @@ def _validate_payload(payload):
         return False, "subject_zh"
     if not (_has_subject(en_social + "\n" + en_topic, lang="en") or "Investor action:" in en_topic):
         return False, "subject_en"
+
+    cn_core = _extract_line(cn_social + "\n" + cn_topic, ["核心事实：", "核心事实:"])
+    en_core = _extract_line(en_social + "\n" + en_topic, ["Core fact:"])
+    if not _has_fresh_anchor(cn_core, lang="zh"):
+        return False, "core_anchor_zh"
+    if not _has_fresh_anchor(en_core, lang="en"):
+        return False, "core_anchor_en"
 
     cn_ev = _extract_line(cn_social + "\n" + cn_topic, ["证据锚点：", "证据锚点:"])
     en_ev = _extract_line(en_social + "\n" + en_topic, ["Evidence anchor:", "Evidence anchors:"])
@@ -198,6 +318,7 @@ def _validate_payload(payload):
 
 def _compute_fingerprint(top3_data, daily_zh, daily_en, report_ids):
     base = {
+        "generator_version": GENERATOR_VERSION,
         "top3": top3_data or {},
         "daily_zh": daily_zh or {},
         "daily_en": daily_en or {},
@@ -226,6 +347,24 @@ def _save_cache(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def _cache_usable(cached, fingerprint):
+    if not isinstance(cached, dict):
+        return False
+    if cached.get("source_fingerprint") != fingerprint:
+        return False
+    if str(cached.get("generator_version") or "") != GENERATOR_VERSION:
+        return False
+    if not all(cached.get(k) for k in ("cn_social", "en_social", "cn_topic", "en_topic")):
+        return False
+    combined = "\n".join([
+        str(cached.get("cn_social") or ""),
+        str(cached.get("en_social") or ""),
+        str(cached.get("cn_topic") or ""),
+        str(cached.get("en_topic") or ""),
+    ])
+    return not _contains_stale_absolute_claim(combined)
 
 
 def _build_prompt(top3_data, daily_zh, daily_en):
@@ -282,6 +421,8 @@ Hard rules:
 5) Remove TL;DR/noise wording.
 6) English must be complete sentences (no truncation).
 7) No machine-assembly artifacts: no "要点 •", no duplicated labels, no repeated "影响路径".
+8) Avoid absolute stale claims like "formally suspended exports" unless a dated official source is explicitly provided.
+9) Core fact must include a time/source qualifier (e.g., 根据/据/最新公开信息 or according to/based on/current disclosure).
 
 Length:
 - cn_social <= 220 Chinese chars (excluding line breaks)
@@ -338,14 +479,13 @@ def generate_social_copy_bundle(config, top3_data, daily_zh, daily_en, report_id
     fingerprint = _compute_fingerprint(top3_data, daily_zh, daily_en, report_ids)
     cache_file = _cache_path(config)
     cached = _load_cache(cache_file)
-    if cached.get("source_fingerprint") == fingerprint:
-        if all(cached.get(k) for k in ("cn_social", "en_social", "cn_topic", "en_topic")):
-            return cached
+    if _cache_usable(cached, fingerprint):
+        return cached
 
     api_key = str(getattr(config, "gemini_api_key", "") or "").strip()
     model_name = str(getattr(config, "gemini_model", "") or "").strip()
     if not api_key or not model_name:
-        if all(cached.get(k) for k in ("cn_social", "en_social", "cn_topic", "en_topic")):
+        if _cache_usable(cached, fingerprint):
             return cached
         return None
 
@@ -359,12 +499,13 @@ def generate_social_copy_bundle(config, top3_data, daily_zh, daily_en, report_id
         data = extract_json(raw)
         ok, reason = _validate_payload(data)
         if not ok:
-            if all(cached.get(k) for k in ("cn_social", "en_social", "cn_topic", "en_topic")):
+            if _cache_usable(cached, fingerprint):
                 return cached
             return None
 
         output = {
             "generated_at": _iso_now(),
+            "generator_version": GENERATOR_VERSION,
             "source_fingerprint": fingerprint,
             "cn_social": data.get("cn_social", ""),
             "en_social": data.get("en_social", ""),
@@ -375,6 +516,7 @@ def generate_social_copy_bundle(config, top3_data, daily_zh, daily_en, report_id
                 "evidence_fact_ok": True,
                 "no_profit_claim_ok": True,
                 "persona_enabled": True,
+                "freshness_guard_enabled": True,
             },
             "fallback_used": False,
             "validator_reason": reason,
@@ -382,6 +524,6 @@ def generate_social_copy_bundle(config, top3_data, daily_zh, daily_en, report_id
         _save_cache(cache_file, output)
         return output
     except Exception:
-        if all(cached.get(k) for k in ("cn_social", "en_social", "cn_topic", "en_topic")):
+        if _cache_usable(cached, fingerprint):
             return cached
         return None
