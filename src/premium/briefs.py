@@ -10,6 +10,15 @@ from ..utils import extract_json
 
 AUDIENCE_FIT = {"investor", "industry", "policy", "mixed"}
 
+PERSONA_EN_PREMIUM = (
+    "You are the lead critical-minerals paid-brief editor for institutional investors. "
+    "Write concise, evidence-first, decision-oriented copy."
+)
+PERSONA_ZH_PREMIUM = (
+    "你是『关键矿产付费简报主笔』，服务对象是机构投资者与供应链决策者。"
+    "写作要求：短句、事实优先、可执行、避免模板化空话。"
+)
+
 
 def _load_market_analysis(data_dir, limit=1200):
     if not data_dir:
@@ -131,6 +140,8 @@ class PremiumBriefGenerator:
             summary = summary_en or summary_zh
             if self.prompt_version == "v2":
                 prompt = f"""
+Role (persona): {PERSONA_EN_PREMIUM}
+
 You are a rare earth intelligence verification analyst. Generate a paid brief (USD $9) for Western investors (primary) and supply-chain decision makers (secondary). Tone: professional research brief, neutral and precise.
 Return ONLY JSON with fields:
 - conclusion (1 sentence)
@@ -173,6 +184,8 @@ Article:
 """
             else:
                 prompt = f"""
+Role (persona): {PERSONA_EN_PREMIUM}
+
 You are a rare earth intelligence verification analyst. Generate a paid brief (USD $9) for Western decision makers.
 Return ONLY JSON with fields:
 - conclusion (1 sentence)
@@ -200,6 +213,8 @@ Article:
             summary = summary_zh or summary_en
             if self.prompt_version == "v2":
                 prompt = f"""
+角色设定：{PERSONA_ZH_PREMIUM}
+
 你是一名稀土情报核查专家，请生成售价9美元的付费简报（面向投资者为主，其次供应链/政策）。立场以中国战略安全与供应链主导为背景，但输出以投资决策为主。语气为专业研究简报，短句、克制、去AI味。
 只输出JSON，包含字段：
 - conclusion（一句话结论）
@@ -241,6 +256,8 @@ Article:
 """
             else:
                 prompt = f"""
+角色设定：{PERSONA_ZH_PREMIUM}
+
 你是一名稀土情报核查专家，请生成售价9美元的付费简报（给中国决策者）。
 只输出JSON，包含字段：
 - conclusion（一句话结论）
