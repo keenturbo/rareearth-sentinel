@@ -141,7 +141,35 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
       dedup.push(ln);
     }
 
-    return dedup.join('\n').replace(/\n{3,}/g,'\n\n').trim();
+    const merged = [];
+    const appendToNearest = (re, text) => {
+      for (let i = merged.length - 1; i >= 0; i--) {
+        if (re.test(merged[i])) {
+          if (!merged[i].includes(text)) {
+            merged[i] = merged[i].replace(/[。；;]?\s*$/, '；') + text;
+          }
+          return true;
+        }
+      }
+      return false;
+    };
+
+    for (const ln of dedup) {
+      let line = String(ln || '').trim();
+      if (!line) continue;
+
+      const noNum = line.replace(/^\d+\.\s*/, '').trim();
+      const isAction = /^(减持|增配|加仓|减仓|回避|配置|锁定|trim|reduce|add|hedge|rotate|de-risk)\b/i.test(noNum);
+      const isRisk = /^(若|如果|if\b|unless\b)/i.test(noNum) || /概率\s*\d+%/.test(noNum) || /(回撤|下行|不及预期|volatility|pullback)/i.test(noNum);
+
+      if (isAction && appendToNearest(/^(投资动作[:：]|Investor action[:：])/i, noNum)) continue;
+
+      if ((/^\d+\.\s*/.test(line) || isRisk) && appendToNearest(/^(反方风险[:：]|Counter-risk[:：])/i, noNum)) continue;
+
+      merged.push(line);
+    }
+
+    return merged.join('\n').replace(/\n{3,}/g,'\n\n').trim();
   };
 
   try {
