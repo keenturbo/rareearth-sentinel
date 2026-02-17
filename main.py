@@ -812,7 +812,7 @@ def _build_home_top1_fallback(item, valid_report_ids, lang="zh"):
 
     return (
         '<div class="premium-item premium-aggregate">'
-        
+
         f'<div class="premium-reason"><span class="label-gray">{core_label}</span>{sep}{html_lib.escape(core_text)}</div>'
         f'<div class="premium-reason"><span class="label-gray">{signal_label}</span>{sep}{html_lib.escape(signal_text)}</div>'
         f'{preview_html}'
@@ -968,7 +968,7 @@ def _build_home_aggregate_html(top3_data, valid_report_ids, daily_report, lang="
 
     return (
         '<div class="premium-item premium-aggregate">'
-        
+
         f'{"".join(lines_html)}'
         f'<a class="premium-btn" href="{html_lib.escape(unlock)}">{html_lib.escape(btn_label)}</a>'
         '</div>'
@@ -1458,6 +1458,11 @@ def main():
         action="store_true",
         help="Generate training datasets from stored records",
     )
+    parser.add_argument(
+        "--build-products",
+        action="store_true",
+        help="Build pricing / weekly-pack / task-sprint product pages",
+    )
     args = parser.parse_args()
 
     config = Config.from_env()
@@ -1468,6 +1473,14 @@ def main():
 
     if args.build_datasets:
         _run_build_datasets(config)
+        return
+
+    if args.build_products:
+        try:
+            from scripts.build_product_pages import build_product_pages
+        except Exception as exc:
+            raise SystemExit(f"failed to import product page builder: {exc}")
+        build_product_pages(config)
         return
 
     run_pipeline(config)
