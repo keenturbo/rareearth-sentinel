@@ -129,7 +129,7 @@ def _fmt_price(price, currency, lang):
         return f"${int(value) if value.is_integer() else value}"
     if currency == "CNY":
         return f"¥{int(value) if value.is_integer() else value}"
-    return f"{value} {currency or (('USD' if lang == 'en' else 'CNY'))}"
+    return f"{value} {currency or (("USD" if lang == "en" else "CNY"))}"
 
 
 def _escape(text):
@@ -150,6 +150,16 @@ def _render_template(template_path, replacements):
     for key, value in replacements.items():
         html = html.replace(key, value)
     return html
+
+
+def _find_sku(catalog, sku_type, lang):
+    for sku in catalog:
+        if str(sku.get("sku_type") or "").lower() != sku_type:
+            continue
+        sku_lang = str(sku.get("lang") or "").lower()
+        if sku_lang in {lang, "all"}:
+            return sku
+    return {}
 
 
 def _build_pricing_cards(catalog, lang):
@@ -217,7 +227,10 @@ def _build_weekly_pack_list(packs, reports, lang):
         if not li:
             li.append("<li>暂无报告内容</li>" if lang != "en" else "<li>No reports mapped yet</li>")
 
-        if primary:
+        if pack_id and primary:
+            href = f"/{subdir}/pack/pay/{pack_id}.html"
+            cta = "解锁周包" if lang != "en" else "Unlock Weekly Pack"
+        elif primary:
             href = f"/{subdir}/pay/{primary}.html"
             cta = "先解锁首篇报告" if lang != "en" else "Unlock first report"
         else:
@@ -272,6 +285,85 @@ def _build_task_cards(catalog, lang):
     return "".join(blocks)
 
 
+def _pack_reports_html(pack, rows_by_id, lang):
+    report_ids = [str(x).strip() for x in (pack.get("included_report_ids") or []) if str(x).strip()]
+    if not report_ids:
+        return "<li>暂无报告</li>" if lang != "en" else "<li>No reports in this pack.</li>"
+    out = []
+    for rid in report_ids[:10]:
+        row = rows_by_id.get(rid, {})
+        title = _escape(_report_title(row, lang) or rid)
+        out.append(f"<li data-report-id=\"{_escape(rid)}\">{title}</li>")
+    return "".join(out)
+
+
+def _build_pack_payment_pages(config, catalog, packs, reports, last_update):
+    rows_by_id = {str(r.get("report_id") or ""): r for r in reports if r.get("report_id")}
+
+    for lang in ("cn", "en"):
+        sku = _find_sku(catalog, "weekly_pack", lang)
+        sku_id = str(sku.get("sku_id") or "").strip()
+        channel_default = "weekly_pack_page"
+
+        for pack in packs:
+            pack_lang = str(pack.get("lang") or "").lower()
+            if pack_lang != lang:
+                continue
+
+            pack_id = str(pack.get("pack_id") or "").strip()
+            if not pack_id:
+                continue
+
+            report_ids = [str(x).strip() for x in (pack.get("included_report_ids") or []) if str(x).strip()]
+            primary = str(pack.get("primary_report_id") or "").strip() or (report_ids[0] if report_ids else "")
+            if not primary:
+                continue
+
+            price_value = pack.get("price")
+            currency = str(pack.get("currency") or ("USD" if lang == "en" else "CNY"))
+            display_price = _fmt_price(price_value, currency, lang)
+            tier = display_price if display_price != "-" else ("$29" if lang == "en" else "¥99")
+
+            template_name = "pack_pay_en.html" if lang == "en" else "pack_pay.html"
+            template_path = os.path.join(ROOT, "templates", template_name)
+            if not os.path.exists(template_path):
+                continue
+
+            report_list_html = _pack_reports_html(pack, rows_by_id, lang)
+            title = (
+                f"Weekly Pack ({pack_id})"
+                if lang == "en"
+                else f"周度组合包（{pack_id}）"
+            )
+            reports_csv = ",".join(report_ids)
+            html_out = _render_template(
+                template_path,
+                {
+                    "{{LAST_UPDATE}}": last_update,
+                    "{{PACK_ID}}": _escape(pack_id),
+                    "{{PACK_TITLE}}": _escape(title),
+                    "{{PACK_PRICE}}": _escape(display_price),
+                    "{{PACK_TIER}}": _escape(tier),
+                    "{{PACK_PRIMARY_REPORT_ID}}": _escape(primary),
+                    "{{PACK_REPORT_IDS_CSV}}": _escape(reports_csv),
+                    "{{PACK_REPORT_COUNT}}": str(len(report_ids)),
+                    "{{PACK_REPORT_LIST}}": report_list_html,
+                    "{{PACK_SKU_ID}}": _escape(sku_id),
+                    "{{CHANNEL_DEFAULT}}": _escape(channel_default),
+                    "{{PAY_CONFIRM_ENDPOINT}}": _escape(config.pay_confirm_endpoint),
+                },
+            )
+
+            out_path = os.path.join(
+                config.static_dir,
+                lang,
+                "pack",
+                "pay",
+                f"{pack_id}.html",
+            )
+            _write(out_path, html_out)
+
+
 def build_product_pages(config):
     catalog_path = os.path.join(config.data_dir, "products", "catalog.json")
     packs_path = os.path.join(config.data_dir, "products", "packs.json")
@@ -304,6 +396,8 @@ def build_product_pages(config):
             },
         )
         _write(out_path, html)
+
+    _build_pack_payment_pages(config, catalog, packs, reports, last_update)
 
 
 def main():
