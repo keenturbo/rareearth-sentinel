@@ -1,0 +1,88 @@
+{
+  "skus": [
+    {
+      "sku_id": "en-single-9",
+      "sku_type": "single_report",
+      "lang": "en",
+      "audience": "investor",
+      "title": "Single Deep Report",
+      "description": "One premium report with scenarios, thresholds, and actions.",
+      "price": 9,
+      "currency": "USD",
+      "active": true,
+      "visible": true,
+      "delivery_mode": "unlock_page",
+      "cta_text": "Unlock $9 Report"
+    },
+    {
+      "sku_id": "en-weekly-pack-29",
+      "sku_type": "weekly_pack",
+      "lang": "en",
+      "audience": "investor",
+      "title": "Weekly Pack (5 Reports)",
+      "description": "Top 5 premium reports of the week.",
+      "price": 29,
+      "currency": "USD",
+      "active": true,
+      "visible": true,
+      "delivery_mode": "bundle",
+      "cta_text": "View Weekly Pack"
+    },
+    {
+      "sku_id": "en-task-sprint-99",
+      "sku_type": "task_sprint",
+      "lang": "en",
+      "audience": "investor",
+      "title": "Task Sprint (14 Days)",
+      "description": "Dedicated tracking for one topic with recurring execution outputs.",
+      "price": 99,
+      "currency": "USD",
+      "active": true,
+      "visible": true,
+      "delivery_mode": "task",
+      "cta_text": "Start Task Sprint"
+    },
+    {
+      "sku_id": "cn-single-39",
+      "sku_type": "single_report",
+      "lang": "cn",
+      "audience": "investor",
+      "title": "单篇深度报告",
+      "description": "单篇解锁，含情景概率、阈值与行动建议。",
+      "price": 39,
+      "currency": "CNY",
+      "active": true,
+      "visible": true,
+      "delivery_mode": "unlock_page",
+      "cta_text": "解锁单篇"
+    },
+    {
+      "sku_id": "cn-weekly-pack-99",
+      "sku_type": "weekly_pack",
+      "lang": "cn",
+      "audience": "investor",
+      "title": "周度组合包（5篇）",
+      "description": "本周精选 5 篇深度报告。",
+      "price": 99,
+      "currency": "CNY",
+      "active": true,
+      "visible": true,
+      "delivery_mode": "bundle",
+      "cta_text": "查看周包"
+    },
+    {
+      "sku_id": "cn-task-sprint-499",
+      "sku_type": "task_sprint",
+      "lang": "cn",
+      "audience": "investor",
+      "title": "任务跟踪（14天）",
+      "description": "围绕单一主题进行持续跟踪与执行建议。",
+      "price": 499,
+      "currency": "CNY",
+      "active": true,
+      "visible": true,
+      "delivery_mode": "task",
+      "cta_text": "启动任务跟踪"
+    }
+  ]
+}
