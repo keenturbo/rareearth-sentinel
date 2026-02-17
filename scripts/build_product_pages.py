@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 import json
 import os
-from datetime import datetime
+import sys
 
 from src.config import Config
 from src.utils import isoformat, now_cst
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 
 
 def _read_json(path, default):
@@ -110,7 +114,7 @@ def _derive_packs_if_needed(packs, reports):
 
     derived = []
     for lang in ("en", "cn"):
-        pack = _for_lang("en" if lang == "en" else "cn")
+        pack = _for_lang(lang)
         if pack:
             derived.append(pack)
     return derived
@@ -125,13 +129,12 @@ def _fmt_price(price, currency, lang):
         return f"${int(value) if value.is_integer() else value}"
     if currency == "CNY":
         return f"¥{int(value) if value.is_integer() else value}"
-    if lang == "en":
-        return f"{value} {currency}"
-    return f"{value} {currency}"
+    return f"{value} {currency or (('USD' if lang == 'en' else 'CNY'))}"
 
 
 def _escape(text):
     import html
+
     return html.escape(str(text or ""))
 
 
@@ -231,8 +234,8 @@ def _build_weekly_pack_list(packs, reports, lang):
             f"<article class=\"card\" id=\"pack-{_escape(pack_id)}\">"
             f"<h3>{_escape(pack_id)}</h3>"
             f"<span class=\"badge\">{_escape(price)}</span>"
-            + (f"<span class=\"meta\">{_escape(period)}</span>" if period else "") +
-            f"<ul>{''.join(li)}</ul>"
+            + (f"<span class=\"meta\">{_escape(period)}</span>" if period else "")
+            + f"<ul>{''.join(li)}</ul>"
             f"<a class=\"btn\" href=\"{_escape(href)}\">{_escape(cta)}</a>"
             "</article>"
         )
@@ -281,22 +284,26 @@ def build_product_pages(config):
     last_update = isoformat(now_cst())
 
     mappings = [
-        ("cn", "templates/pricing.html", "static/cn/pricing/index.html", "{{PRICING_CARDS}}", _build_pricing_cards(catalog, "cn")),
-        ("en", "templates/pricing_en.html", "static/en/pricing/index.html", "{{PRICING_CARDS}}", _build_pricing_cards(catalog, "en")),
-        ("cn", "templates/weekly_pack.html", "static/cn/weekly-pack/index.html", "{{WEEKLY_PACK_LIST}}", _build_weekly_pack_list(packs, reports, "cn")),
-        ("en", "templates/weekly_pack_en.html", "static/en/weekly-pack/index.html", "{{WEEKLY_PACK_LIST}}", _build_weekly_pack_list(packs, reports, "en")),
-        ("cn", "templates/task_sprint.html", "static/cn/task/sprint/index.html", "{{TASK_SPRINT_CARDS}}", _build_task_cards(catalog, "cn")),
-        ("en", "templates/task_sprint_en.html", "static/en/task/sprint/index.html", "{{TASK_SPRINT_CARDS}}", _build_task_cards(catalog, "en")),
+        ("templates/pricing.html", os.path.join(config.static_dir, "cn", "pricing", "index.html"), "{{PRICING_CARDS}}", _build_pricing_cards(catalog, "cn")),
+        ("templates/pricing_en.html", os.path.join(config.static_dir, "en", "pricing", "index.html"), "{{PRICING_CARDS}}", _build_pricing_cards(catalog, "en")),
+        ("templates/weekly_pack.html", os.path.join(config.static_dir, "cn", "weekly-pack", "index.html"), "{{WEEKLY_PACK_LIST}}", _build_weekly_pack_list(packs, reports, "cn")),
+        ("templates/weekly_pack_en.html", os.path.join(config.static_dir, "en", "weekly-pack", "index.html"), "{{WEEKLY_PACK_LIST}}", _build_weekly_pack_list(packs, reports, "en")),
+        ("templates/task_sprint.html", os.path.join(config.static_dir, "cn", "task", "sprint", "index.html"), "{{TASK_SPRINT_CARDS}}", _build_task_cards(catalog, "cn")),
+        ("templates/task_sprint_en.html", os.path.join(config.static_dir, "en", "task", "sprint", "index.html"), "{{TASK_SPRINT_CARDS}}", _build_task_cards(catalog, "en")),
     ]
 
-    for _, tpl_rel, out_rel, slot, body in mappings:
-        tpl = os.path.join(ROOT, tpl_rel)
-        out = os.path.join(ROOT, out_rel)
-        html = _render_template(tpl, {
-            "{{LAST_UPDATE}}": last_update,
-            slot: body,
-        })
-        _write(out, html)
+    for tpl_rel, out_path, slot, body in mappings:
+        tpl_path = os.path.join(ROOT, tpl_rel)
+        if not os.path.exists(tpl_path):
+            continue
+        html = _render_template(
+            tpl_path,
+            {
+                "{{LAST_UPDATE}}": last_update,
+                slot: body,
+            },
+        )
+        _write(out_path, html)
 
 
 def main():
