@@ -20,7 +20,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:"Source Sans 3",
 </style>
 </head>
 <body>
-<main class="container">
+<main class="container" data-funnel-endpoint="{{FUNNEL_ENDPOINT}}" data-page-lang="{{PAGE_LANG}}" data-page-channel="{{PAGE_CHANNEL}}">
   <header class="top">
     <div>
       <h1 class="title">任务跟踪（14天）</h1>
@@ -36,5 +36,51 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:"Source Sans 3",
 
   {{TASK_SPRINT_CARDS}}
 </main>
+<script>
+(function(){
+  const root = document.querySelector('main.container');
+  if(!root) return;
+  const endpoint = root.dataset.funnelEndpoint || '';
+  const pageLang = root.dataset.pageLang || 'cn';
+  const pageChannel = root.dataset.pageChannel || 'task_sprint_page';
+  if(!endpoint) return;
+
+  function send(eventType, extra){
+    const payload = Object.assign({
+      event_type: eventType,
+      lang: pageLang,
+      channel: pageChannel,
+      meta: { path: location.pathname }
+    }, extra || {});
+
+    try{
+      const body = JSON.stringify(payload);
+      if(navigator.sendBeacon){
+        const blob = new Blob([body], {type:'application/json'});
+        navigator.sendBeacon(endpoint, blob);
+        return;
+      }
+      fetch(endpoint, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body,
+        keepalive: true
+      }).catch(()=>{});
+    }catch(err){}
+  }
+
+  send('view_pricing');
+
+  document.querySelectorAll('.funnel-pay-link').forEach(link => {
+    link.addEventListener('click', () => {
+      send('click_pay', {
+        sku_id: link.dataset.skuId || '',
+        channel: link.dataset.channel || pageChannel,
+        meta: { href: link.getAttribute('href') || '' }
+      });
+    }, {passive:true});
+  });
+})();
+</script>
 </body>
 </html>

@@ -10,6 +10,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+try:
+    from scripts.build_weekly_pack import build_weekly_packs
+except Exception:
+    build_weekly_packs = None
+
 
 FUNNEL_ENDPOINT = "/api/pay/funnel"
 
@@ -209,7 +214,7 @@ def _report_title(row, lang):
     return str(row.get("source_title") or row.get("report_id") or "").strip()
 
 
-def _build_weekly_pack_list(packs, reports, lang):
+def _build_weekly_pack_list(packs, reports, lang, weekly_sku_id=""):
     rows_by_id = {str(r.get("report_id") or ""): r for r in reports if r.get("report_id")}
     blocks = []
     subdir = "en" if lang == "en" else "cn"
@@ -254,7 +259,7 @@ def _build_weekly_pack_list(packs, reports, lang):
             f"<span class=\"badge\">{_escape(price)}</span>"
             + (f"<span class=\"meta\">{_escape(period)}</span>" if period else "")
             + f"<ul>{''.join(li)}</ul>"
-            f"<a class=\"btn\" href=\"{_escape(href)}\">{_escape(cta)}</a>"
+            f"<a class=\"btn funnel-pay-link\" data-sku-id=\"{_escape(weekly_sku_id)}\" data-channel=\"weekly_pack_page\" href=\"{_escape(href)}\">{_escape(cta)}</a>"
             "</article>"
         )
 
@@ -277,12 +282,13 @@ def _build_task_cards(catalog, lang):
         price = _fmt_price(sku.get("price"), sku.get("currency"), lang)
         cta = _escape(sku.get("cta_text") or ("Start" if lang == "en" else "启动"))
         href = f"/{subdir}/premium/"
+        sku_id = _escape(sku.get("sku_id") or "")
         blocks.append(
             "<section class=\"card\">"
             f"<h3>{title}</h3>"
             f"<div class=\"meta\">{_escape(price)} · 14 days</div>"
             f"<div class=\"meta\" style=\"margin-top:6px\">{desc}</div>"
-            f"<a class=\"btn\" href=\"{_escape(href)}\">{cta}</a>"
+            f"<a class=\"btn funnel-pay-link\" data-sku-id=\"{sku_id}\" data-channel=\"task_sprint_page\" href=\"{_escape(href)}\">{cta}</a>"
             "</section>"
         )
     if not blocks:
@@ -374,17 +380,26 @@ def build_product_pages(config):
     packs_path = os.path.join(config.data_dir, "products", "packs.json")
     reports_index_path = os.path.join(config.premium_dir, "reports_index.jsonl")
 
+    if callable(build_weekly_packs):
+        try:
+            build_weekly_packs(config, count=5, langs=("cn", "en"))
+        except Exception:
+            pass
+
     catalog = _load_catalog(catalog_path)
     reports = _read_reports_index(reports_index_path)
     packs = _derive_packs_if_needed(_load_packs(packs_path), reports)
+
+    weekly_sku_cn = str(_find_sku(catalog, "weekly_pack", "cn").get("sku_id") or "")
+    weekly_sku_en = str(_find_sku(catalog, "weekly_pack", "en").get("sku_id") or "")
 
     last_update = isoformat(now_cst())
 
     mappings = [
         ("templates/pricing.html", os.path.join(config.static_dir, "cn", "pricing", "index.html"), "{{PRICING_CARDS}}", _build_pricing_cards(catalog, "cn"), "cn", "pricing_page"),
         ("templates/pricing_en.html", os.path.join(config.static_dir, "en", "pricing", "index.html"), "{{PRICING_CARDS}}", _build_pricing_cards(catalog, "en"), "en", "pricing_page"),
-        ("templates/weekly_pack.html", os.path.join(config.static_dir, "cn", "weekly-pack", "index.html"), "{{WEEKLY_PACK_LIST}}", _build_weekly_pack_list(packs, reports, "cn"), "cn", "weekly_pack_page"),
-        ("templates/weekly_pack_en.html", os.path.join(config.static_dir, "en", "weekly-pack", "index.html"), "{{WEEKLY_PACK_LIST}}", _build_weekly_pack_list(packs, reports, "en"), "en", "weekly_pack_page"),
+        ("templates/weekly_pack.html", os.path.join(config.static_dir, "cn", "weekly-pack", "index.html"), "{{WEEKLY_PACK_LIST}}", _build_weekly_pack_list(packs, reports, "cn", weekly_sku_id=weekly_sku_cn), "cn", "weekly_pack_page"),
+        ("templates/weekly_pack_en.html", os.path.join(config.static_dir, "en", "weekly-pack", "index.html"), "{{WEEKLY_PACK_LIST}}", _build_weekly_pack_list(packs, reports, "en", weekly_sku_id=weekly_sku_en), "en", "weekly_pack_page"),
         ("templates/task_sprint.html", os.path.join(config.static_dir, "cn", "task", "sprint", "index.html"), "{{TASK_SPRINT_CARDS}}", _build_task_cards(catalog, "cn"), "cn", "task_sprint_page"),
         ("templates/task_sprint_en.html", os.path.join(config.static_dir, "en", "task", "sprint", "index.html"), "{{TASK_SPRINT_CARDS}}", _build_task_cards(catalog, "en"), "en", "task_sprint_page"),
     ]
