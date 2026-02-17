@@ -70,17 +70,114 @@ def _parse_memo(memo):
     return out
 
 
-def _load_pack(pack_path, pack_id):
-    data = _read_json(pack_path)
+def _load_packs(path):
+    data = _read_json(path)
     packs = data.get("packs") if isinstance(data, dict) else []
     if not isinstance(packs, list):
         packs = []
+    out = []
     for pack in packs:
         if not isinstance(pack, dict):
             continue
-        if str(pack.get("pack_id") or "").strip() == pack_id:
-            return pack
+        if str(pack.get("status") or "active") != "active":
+            continue
+        out.append(pack)
+    return out
+
+
+def _read_reports_index(path):
+    rows = _read_jsonl(path)
+    rows.sort(key=lambda r: str(r.get("created_at") or ""), reverse=True)
+    return rows
+
+
+def _derive_packs_if_needed(packs, reports):
+    if packs:
+        return packs
+
+    def _for_lang(lang_key):
+        lang_field = "preview_en" if lang_key == "en" else "preview_zh"
+        ids = []
+        for row in reports:
+            report_id = str(row.get("report_id") or "").strip()
+            if not report_id:
+                continue
+            preview = row.get(lang_field) or {}
+            title = str(preview.get("title") or "").strip()
+            if not title:
+                continue
+            ids.append(report_id)
+            if len(ids) >= 5:
+                break
+        if not ids:
+            return None
+        week = datetime.utcnow().strftime("%Yw%W")
+        return {
+            "pack_id": f"{lang_key}-weekly-{week}",
+            "lang": lang_key,
+            "period_start": "",
+            "period_end": "",
+            "included_report_ids": ids,
+            "primary_report_id": ids[0],
+            "price": 29 if lang_key == "en" else 99,
+            "currency": "USD" if lang_key == "en" else "CNY",
+            "status": "active",
+        }
+
+    out = []
+    for lang in ("en", "cn"):
+        pack = _for_lang(lang)
+        if pack:
+            out.append(pack)
+    return out
+
+
+def _all_packs(config):
+    packs_path = os.path.join(config.data_dir, "products", "packs.json")
+    packs = _load_packs(packs_path)
+    reports = _read_reports_index(os.path.join(config.premium_dir, "reports_index.jsonl"))
+    return _derive_packs_if_needed(packs, reports)
+
+
+def _load_pack(config, pack_id, report_id="", lang=""):
+    packs = _all_packs(config)
+    if pack_id:
+        for pack in packs:
+            if str(pack.get("pack_id") or "").strip() == pack_id:
+                return pack
+
+    if report_id:
+        report_id = str(report_id).strip()
+        lang = str(lang or "").strip().lower()
+        for pack in packs:
+            pack_lang = str(pack.get("lang") or "").strip().lower()
+            if lang in {"cn", "en"} and pack_lang and pack_lang != lang:
+                continue
+            primary = str(pack.get("primary_report_id") or "").strip()
+            included = [str(x).strip() for x in (pack.get("included_report_ids") or [])]
+            if report_id == primary or report_id in included:
+                return pack
+
     return {}
+
+
+def _load_order_entry(data_dir, order_id):
+    path = os.path.join(data_dir, "pay", "orders.jsonl")
+    if not os.path.exists(path):
+        return {}
+    latest = {}
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            if str(row.get("order_id") or "") == order_id:
+                latest = row
+    return latest
 
 
 def _load_report_title(index_path, report_id, lang="cn"):
@@ -104,7 +201,6 @@ def _render_unlock_page(config, lang, order_id, pack_id, report_links):
     tpl_name = "pack_unlock_en.html" if lang == "en" else "pack_unlock.html"
     tpl_path = os.path.join(config.templates_dir, tpl_name)
     if not os.path.exists(tpl_path):
-        # fallback minimal page
         items = "".join(
             f'<li><a href="{html.escape(it["url"])}" target="_blank">{html.escape(it["title"])}</a></li>'
             for it in report_links
@@ -158,34 +254,74 @@ def main():
         print("error: order status not found")
         return 1
 
-    memo_fields = _parse_memo(status.get("memo", ""))
-    pack_id = str(status.get("pack_id") or memo_fields.get("pack_id") or "").strip()
-    sku_id = str(status.get("sku_id") or memo_fields.get("sku_id") or "").strip()
-    channel = str(status.get("channel") or memo_fields.get("channel") or "").strip()
-    product_type = str(status.get("product_type") or memo_fields.get("product_type") or "weekly_pack").strip()
+    order_entry = _load_order_entry(config.data_dir, order_id)
 
-    if not pack_id:
-        print("error: missing pack_id in status/memo")
-        return 1
+    status_memo_fields = _parse_memo(status.get("memo", ""))
+    order_memo_fields = _parse_memo(order_entry.get("memo", ""))
 
-    lang = str(args.lang or status.get("lang") or "en").strip().lower()
+    pack_id = str(
+        status.get("pack_id")
+        or status_memo_fields.get("pack_id")
+        or order_entry.get("pack_id")
+        or order_memo_fields.get("pack_id")
+        or ""
+    ).strip()
+    sku_id = str(
+        status.get("sku_id")
+        or status_memo_fields.get("sku_id")
+        or order_entry.get("sku_id")
+        or order_memo_fields.get("sku_id")
+        or ""
+    ).strip()
+    channel = str(
+        status.get("channel")
+        or status_memo_fields.get("channel")
+        or order_entry.get("channel")
+        or order_memo_fields.get("channel")
+        or ""
+    ).strip()
+    product_type = str(
+        status.get("product_type")
+        or status_memo_fields.get("product_type")
+        or order_entry.get("product_type")
+        or order_memo_fields.get("product_type")
+        or "weekly_pack"
+    ).strip()
+
+    report_id = str(
+        status.get("report_id")
+        or order_entry.get("report_id")
+        or status_memo_fields.get("report_id")
+        or order_memo_fields.get("report_id")
+        or ""
+    ).strip()
+
+    lang = str(
+        args.lang
+        or status.get("lang")
+        or order_entry.get("lang")
+        or status_memo_fields.get("lang")
+        or order_memo_fields.get("lang")
+        or "en"
+    ).strip().lower()
     if lang.startswith("zh") or lang == "cn":
         lang = "cn"
     else:
         lang = "en"
 
-    packs_path = os.path.join(config.data_dir, "products", "packs.json")
-    pack = _load_pack(packs_path, pack_id)
+    pack = _load_pack(config, pack_id, report_id=report_id, lang=lang)
     if not pack:
-        print("error: pack not found in data/products/packs.json")
+        print("error: pack not found in configured/derived packs")
         return 1
+
+    pack_id = str(pack.get("pack_id") or pack_id).strip()
 
     report_ids = pack.get("included_report_ids") or []
     if not isinstance(report_ids, list):
         report_ids = []
     report_ids = [str(x).strip() for x in report_ids if str(x).strip()]
     if not report_ids:
-        primary = str(pack.get("primary_report_id") or status.get("report_id") or "").strip()
+        primary = str(pack.get("primary_report_id") or report_id).strip()
         if primary:
             report_ids = [primary]
 
@@ -193,7 +329,7 @@ def main():
         print("error: no reports in pack")
         return 1
 
-    tier = str(status.get("tier") or "$29")
+    tier = str(status.get("tier") or order_entry.get("tier") or "$29")
     report_links = []
     for idx, rid in enumerate(report_ids, start=1):
         child_order = f"{order_id}-p{idx:02d}"
@@ -228,8 +364,11 @@ def main():
             "delivery_url": delivery_rel,
             "unlock_url": delivery_rel,
             "delivered_report_ids": [x["report_id"] for x in report_links],
+            "report_id": report_id or str(pack.get("primary_report_id") or ""),
         }
     )
+    if not status.get("memo") and order_entry.get("memo"):
+        status["memo"] = order_entry.get("memo")
     _write_json(status_path, status)
 
     orders_path = os.path.join(config.data_dir, "pay", "orders.jsonl")
