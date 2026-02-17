@@ -129,7 +129,7 @@ def _fmt_price(price, currency, lang):
         return f"${int(value) if value.is_integer() else value}"
     if currency == "CNY":
         return f"¥{int(value) if value.is_integer() else value}"
-    return f"{value} {currency or (("USD" if lang == "en" else "CNY"))}"
+    return f"{value} {currency or ('USD' if lang == 'en' else 'CNY')}"
 
 
 def _escape(text):
