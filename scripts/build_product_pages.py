@@ -11,6 +11,9 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 
+FUNNEL_ENDPOINT = "/api/pay/funnel"
+
+
 def _read_json(path, default):
     if not os.path.exists(path):
         return default
@@ -182,12 +185,14 @@ def _build_pricing_cards(catalog, lang):
             href = f"/{subdir}/premium/"
 
         cta = _escape(sku.get("cta_text") or ("Open" if lang == "en" else "查看"))
+        sku_id = _escape(sku.get("sku_id") or "")
+        channel = _escape(f"pricing_{lang}")
         blocks.append(
             "<article class=\"card\">"
             f"<h3>{title}</h3>"
             f"<div class=\"price\">{_escape(price)}</div>"
             f"<div class=\"desc\">{desc}</div>"
-            f"<a class=\"btn\" href=\"{_escape(href)}\">{cta}</a>"
+            f"<a class=\"btn funnel-pay-link\" data-sku-id=\"{sku_id}\" data-channel=\"{channel}\" href=\"{_escape(href)}\">{cta}</a>"
             "</article>"
         )
     if not blocks:
@@ -376,15 +381,15 @@ def build_product_pages(config):
     last_update = isoformat(now_cst())
 
     mappings = [
-        ("templates/pricing.html", os.path.join(config.static_dir, "cn", "pricing", "index.html"), "{{PRICING_CARDS}}", _build_pricing_cards(catalog, "cn")),
-        ("templates/pricing_en.html", os.path.join(config.static_dir, "en", "pricing", "index.html"), "{{PRICING_CARDS}}", _build_pricing_cards(catalog, "en")),
-        ("templates/weekly_pack.html", os.path.join(config.static_dir, "cn", "weekly-pack", "index.html"), "{{WEEKLY_PACK_LIST}}", _build_weekly_pack_list(packs, reports, "cn")),
-        ("templates/weekly_pack_en.html", os.path.join(config.static_dir, "en", "weekly-pack", "index.html"), "{{WEEKLY_PACK_LIST}}", _build_weekly_pack_list(packs, reports, "en")),
-        ("templates/task_sprint.html", os.path.join(config.static_dir, "cn", "task", "sprint", "index.html"), "{{TASK_SPRINT_CARDS}}", _build_task_cards(catalog, "cn")),
-        ("templates/task_sprint_en.html", os.path.join(config.static_dir, "en", "task", "sprint", "index.html"), "{{TASK_SPRINT_CARDS}}", _build_task_cards(catalog, "en")),
+        ("templates/pricing.html", os.path.join(config.static_dir, "cn", "pricing", "index.html"), "{{PRICING_CARDS}}", _build_pricing_cards(catalog, "cn"), "cn", "pricing_page"),
+        ("templates/pricing_en.html", os.path.join(config.static_dir, "en", "pricing", "index.html"), "{{PRICING_CARDS}}", _build_pricing_cards(catalog, "en"), "en", "pricing_page"),
+        ("templates/weekly_pack.html", os.path.join(config.static_dir, "cn", "weekly-pack", "index.html"), "{{WEEKLY_PACK_LIST}}", _build_weekly_pack_list(packs, reports, "cn"), "cn", "weekly_pack_page"),
+        ("templates/weekly_pack_en.html", os.path.join(config.static_dir, "en", "weekly-pack", "index.html"), "{{WEEKLY_PACK_LIST}}", _build_weekly_pack_list(packs, reports, "en"), "en", "weekly_pack_page"),
+        ("templates/task_sprint.html", os.path.join(config.static_dir, "cn", "task", "sprint", "index.html"), "{{TASK_SPRINT_CARDS}}", _build_task_cards(catalog, "cn"), "cn", "task_sprint_page"),
+        ("templates/task_sprint_en.html", os.path.join(config.static_dir, "en", "task", "sprint", "index.html"), "{{TASK_SPRINT_CARDS}}", _build_task_cards(catalog, "en"), "en", "task_sprint_page"),
     ]
 
-    for tpl_rel, out_path, slot, body in mappings:
+    for tpl_rel, out_path, slot, body, page_lang, page_channel in mappings:
         tpl_path = os.path.join(ROOT, tpl_rel)
         if not os.path.exists(tpl_path):
             continue
@@ -393,6 +398,9 @@ def build_product_pages(config):
             {
                 "{{LAST_UPDATE}}": last_update,
                 slot: body,
+                "{{FUNNEL_ENDPOINT}}": FUNNEL_ENDPOINT,
+                "{{PAGE_LANG}}": page_lang,
+                "{{PAGE_CHANNEL}}": page_channel,
             },
         )
         _write(out_path, html)
