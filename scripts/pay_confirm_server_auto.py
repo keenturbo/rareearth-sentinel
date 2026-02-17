@@ -12,6 +12,7 @@ Purpose:
 
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime
@@ -94,6 +95,26 @@ def _is_order_log_path(path: str) -> bool:
     return p.endswith("/data/pay/orders.jsonl") or p.endswith("/data/pay/task_orders.jsonl")
 
 
+def _default_sku(product_type: str, lang: str, tier: str, pack_id: str) -> str:
+    p = str(product_type or "").strip().lower()
+    l = "en" if str(lang or "").strip().lower().startswith("en") else "cn"
+    if p == "weekly_pack":
+        if l == "en":
+            return "en-weekly-pack-29"
+        return "cn-weekly-pack-99"
+    if p == "task_sprint":
+        if l == "en":
+            return "en-task-sprint-99"
+        return "cn-task-sprint-499"
+
+    amount = re.sub(r"[^0-9.]", "", str(tier or ""))
+    if not amount:
+        amount = "9"
+    if amount.endswith(".0"):
+        amount = amount[:-2]
+    return f"{l}-single-report-{amount}"
+
+
 def _extract_structured_fields(payload: Dict) -> Dict:
     payload = dict(payload or {})
     memo_fields = pcs._parse_memo_kv(payload.get("memo", ""))
@@ -141,17 +162,54 @@ def _extract_structured_fields(payload: Dict) -> Dict:
 
     payload["order_type"] = order_type
     payload["product_type"] = product_type
-    payload["sku_id"] = sku_id
+    payload["sku_id"] = sku_id or _default_sku(product_type, payload.get("lang", ""), payload.get("tier", ""), pack_id)
     payload["channel"] = channel
     payload["source_channel"] = channel
     payload["pack_id"] = pack_id
 
-    # Keep UTM fields if provided.
     for k in ("utm_source", "utm_campaign", "utm_content"):
         if not payload.get(k) and memo_fields.get(k):
             payload[k] = memo_fields.get(k)
 
     return payload
+
+
+def _normalize_fulfillment_status(payload: Dict) -> Dict:
+    data = dict(payload or {})
+    p = str(data.get("product_type") or "").strip().lower()
+    status = str(data.get("status") or "").strip().lower()
+    unlock_url = str(data.get("unlock_url") or "").strip()
+    delivery_url = str(data.get("delivery_url") or "").strip()
+
+    delivered = False
+    if p == "weekly_pack":
+        delivered = bool(delivery_url or "/pack/unlock/" in unlock_url)
+    else:
+        delivered = bool(status == "confirmed" and unlock_url)
+
+    if delivered:
+        data["fulfillment_status"] = "delivered"
+        if not data.get("delivered_at"):
+            data["delivered_at"] = _utc_now_iso()
+    else:
+        data.setdefault("fulfillment_status", "pending")
+    return data
+
+
+def _sync_structured_status(config, order_id: str, overrides: Dict = None) -> Dict:
+    oid = str(order_id or "").strip()
+    if not oid:
+        return {}
+    status = pcs._load_pay_status(config, oid)
+    if not isinstance(status, dict):
+        status = {}
+    status = _extract_structured_fields(status)
+    if isinstance(overrides, dict):
+        merged = _extract_structured_fields(overrides)
+        status.update(merged)
+    status = _normalize_fulfillment_status(status)
+    _ORIGINAL_WRITE_JSON(pcs._pay_status_path(config, oid), status)
+    return status
 
 
 def _emit_order_events(payload: Dict, source: str):
@@ -179,14 +237,14 @@ def _emit_order_events(payload: Dict, source: str):
 def _patched_write_json(path, payload):
     data = payload
     if isinstance(payload, dict) and _is_pay_status_path(path):
-        data = _extract_structured_fields(payload)
+        data = _normalize_fulfillment_status(_extract_structured_fields(payload))
     _ORIGINAL_WRITE_JSON(path, data)
 
 
 def _patched_append_jsonl(path, payload):
     data = payload
     if isinstance(payload, dict) and _is_order_log_path(path):
-        data = _extract_structured_fields(payload)
+        data = _normalize_fulfillment_status(_extract_structured_fields(payload))
         _ORIGINAL_APPEND_JSONL(path, data)
         _emit_order_events(data, source="append_jsonl")
         return
@@ -248,7 +306,7 @@ def _run_weekly_pack_fulfillment(config, order_id: str, lang: str) -> Tuple[Dict
                 if delivery_url:
                     status["delivery_url"] = delivery_url
                     status["unlock_url"] = delivery_url
-                    pcs._write_json(pcs._pay_status_path(config, order_id), status)
+                    _ORIGINAL_WRITE_JSON(pcs._pay_status_path(config, order_id), status)
 
     payload = {
         "report_id": status.get("report_id", ""),
@@ -274,7 +332,7 @@ def _emit_unlock_success(config, order_id: str, result_payload: Dict):
     if isinstance(result_payload, dict):
         merged.update(result_payload)
 
-    merged = _extract_structured_fields(merged)
+    merged = _normalize_fulfillment_status(_extract_structured_fields(merged))
 
     _append_funnel_event(
         config,
@@ -294,38 +352,44 @@ def _emit_unlock_success(config, order_id: str, result_payload: Dict):
 
 
 def _patched_issue_unlock(config, report_id, order_id, tier, lang):
-    # Weekly pack: auto trigger fulfillment script instead of single-report unlock.
+    oid = str(order_id or "").strip()
+
     try:
-        if _detect_weekly_pack(config, str(order_id or "")):
+        if _detect_weekly_pack(config, oid):
             payload, err = _run_weekly_pack_fulfillment(
                 config,
-                str(order_id or "").strip(),
+                oid,
                 str(lang or "").strip(),
             )
             if payload:
-                _emit_unlock_success(config, str(order_id or "").strip(), payload)
+                _sync_structured_status(config, oid, payload)
+                _emit_unlock_success(config, oid, payload)
                 return payload
-            # Fallback: continue original flow if fulfillment failed.
-            # Keep service resilient and non-blocking.
+            # fallback to original flow if fulfillment failed
     except Exception:
         pass
 
     result = _ORIGINAL_ISSUE_UNLOCK(config, report_id, order_id, tier, lang)
     if isinstance(result, dict):
+        synced = _sync_structured_status(config, oid, result)
         try:
-            _emit_unlock_success(config, str(order_id or "").strip(), result)
+            _emit_unlock_success(config, oid, synced or result)
         except Exception:
             pass
     return result
 
 
 def _patched_issue_task_link(config, order_id, report_id, task_id, tier, lang, task_entry=None):
+    oid = str(order_id or "").strip()
     result = _ORIGINAL_ISSUE_TASK_LINK(config, order_id, report_id, task_id, tier, lang, task_entry=task_entry)
     if isinstance(result, dict):
+        enriched = dict(result)
+        enriched.setdefault("product_type", "task_sprint")
+        if enriched.get("task_url") and not enriched.get("unlock_url"):
+            enriched["unlock_url"] = enriched.get("task_url")
+        synced = _sync_structured_status(config, oid, enriched)
         try:
-            enriched = dict(result)
-            enriched.setdefault("product_type", "task_sprint")
-            _emit_unlock_success(config, str(order_id or "").strip(), enriched)
+            _emit_unlock_success(config, oid, synced or enriched)
         except Exception:
             pass
     return result
