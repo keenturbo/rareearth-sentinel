@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>周包支付 | RareEarth Sentinel</title>
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600&family=Source+Serif+4:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#111827;--muted:#6b7280;--bg:#f8fafc;--card:#fff;--accent:#1e3a8a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Source Sans 3",system-ui}
+.container{max-width:960px;margin:0 auto;padding:24px}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.title{font-family:"Source Serif 4",serif;font-size:28px;margin:0}
+.meta{font-size:12px;color:var(--muted)}
+.nav a{font-size:12px;color:var(--muted);text-decoration:none;margin-left:10px}
+.card{background:var(--card);border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin-top:14px}
+.card h3{margin:0 0 6px 0;font-family:"Source Serif 4",serif}
+ul{margin:8px 0 0 18px;padding:0;font-size:13px;color:var(--muted)}
+.field{margin-top:10px}
+.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+.field input,.field select{width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;background:#fff}
+.order-box{margin-top:10px;padding:10px;background:#f3f4f6;border-radius:8px;font-size:12px;color:var(--muted)}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
+.btn{display:inline-block;margin-top:10px;background:#111827;color:#fff;text-decoration:none;padding:8px 14px;border-radius:999px;font-size:12px;border:0;cursor:pointer}
+.notice{margin-top:10px;padding:8px;background:#eef2ff;border-radius:8px;font-size:12px;color:#1e3a8a}
+</style>
+</head>
+<body>
+<main class="container" data-pack-id="{{PACK_ID}}" data-primary-report-id="{{PACK_PRIMARY_REPORT_ID}}" data-pack-sku-id="{{PACK_SKU_ID}}" data-channel-default="{{CHANNEL_DEFAULT}}" data-pay-endpoint="{{PAY_CONFIRM_ENDPOINT}}" data-pack-tier="{{PACK_TIER}}" data-pack-price="{{PACK_PRICE}}">
+  <header class="top">
+    <div>
+      <h1 class="title">{{PACK_TITLE}}</h1>
+      <div class="meta">更新于 {{LAST_UPDATE}}</div>
+    </div>
+    <nav class="nav">
+      <a href="/cn/weekly-pack/">返回周包</a>
+      <a href="/cn/pricing/">定价</a>
+      <a href="/en/pack/pay/{{PACK_ID}}.html">EN</a>
+    </nav>
+  </header>
+
+  <section class="card">
+    <h3>周包信息</h3>
+    <div class="meta">Pack ID：{{PACK_ID}} · 价格：{{PACK_PRICE}} · 包含 {{PACK_REPORT_COUNT}} 篇</div>
+    <ul>
+      {{PACK_REPORT_LIST}}
+    </ul>
+  </section>
+
+  <section class="card">
+    <h3>提交支付确认（周包）</h3>
+
+    <div class="field">
+      <label for="buyer-email">邮箱（用于交付）</label>
+      <input id="buyer-email" placeholder="填写你的邮箱" />
+    </div>
+
+    <div class="field">
+      <label for="pay-method">支付方式</label>
+      <select id="pay-method">
+        <option value="wechat">微信</option>
+        <option value="alipay">支付宝</option>
+        <option value="alipay_token">支付宝口令</option>
+        <option value="usdt">USDT</option>
+      </select>
+    </div>
+
+    <div class="order-box">
+      <div>订单号：<span class="mono" id="order-id">--</span></div>
+      <div>备注：<span class="mono" id="order-memo">--</span></div>
+    </div>
+
+    <button class="btn" id="submit-paid">我已付款，提交确认</button>
+    <div class="notice" id="submit-status">提交后一般 10-30 分钟完成确认。</div>
+  </section>
+</main>
+
+<script>
+(function(){
+  const root = document.querySelector('main.container');
+  if(!root) return;
+
+  const packId = root.dataset.packId || '';
+  const reportId = root.dataset.primaryReportId || '';
+  const skuId = root.dataset.packSkuId || '';
+  const channel = root.dataset.channelDefault || 'weekly_pack_page';
+  const endpoint = root.dataset.payEndpoint || '/api/pay/confirm';
+  const tier = root.dataset.packTier || '$29';
+
+  const emailInput = document.getElementById('buyer-email');
+  const methodSelect = document.getElementById('pay-method');
+  const orderIdEl = document.getElementById('order-id');
+  const orderMemoEl = document.getElementById('order-memo');
+  const statusEl = document.getElementById('submit-status');
+  const submitBtn = document.getElementById('submit-paid');
+
+  const storageKey = `pack_order_id:${packId}`;
+  let orderId = localStorage.getItem(storageKey);
+  if(!orderId){
+    const rand = Math.random().toString(36).slice(2,8).toUpperCase();
+    orderId = `PK-${Date.now().toString(36).toUpperCase()}-${rand}`;
+    localStorage.setItem(storageKey, orderId);
+  }
+
+  function buildMemo(){
+    const email = (emailInput.value || '').trim() || 'your@email';
+    return `product_type=weekly_pack sku_id=${skuId} channel=${channel} pack_id=${packId} report_id=${reportId} tier=${tier} order_id=${orderId} email=${email}`;
+  }
+
+  function refresh(){
+    orderIdEl.textContent = orderId;
+    orderMemoEl.textContent = buildMemo();
+  }
+
+  emailInput.addEventListener('input', refresh);
+  refresh();
+
+  submitBtn.addEventListener('click', async () => {
+    const email = (emailInput.value || '').trim();
+    if(!email){
+      statusEl.textContent = '请先填写邮箱';
+      return;
+    }
+    if(!reportId){
+      statusEl.textContent = '当前周包未配置主报告，无法提交';
+      return;
+    }
+
+    statusEl.textContent = '提交中，请稍候...';
+    const payload = {
+      report_id: reportId,
+      order_id: orderId,
+      tier: tier,
+      lang: 'cn',
+      email: email,
+      payment_method: methodSelect.value,
+      memo: buildMemo(),
+      product_type: 'weekly_pack',
+      sku_id: skuId,
+      channel: channel,
+      pack_id: packId
+    };
+
+    try{
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(payload)
+      });
+      if(!res.ok){
+        statusEl.textContent = '提交失败，请稍后重试';
+        return;
+      }
+      statusEl.textContent = '提交成功，等待人工确认（通常10-30分钟）';
+    }catch(err){
+      statusEl.textContent = '提交失败，请稍后重试';
+    }
+  });
+})();
+</script>
+</body>
+</html>
