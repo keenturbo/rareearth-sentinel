@@ -14,7 +14,13 @@ header{display:flex;justify-content:space-between;align-items:center;margin-bott
 header h1{font-family:"Noto Serif SC",serif;margin:0;font-size:22px}
 header .meta{font-size:12px;color:var(--muted)}
 .section{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px}
+.toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.stats{font-size:12px;color:var(--muted)}
+.filters{display:flex;gap:8px;flex-wrap:wrap}
+.filter-btn{font-size:12px;border:1px solid #d1d5db;background:#fff;border-radius:999px;padding:5px 10px;cursor:pointer;color:#374151}
+.filter-btn.active{border-color:#1e3a8a;color:#1e3a8a;background:#eff6ff}
 .card{border-top:1px solid #eef2f7;padding-top:12px;margin-top:12px}
+.card.hidden{display:none}
 .card-title{font-weight:600;margin-bottom:4px}
 .card-meta{font-size:12px;color:var(--muted);margin-bottom:6px}
 .card-actions a{display:inline-block;margin-right:10px;font-size:12px;color:var(--accent);text-decoration:none}
@@ -38,6 +44,14 @@ header .meta{font-size:12px;color:var(--muted)}
   </header>
 
   <section class="section" data-confirm-endpoint="{{CONFIRM_ENDPOINT}}">
+    <div class="toolbar">
+      <div class="stats" id="orderStats">统计中...</div>
+      <div class="filters">
+        <button type="button" class="filter-btn active" data-order-filter="all">全部</button>
+        <button type="button" class="filter-btn" data-order-filter="weekly_pack">weekly_pack</button>
+        <button type="button" class="filter-btn" data-order-filter="weekly_pack_delivered">weekly_pack 已交付</button>
+      </div>
+    </div>
     {{ORDERS_LIST}}
   </section>
 </div>
@@ -46,10 +60,62 @@ header .meta{font-size:12px;color:var(--muted)}
   const section = document.querySelector('.section');
   if (!section) return;
   const endpoint = section.dataset.confirmEndpoint || '';
-  if (!endpoint) return;
+
+  function cards(){
+    return Array.from(section.querySelectorAll('.card'));
+  }
+
+  function isWeeklyPackCard(card){
+    const t = (card.textContent || '').toLowerCase();
+    const unlockHref = card.querySelector('.unlock-link a')?.getAttribute('href') || '';
+    const actionHrefs = Array.from(card.querySelectorAll('.card-actions a')).map(a => a.getAttribute('href') || '').join(' ');
+    return (
+      t.includes('weekly_pack') ||
+      t.includes('weekly pack') ||
+      unlockHref.includes('/pack/unlock/') ||
+      actionHrefs.includes('/pack/pay/') ||
+      t.includes('pack_id')
+    );
+  }
+
+  function isDeliveredPackCard(card){
+    const t = (card.textContent || '').toLowerCase();
+    const unlockHref = card.querySelector('.unlock-link a')?.getAttribute('href') || '';
+    return unlockHref.includes('/pack/unlock/') || t.includes('fulfillment_status') && t.includes('delivered');
+  }
+
+  function updateStats(){
+    const all = cards();
+    const weekly = all.filter(isWeeklyPackCard);
+    const delivered = weekly.filter(isDeliveredPackCard);
+    const stats = section.querySelector('#orderStats');
+    if (!stats) return;
+    stats.textContent = `订单 ${all.length} · weekly_pack ${weekly.length} · 已交付 ${delivered.length}`;
+  }
+
+  function applyFilter(mode){
+    cards().forEach(card => {
+      let visible = true;
+      if (mode === 'weekly_pack') visible = isWeeklyPackCard(card);
+      if (mode === 'weekly_pack_delivered') visible = isWeeklyPackCard(card) && isDeliveredPackCard(card);
+      card.classList.toggle('hidden', !visible);
+    });
+    section.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.orderFilter === mode);
+    });
+  }
+
   section.addEventListener('click', async (e) => {
+    const filterBtn = e.target.closest('.filter-btn');
+    if (filterBtn) {
+      applyFilter(filterBtn.dataset.orderFilter || 'all');
+      return;
+    }
+
     const btn = e.target.closest('.confirm-btn');
     if (!btn) return;
+    if (!endpoint) return;
+
     const orderId = btn.getAttribute('data-order-id');
     const reportId = btn.getAttribute('data-report-id');
     const tier = btn.getAttribute('data-tier') || '$9';
@@ -75,6 +141,7 @@ header .meta{font-size:12px;color:var(--muted)}
             confirmWrap.innerHTML = '<span class="confirmed">已确认</span>';
           }
         }
+        updateStats();
       } else {
         btn.textContent = '确认失败';
         btn.disabled = false;
@@ -84,6 +151,9 @@ header .meta{font-size:12px;color:var(--muted)}
       btn.disabled = false;
     }
   });
+
+  updateStats();
+  applyFilter('all');
 })();
 </script>
 </body>
