@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Weekly Pack Payment | RareEarth Sentinel</title>
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600&family=Source+Serif+4:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#111827;--muted:#6b7280;--bg:#f8fafc;--card:#fff;--accent:#1e3a8a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Source Sans 3",system-ui}
+.container{max-width:960px;margin:0 auto;padding:24px}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.title{font-family:"Source Serif 4",serif;font-size:28px;margin:0}
+.meta{font-size:12px;color:var(--muted)}
+.nav a{font-size:12px;color:var(--muted);text-decoration:none;margin-left:10px}
+.card{background:var(--card);border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin-top:14px}
+.card h3{margin:0 0 6px 0;font-family:"Source Serif 4",serif}
+ul{margin:8px 0 0 18px;padding:0;font-size:13px;color:var(--muted)}
+.field{margin-top:10px}
+.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+.field input,.field select{width:100%;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;background:#fff}
+.order-box{margin-top:10px;padding:10px;background:#f3f4f6;border-radius:8px;font-size:12px;color:var(--muted)}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
+.btn{display:inline-block;margin-top:10px;background:#111827;color:#fff;text-decoration:none;padding:8px 14px;border-radius:999px;font-size:12px;border:0;cursor:pointer}
+.notice{margin-top:10px;padding:8px;background:#eef2ff;border-radius:8px;font-size:12px;color:#1e3a8a}
+</style>
+</head>
+<body>
+<main class="container" data-pack-id="{{PACK_ID}}" data-primary-report-id="{{PACK_PRIMARY_REPORT_ID}}" data-pack-sku-id="{{PACK_SKU_ID}}" data-channel-default="{{CHANNEL_DEFAULT}}" data-pay-endpoint="{{PAY_CONFIRM_ENDPOINT}}" data-pack-tier="{{PACK_TIER}}" data-pack-price="{{PACK_PRICE}}">
+  <header class="top">
+    <div>
+      <h1 class="title">{{PACK_TITLE}}</h1>
+      <div class="meta">Updated {{LAST_UPDATE}}</div>
+    </div>
+    <nav class="nav">
+      <a href="/en/weekly-pack/">Back to Weekly Pack</a>
+      <a href="/en/pricing/">Pricing</a>
+      <a href="/cn/pack/pay/{{PACK_ID}}.html">中文</a>
+    </nav>
+  </header>
+
+  <section class="card">
+    <h3>Pack summary</h3>
+    <div class="meta">Pack ID: {{PACK_ID}} · Price: {{PACK_PRICE}} · Includes {{PACK_REPORT_COUNT}} reports</div>
+    <ul>
+      {{PACK_REPORT_LIST}}
+    </ul>
+  </section>
+
+  <section class="card">
+    <h3>Submit payment confirmation (Weekly Pack)</h3>
+
+    <div class="field">
+      <label for="buyer-email">Email (for delivery)</label>
+      <input id="buyer-email" placeholder="Enter your email" />
+    </div>
+
+    <div class="field">
+      <label for="pay-method">Payment method</label>
+      <select id="pay-method">
+        <option value="paypal">PayPal</option>
+        <option value="usdt">USDT</option>
+      </select>
+    </div>
+
+    <div class="order-box">
+      <div>Order ID: <span class="mono" id="order-id">--</span></div>
+      <div>Memo: <span class="mono" id="order-memo">--</span></div>
+    </div>
+
+    <button class="btn" id="submit-paid">I have paid, submit confirmation</button>
+    <div class="notice" id="submit-status">After submission, confirmation is usually completed within 10-30 minutes.</div>
+  </section>
+</main>
+
+<script>
+(function(){
+  const root = document.querySelector('main.container');
+  if(!root) return;
+
+  const packId = root.dataset.packId || '';
+  const reportId = root.dataset.primaryReportId || '';
+  const skuId = root.dataset.packSkuId || '';
+  const channel = root.dataset.channelDefault || 'weekly_pack_page';
+  const endpoint = root.dataset.payEndpoint || '/api/pay/confirm';
+  const tier = root.dataset.packTier || '$29';
+
+  const emailInput = document.getElementById('buyer-email');
+  const methodSelect = document.getElementById('pay-method');
+  const orderIdEl = document.getElementById('order-id');
+  const orderMemoEl = document.getElementById('order-memo');
+  const statusEl = document.getElementById('submit-status');
+  const submitBtn = document.getElementById('submit-paid');
+
+  const storageKey = `pack_order_id:${packId}`;
+  let orderId = localStorage.getItem(storageKey);
+  if(!orderId){
+    const rand = Math.random().toString(36).slice(2,8).toUpperCase();
+    orderId = `PK-${Date.now().toString(36).toUpperCase()}-${rand}`;
+    localStorage.setItem(storageKey, orderId);
+  }
+
+  function buildMemo(){
+    const email = (emailInput.value || '').trim() || 'your@email';
+    return `product_type=weekly_pack sku_id=${skuId} channel=${channel} pack_id=${packId} report_id=${reportId} tier=${tier} order_id=${orderId} email=${email}`;
+  }
+
+  function refresh(){
+    orderIdEl.textContent = orderId;
+    orderMemoEl.textContent = buildMemo();
+  }
+
+  emailInput.addEventListener('input', refresh);
+  refresh();
+
+  submitBtn.addEventListener('click', async () => {
+    const email = (emailInput.value || '').trim();
+    if(!email){
+      statusEl.textContent = 'Please enter your email first';
+      return;
+    }
+    if(!reportId){
+      statusEl.textContent = 'Primary report is missing for this pack';
+      return;
+    }
+
+    statusEl.textContent = 'Submitting...';
+    const payload = {
+      report_id: reportId,
+      order_id: orderId,
+      tier: tier,
+      lang: 'en',
+      email: email,
+      payment_method: methodSelect.value,
+      memo: buildMemo(),
+      product_type: 'weekly_pack',
+      sku_id: skuId,
+      channel: channel,
+      pack_id: packId
+    };
+
+    try{
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(payload)
+      });
+      if(!res.ok){
+        statusEl.textContent = 'Submission failed. Please retry later.';
+        return;
+      }
+      statusEl.textContent = 'Submitted successfully. Awaiting confirmation.';
+    }catch(err){
+      statusEl.textContent = 'Submission failed. Please retry later.';
+    }
+  });
+})();
+</script>
+</body>
+</html>
