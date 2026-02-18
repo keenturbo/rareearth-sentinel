@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>管理员 · Team Brief 线索</title>
 <style>
-:root{--ink:#0b1220;--muted:#536170;--bg:#f7f9fc;--card:#ffffff;--accent:#1d4ed8}
+:root{--ink:#0b1220;--muted:#536170;--bg:#f7f9fc;--card:#ffffff;--accent:#1d4ed8;--ok:#16a34a;--warn:#d97706}
 *{box-sizing:border-box}
 body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans",sans-serif;background:linear-gradient(180deg,#f7f9fc,#e9eef5);color:var(--ink)}
-.container{max-width:1200px;margin:0 auto;padding:22px}
+.container{max-width:1280px;margin:0 auto;padding:22px}
 header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
 header h1{margin:0;font-size:20px}
 header .sub{font-size:12px;color:var(--muted)}
@@ -17,11 +17,27 @@ header .sub{font-size:12px;color:var(--muted)}
 .header-links a:hover{color:var(--accent)}
 .section{background:#fff;border-radius:12px;padding:16px;box-shadow:0 6px 14px rgba(0,0,0,0.05)}
 .path{font-size:12px;color:var(--muted);margin-bottom:10px;word-break:break-all}
+.stats{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:10px;margin-bottom:12px}
+.stat{background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px}
+.stat .k{font-size:12px;color:var(--muted)}
+.stat .v{font-size:18px;font-weight:700}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.toolbar select,.toolbar input,.toolbar button{height:34px;border:1px solid #dbe3ec;border-radius:8px;padding:0 10px;background:#fff}
+.toolbar button{cursor:pointer}
+.toolbar .primary{background:#1d4ed8;color:#fff;border-color:#1d4ed8}
 .table-wrap{overflow:auto}
 table{width:100%;border-collapse:collapse;font-size:12px}
 th,td{border-top:1px solid #eef2f7;padding:8px;text-align:left;vertical-align:top}
 th{background:#f8fafc;color:#334155;white-space:nowrap}
 .muted{color:#6b7280}
+.message-cell{max-width:360px;word-break:break-word}
+.status-select,.owner-input,.next-action-input,.note-input{width:100%;margin-bottom:6px;border:1px solid #dbe3ec;border-radius:6px;padding:6px;font:inherit;background:#fff}
+.action-row{display:flex;align-items:center;gap:8px}
+.save-btn{height:30px;padding:0 10px;border:1px solid #1d4ed8;background:#1d4ed8;color:#fff;border-radius:6px;cursor:pointer}
+.save-btn:hover{opacity:.92}
+.save-msg.ok{color:var(--ok)}
+.save-msg.err{color:#b91c1c}
+@media (max-width:980px){.stats{grid-template-columns:repeat(2,minmax(120px,1fr))}}
 </style>
 </head>
 <body>
@@ -56,25 +72,234 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
 
   <section class="section">
     <div class="path">leads: {{LEADS_PATH}}</div>
+
+    <div class="stats">
+      <div class="stat"><div class="k">总线索</div><div class="v" id="statTotal">{{TOTAL_COUNT}}</div></div>
+      <div class="stat"><div class="k">新线索</div><div class="v" id="statNew">{{NEW_COUNT}}</div></div>
+      <div class="stat"><div class="k">已联系</div><div class="v" id="statContacted">{{CONTACTED_COUNT}}</div></div>
+      <div class="stat"><div class="k">已评估</div><div class="v" id="statQualified">{{QUALIFIED_COUNT}}</div></div>
+      <div class="stat"><div class="k">已成交</div><div class="v" id="statWon">{{WON_COUNT}}</div></div>
+      <div class="stat"><div class="k">已丢失</div><div class="v" id="statLost">{{LOST_COUNT}}</div></div>
+    </div>
+
+    <div class="toolbar">
+      <select id="filterStatus">
+        <option value="">全部状态</option>
+        <option value="new">新线索</option>
+        <option value="contacted">已联系</option>
+        <option value="qualified">已评估</option>
+        <option value="won">已成交</option>
+        <option value="lost">已丢失</option>
+      </select>
+      <input id="filterOwner" type="text" placeholder="负责人（可选）" />
+      <input id="filterQ" type="text" placeholder="关键词（姓名/公司/邮箱）" />
+      <button id="btnRefresh" class="primary">刷新</button>
+      <button id="btnExport">导出CSV</button>
+    </div>
+
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
             <th>提交时间</th>
-            <th>线索ID / 状态</th>
+            <th>线索ID</th>
             <th>联系人</th>
-            <th>公司 / 职位</th>
-            <th>需求 / 预算</th>
-            <th>来源 / UTM</th>
+            <th>公司/职位</th>
+            <th>需求/预算</th>
+            <th>来源/UTM</th>
             <th>需求说明</th>
+            <th>状态/负责人/下次跟进</th>
+            <th>备注与操作</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="leadsRows">
           {{LEADS_ROWS}}
         </tbody>
       </table>
     </div>
   </section>
 </div>
+
+<script>
+(() => {
+  const LIST_ENDPOINT = "{{LEADS_LIST_ENDPOINT}}";
+  const UPDATE_ENDPOINT = "{{LEADS_UPDATE_ENDPOINT}}";
+  const EXPORT_ENDPOINT = "{{LEADS_EXPORT_ENDPOINT}}";
+
+  const rowsEl = document.getElementById("leadsRows");
+  const statTotal = document.getElementById("statTotal");
+  const statNew = document.getElementById("statNew");
+  const statContacted = document.getElementById("statContacted");
+  const statQualified = document.getElementById("statQualified");
+  const statWon = document.getElementById("statWon");
+  const statLost = document.getElementById("statLost");
+
+  const filterStatus = document.getElementById("filterStatus");
+  const filterOwner = document.getElementById("filterOwner");
+  const filterQ = document.getElementById("filterQ");
+  const btnRefresh = document.getElementById("btnRefresh");
+  const btnExport = document.getElementById("btnExport");
+
+  function esc(v){
+    return String(v ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
+  }
+
+  function fmtLocal(value){
+    const s = String(value || "").trim();
+    if (!s) return "";
+    const noZ = s.replace("Z", "");
+    return noZ.length >= 16 ? noZ.slice(0,16) : noZ;
+  }
+
+  function toIso(localVal){
+    const v = String(localVal || "").trim();
+    if (!v) return "";
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toISOString();
+  }
+
+  function statusOptions(current){
+    const opts = [
+      ["new", "新线索"],
+      ["contacted", "已联系"],
+      ["qualified", "已评估"],
+      ["won", "已成交"],
+      ["lost", "已丢失"],
+    ];
+    return opts.map(([v,t]) => `<option value="${v}"${v===current?" selected":""}>${t}</option>`).join("");
+  }
+
+  function rowHtml(lead){
+    const utm = [lead.utm_source, lead.utm_campaign, lead.utm_content].filter(Boolean).join(" / ");
+    return `
+<tr data-lead-id="${esc(lead.lead_id)}">
+  <td>${esc(lead.created_at || "")}</td>
+  <td><div>${esc(lead.lead_id || "")}</div><div class="muted">${esc(lead.status || "new")}</div></td>
+  <td><div>${esc(lead.name || "")}</div><div class="muted">${esc(lead.email || "")}</div></td>
+  <td><div>${esc(lead.company || "")}</div><div class="muted">${esc(lead.role || "")}</div></td>
+  <td><div>${esc(lead.brief_need || "")}</div><div class="muted">${esc(lead.budget_range || "")}</div></td>
+  <td><div>${esc(lead.source_channel || "")}</div><div class="muted">${esc(utm)}</div></td>
+  <td class="message-cell">${esc(lead.message || "")}</td>
+  <td>
+    <select class="status-select">${statusOptions(String(lead.status || "new"))}</select>
+    <input class="owner-input" type="text" value="${esc(lead.owner || "")}" placeholder="负责人" />
+    <input class="next-action-input" type="datetime-local" value="${esc(fmtLocal(lead.next_action_at || ""))}" />
+  </td>
+  <td>
+    <textarea class="note-input" rows="2" placeholder="跟进备注（可选）"></textarea>
+    <div class="action-row">
+      <button class="save-btn">保存</button>
+      <span class="save-msg muted"></span>
+    </div>
+  </td>
+</tr>`;
+  }
+
+  function setStats(stats, total){
+    statTotal.textContent = String(total ?? 0);
+    statNew.textContent = String(stats?.new ?? 0);
+    statContacted.textContent = String(stats?.contacted ?? 0);
+    statQualified.textContent = String(stats?.qualified ?? 0);
+    statWon.textContent = String(stats?.won ?? 0);
+    statLost.textContent = String(stats?.lost ?? 0);
+  }
+
+  function buildQuery(){
+    const p = new URLSearchParams();
+    const s = filterStatus.value.trim();
+    const o = filterOwner.value.trim();
+    const q = filterQ.value.trim();
+    if (s) p.set("status", s);
+    if (o) p.set("owner", o);
+    if (q) p.set("q", q);
+    p.set("limit", "500");
+    return p.toString();
+  }
+
+  async function loadLeads(){
+    btnRefresh.disabled = true;
+    try{
+      const qs = buildQuery();
+      const res = await fetch(`${LIST_ENDPOINT}?${qs}`);
+      const data = await res.json();
+      if (!res.ok || !data?.ok){
+        throw new Error(data?.error || `HTTP ${res.status}`);
+      }
+      const leads = Array.isArray(data.leads) ? data.leads : [];
+      if (!leads.length){
+        rowsEl.innerHTML = '<tr><td colspan="9" class="muted">暂无线索</td></tr>';
+      } else {
+        rowsEl.innerHTML = leads.map(rowHtml).join("");
+      }
+      setStats(data.stats || {}, data.total || leads.length);
+    }catch(err){
+      alert(`加载失败：${err.message || err}`);
+    }finally{
+      btnRefresh.disabled = false;
+    }
+  }
+
+  rowsEl.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".save-btn");
+    if (!btn) return;
+    const tr = btn.closest("tr[data-lead-id]");
+    if (!tr) return;
+
+    const leadId = tr.getAttribute("data-lead-id") || "";
+    const status = tr.querySelector(".status-select")?.value || "new";
+    const owner = tr.querySelector(".owner-input")?.value || "";
+    const nextLocal = tr.querySelector(".next-action-input")?.value || "";
+    const note = tr.querySelector(".note-input")?.value || "";
+    const msg = tr.querySelector(".save-msg");
+
+    const payload = {
+      lead_id: leadId,
+      status,
+      owner,
+      next_action_at: toIso(nextLocal),
+      note,
+      operator: "admin",
+    };
+
+    btn.disabled = true;
+    if (msg){ msg.textContent = "保存中..."; msg.className = "save-msg muted"; }
+
+    try{
+      const res = await fetch(UPDATE_ENDPOINT, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.ok){
+        throw new Error(data?.error || `HTTP ${res.status}`);
+      }
+      if (msg){ msg.textContent = "已保存"; msg.className = "save-msg ok"; }
+      const noteEl = tr.querySelector(".note-input");
+      if (noteEl) noteEl.value = "";
+      loadLeads();
+    }catch(err){
+      if (msg){ msg.textContent = `失败：${err.message || err}`; msg.className = "save-msg err"; }
+    }finally{
+      btn.disabled = false;
+    }
+  });
+
+  btnRefresh.addEventListener("click", loadLeads);
+  filterStatus.addEventListener("change", loadLeads);
+
+  btnExport.addEventListener("click", () => {
+    const qs = buildQuery();
+    window.open(`${EXPORT_ENDPOINT}?${qs}`, "_blank");
+  });
+
+  loadLeads();
+})();
+</script>
 </body>
 </html>
