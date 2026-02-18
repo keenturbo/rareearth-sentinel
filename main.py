@@ -481,7 +481,7 @@ def _load_reports_index_ids(path):
     return ids
 
 
-def _normalize_punct(text):
+def _normalize_punct_topic(text):
     cleaned = str(text or "")
     replacements = [
         ("。;", "。"),
@@ -504,20 +504,20 @@ def _clip_text(text, limit):
     return text[:limit].rstrip("，。;；, .") + "…"
 
 
-def _to_int(value):
+def _to_int_topic(value):
     try:
         return int(value)
     except (TypeError, ValueError):
         return 0
 
 
-def _normalize_compare(text):
+def _normalize_compare_topic(text):
     return re.sub(r"[^\w\u4e00-\u9fff]", "", str(text or "").lower())
 
 
-def _is_similar(a, b):
-    na = _normalize_compare(a)
-    nb = _normalize_compare(b)
+def _is_similar_topic(a, b):
+    na = _normalize_compare_topic(a)
+    nb = _normalize_compare_topic(b)
     if not na or not nb:
         return False
     if na == nb or na in nb or nb in na:
@@ -544,7 +544,7 @@ def _strip_top3_prefixes(text):
 
 
 def _extract_angle_candidates(raw, lang="zh", limit=60):
-    text = _normalize_punct(_strip_top3_prefixes(raw))
+    text = _normalize_punct_topic(_strip_top3_prefixes(raw))
     if not text:
         return []
 
@@ -577,12 +577,12 @@ def _extract_angle_candidates(raw, lang="zh", limit=60):
 
     deduped = []
     for p in pieces:
-        if not any(_is_similar(p, q) for q in deduped):
+        if not any(_is_similar_topic(p, q) for q in deduped):
             deduped.append(p)
     return deduped
 
 
-def _view_from_report_id(report_id):
+def _view_from_report_id_topic(report_id):
     rid = str(report_id or "").lower()
     if rid.endswith("-policy") or rid.endswith("_policy"):
         return "policy"
@@ -622,14 +622,14 @@ def _collect_item_candidates(item, lang="zh", line_limit=60):
         candidates.extend(_extract_angle_candidates(value, lang=lang, limit=line_limit))
     deduped = []
     for c in candidates:
-        if c and not any(_is_similar(c, x) for x in deduped):
+        if c and not any(_is_similar_topic(c, x) for x in deduped):
             deduped.append(c)
     return deduped
 
 
 def _pick_distinct_line(candidates, used_lines):
     for c in candidates:
-        if c and not any(_is_similar(c, u) for u in used_lines):
+        if c and not any(_is_similar_topic(c, u) for u in used_lines):
             used_lines.append(c)
             return c
     if candidates:
@@ -639,7 +639,7 @@ def _pick_distinct_line(candidates, used_lines):
     return ""
 
 
-def _pick_primary_report_id(top_items, valid_report_ids):
+def _pick_primary_report_id_topic(top_items, valid_report_ids):
     ids = []
     for item in top_items:
         report_id = str((item or {}).get("report_id") or "").strip()
@@ -703,10 +703,10 @@ def _pick_opportunity_window(daily_report, topic_text, lang="zh"):
     topic_tokens = _extract_topic_tokens(topic_text, lang=lang)
 
     def score_line(line):
-        norm = _normalize_compare(line)
+        norm = _normalize_compare_topic(line)
         score = 0
         for token in topic_tokens:
-            if _normalize_compare(token) in norm:
+            if _normalize_compare_topic(token) in norm:
                 score += 1
         return score
 
@@ -719,7 +719,7 @@ def _pick_opportunity_window(daily_report, topic_text, lang="zh"):
             best_score = s
 
     selected = best or candidates[0]
-    selected = _normalize_punct(selected)
+    selected = _normalize_punct_topic(selected)
     return _clip_text(selected, 66 if lang == "zh" else 140)
 
 
@@ -735,8 +735,8 @@ def _build_evidence_anchor(items, lang="zh"):
                 break
         if not title:
             continue
-        title = _clip_text(_normalize_punct(title), 24 if lang == "zh" else 56)
-        if title and not any(_is_similar(title, a) for a in anchors):
+        title = _clip_text(_normalize_punct_topic(title), 24 if lang == "zh" else 56)
+        if title and not any(_is_similar_topic(title, a) for a in anchors):
             anchors.append(title)
         if len(anchors) >= 2:
             break
@@ -745,15 +745,15 @@ def _build_evidence_anchor(items, lang="zh"):
     return "; ".join(anchors)
 
 
-def _select_top1_item(items):
+def _select_top1_item_topic(items):
     if not items:
         return None
     pref = {"policy": 2, "industry": 1, "capital": 0}
 
     def key_fn(item):
-        risk = _to_int(item.get("risk_score"))
-        impact = _to_int(item.get("impact_score"))
-        view = _view_from_report_id(item.get("report_id"))
+        risk = _to_int_topic(item.get("risk_score"))
+        impact = _to_int_topic(item.get("impact_score"))
+        view = _view_from_report_id_topic(item.get("report_id"))
         return (risk, impact, pref.get(view, -1))
 
     return sorted(items, key=key_fn, reverse=True)[0]
@@ -766,7 +766,6 @@ def _build_home_top1_fallback(item, valid_report_ids, lang="zh"):
         return '<div class="meta">No top track yet.</div>'
 
     if lang == "zh":
-        topic_title = "今日重点专题"
         core_label = "核心结论"
         signal_label = "核心信号"
         preview_label = "报告包含"
@@ -778,7 +777,6 @@ def _build_home_top1_fallback(item, valid_report_ids, lang="zh"):
         raw_title = "title_zh"
         line_limit = 62
     else:
-        topic_title = "Today's Focus"
         core_label = "Conclusion"
         signal_label = "Key signal"
         preview_label = "Includes"
@@ -803,7 +801,7 @@ def _build_home_top1_fallback(item, valid_report_ids, lang="zh"):
     preview_candidates = _extract_angle_candidates(item.get(raw_preview), lang=lang, limit=90 if lang == "zh" else 160)
     preview_text = preview_candidates[0] if preview_candidates else ""
 
-    primary_report_id = _pick_primary_report_id([item], valid_report_ids)
+    primary_report_id = _pick_primary_report_id_topic([item], valid_report_ids)
     unlock = f"/{subdir}/pay/{primary_report_id}.html" if primary_report_id else "mailto:sentinel@dataspices.com"
 
     preview_html = ""
@@ -812,7 +810,6 @@ def _build_home_top1_fallback(item, valid_report_ids, lang="zh"):
 
     return (
         '<div class="premium-item premium-aggregate">'
-
         f'<div class="premium-reason"><span class="label-gray">{core_label}</span>{sep}{html_lib.escape(core_text)}</div>'
         f'<div class="premium-reason"><span class="label-gray">{signal_label}</span>{sep}{html_lib.escape(signal_text)}</div>'
         f'{preview_html}'
@@ -829,7 +826,6 @@ def _build_home_aggregate_html(top3_data, valid_report_ids, daily_report, lang="
         return '<div class="meta">No top track yet.</div>'
 
     if lang == "zh":
-        topic_title = "今日重点专题"
         core_label = "核心结论"
         view_label = "三视角"
         opp_label = "机会窗口"
@@ -846,7 +842,6 @@ def _build_home_aggregate_html(top3_data, valid_report_ids, daily_report, lang="
         raw_key_preview = "report_contains_zh"
         raw_key_title = "title_zh"
     else:
-        topic_title = "Today's Focus"
         core_label = "Conclusion"
         view_label = "Three angles"
         opp_label = "Opportunity"
@@ -869,7 +864,7 @@ def _build_home_aggregate_html(top3_data, valid_report_ids, daily_report, lang="
     used = []
 
     for item in items[:3]:
-        view = _view_from_report_id(item.get("report_id"))
+        view = _view_from_report_id_topic(item.get("report_id"))
         candidates = _collect_item_candidates(item, lang=lang, line_limit=line_limit)
         if view in candidates_by_view:
             candidates_by_view[view].extend(candidates)
@@ -891,7 +886,7 @@ def _build_home_aggregate_html(top3_data, valid_report_ids, daily_report, lang="
         view_lines.append((emoji, label, line))
 
     if sum(1 for _, _, line in view_lines if line) < 2:
-        return _build_home_top1_fallback(_select_top1_item(items), valid_report_ids, lang=lang)
+        return _build_home_top1_fallback(_select_top1_item_topic(items), valid_report_ids, lang=lang)
 
     core_candidates = _extract_angle_candidates(
         items[0].get(raw_key_title)
@@ -938,43 +933,40 @@ def _build_home_aggregate_html(top3_data, valid_report_ids, daily_report, lang="
         if preview_candidates:
             preview_text = preview_candidates[0]
 
-    primary_report_id = _pick_primary_report_id(items, valid_report_ids)
+    primary_report_id = _pick_primary_report_id_topic(items, valid_report_ids)
     unlock = f"/{subdir}/pay/{primary_report_id}.html" if primary_report_id else "mailto:sentinel@dataspices.com"
 
     lines_html = []
     lines_html.append(
-        f'<div class="premium-reason"><span class="label-gray">{core_label}</span>{sep}{html_lib.escape(_normalize_punct(core_text))}</div>'
+        f'<div class="premium-reason"><span class="label-gray">{core_label}</span>{sep}{html_lib.escape(_normalize_punct_topic(core_text))}</div>'
     )
     lines_html.append(
         f'<div class="premium-reason"><span class="label-gray">{view_label}</span></div>'
     )
     for emoji, label, line in view_lines:
         lines_html.append(
-            f'<div class="premium-reason"><span class="label-gray">{html_lib.escape(emoji + " " + label)}</span>{sep}{html_lib.escape(_normalize_punct(line))}</div>'
+            f'<div class="premium-reason"><span class="label-gray">{html_lib.escape(emoji + " " + label)}</span>{sep}{html_lib.escape(_normalize_punct_topic(line))}</div>'
         )
 
     if opp_text:
         lines_html.append(
-            f'<div class="premium-reason"><span class="label-gray">{opp_label}</span>{sep}{html_lib.escape(_normalize_punct(opp_text))}</div>'
+            f'<div class="premium-reason"><span class="label-gray">{opp_label}</span>{sep}{html_lib.escape(_normalize_punct_topic(opp_text))}</div>'
         )
     if anchor_text:
         lines_html.append(
-            f'<div class="premium-preview"><span class="label-gray">{anchor_label}</span>{sep}{html_lib.escape(_normalize_punct(anchor_text))}</div>'
+            f'<div class="premium-preview"><span class="label-gray">{anchor_label}</span>{sep}{html_lib.escape(_normalize_punct_topic(anchor_text))}</div>'
         )
     if preview_text:
         lines_html.append(
-            f'<div class="premium-preview"><span class="label-gray">{preview_label}</span>{sep}{html_lib.escape(_normalize_punct(preview_text))}</div>'
+            f'<div class="premium-preview"><span class="label-gray">{preview_label}</span>{sep}{html_lib.escape(_normalize_punct_topic(preview_text))}</div>'
         )
 
     return (
         '<div class="premium-item premium-aggregate">'
-
         f'{"".join(lines_html)}'
         f'<a class="premium-btn" href="{html_lib.escape(unlock)}">{html_lib.escape(btn_label)}</a>'
         '</div>'
     )
-
-
 
 
 def _build_home_ai_topic_html(topic_text, items, valid_report_ids, lang="zh"):
@@ -984,7 +976,7 @@ def _build_home_ai_topic_html(topic_text, items, valid_report_ids, lang="zh"):
 
     lines = []
     for line in raw.splitlines():
-        s = _normalize_punct(line).strip()
+        s = _normalize_punct_topic(line).strip()
         if not s:
             continue
         low = s.lower()
@@ -996,6 +988,10 @@ def _build_home_ai_topic_html(topic_text, items, valid_report_ids, lang="zh"):
             continue
         if low in {"today's focus", "todays focus", "top tracks"}:
             continue
+        if re.search(r"^(要点|今日要点|三视角)\s*[:：]?", s):
+            continue
+        if re.search(r"^(TL\s*;?\s*DR|Key\s*angles?|Key\s*points?)\s*[:：]?", s, re.I):
+            continue
         if s.startswith("【") and s.endswith("】"):
             continue
         s = s.replace("...", "").replace("…", "").strip()
@@ -1004,6 +1000,36 @@ def _build_home_ai_topic_html(topic_text, items, valid_report_ids, lang="zh"):
 
     if not lines:
         return ""
+
+    norm_lines = []
+    for s in lines:
+        label = ""
+        body = ""
+        if "：" in s:
+            label, body = s.split("：", 1)
+            label = label.strip()
+            body = body.strip()
+            if not label or not body:
+                label = ""
+        elif ":" in s and lang == "en":
+            label, body = s.split(":", 1)
+            label = label.strip()
+            body = body.strip()
+            if not label or not body:
+                label = ""
+        if label:
+            norm_lines.append((label, body))
+        else:
+            norm_lines.append(("", s))
+
+    dedup = []
+    used = []
+    for k, v in norm_lines:
+        text = f"{k}:{v}" if k else v
+        if any(_is_similar_topic(text, u) for u in used):
+            continue
+        used.append(text)
+        dedup.append((k, v))
 
     if lang == "zh":
         subdir = "cn"
@@ -1014,30 +1040,17 @@ def _build_home_ai_topic_html(topic_text, items, valid_report_ids, lang="zh"):
         btn_label = "Unlock Deep Report"
         sep = ": "
 
-    primary_report_id = _pick_primary_report_id(items or [], valid_report_ids)
+    primary_report_id = _pick_primary_report_id_topic(items or [], valid_report_ids)
     unlock = f"/{subdir}/pay/{primary_report_id}.html" if primary_report_id else "mailto:sentinel@dataspices.com"
 
     out = []
-    for s in lines[:8]:
-        if "：" in s:
-            k, v = s.split("：", 1)
-            k = k.strip()
-            v = v.strip()
-            if k and v and len(k) <= 16:
-                out.append(
-                    f'<div class="premium-reason"><span class="label-gray">{html_lib.escape(k)}</span>{sep}{html_lib.escape(v)}</div>'
-                )
-                continue
-        if ":" in s and lang == "en":
-            k, v = s.split(":", 1)
-            k = k.strip()
-            v = v.strip()
-            if k and v and len(k) <= 20:
-                out.append(
-                    f'<div class="premium-reason"><span class="label-gray">{html_lib.escape(k)}</span>{sep}{html_lib.escape(v)}</div>'
-                )
-                continue
-        out.append(f'<div class="premium-reason">{html_lib.escape(s)}</div>')
+    for k, v in dedup[:8]:
+        if k:
+            out.append(
+                f'<div class="premium-reason"><span class="label-gray">{html_lib.escape(k)}</span>{sep}{html_lib.escape(v)}</div>'
+            )
+        else:
+            out.append(f'<div class="premium-reason">{html_lib.escape(v)}</div>')
 
     return (
         '<div class="premium-item premium-aggregate">'
@@ -1045,6 +1058,7 @@ def _build_home_ai_topic_html(topic_text, items, valid_report_ids, lang="zh"):
         + f'<a class="premium-btn" href="{html_lib.escape(unlock)}">{html_lib.escape(btn_label)}</a>'
         + '</div>'
     )
+
 
 def _replace_top_tracks_section(raw_html, title_candidates, new_title, aggregate_html):
     for title in title_candidates:
