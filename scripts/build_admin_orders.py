@@ -364,12 +364,16 @@ def _strip_prefix(text, prefixes):
 def _normalize_punct(text):
     if not text:
         return ""
-    return (
-        text.replace("。;", "。")
-        .replace("；;", "；")
-        .replace(".;", ".")
-        .replace(";;", ";")
-    )
+    cleaned = str(text)
+    cleaned = re.sub(r"\bTL\s*;?\s*DR\s*:\s*", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"\bKey\s*angles?\s*:\s*", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"\bKey\s*points?\s*:\s*", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"^(要点|今日要点|要点摘要)\s*[:：]?\s*[•\u2022]?\s*", "", cleaned, flags=re.I)
+    cleaned = cleaned.replace("要点 •", "").replace("要点： •", "").replace("要点: •", "")
+    cleaned = cleaned.replace("。;", "。").replace("；;", "；").replace(".;", ".").replace(";;", ";")
+    cleaned = cleaned.replace("。；", "。").replace("；。", "。")
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip()
 
 
 def _compact_bullet(text, limit=80):
@@ -582,17 +586,58 @@ def _strip_ai_tail(text):
         line = raw.strip()
         if not line:
             continue
+        low = line.lower()
         if re.search(r"https?://", line):
             continue
-        low = line.lower()
         if low.startswith("dm for full report"):
             continue
         if line.startswith("私信回复【稀土】获取完整版"):
             continue
         if line.startswith("#"):
             continue
-        lines.append(line)
+        if re.search(r"^(要点|三视角)\s*[:：]?", line):
+            continue
+        if re.search(r"^(TL\s*;?\s*DR|Key\s*angles?|Key\s*points?)\s*[:：]?", line, re.I):
+            continue
+        line = _normalize_punct(line)
+        if line:
+            lines.append(line)
     return "\n".join(lines).strip()
+
+
+def _split_structured_lines(base, lang="zh"):
+    out = []
+    for ln in str(base or "").splitlines():
+        s = _normalize_punct(ln).strip()
+        if not s:
+            continue
+        if re.search(r"https?://", s):
+            continue
+        if s.startswith("#"):
+            continue
+        if lang == "zh":
+            if re.search(r"^(要点|三视角)\s*[:：]?", s):
+                continue
+            if s.startswith("私信回复【稀土】获取完整版"):
+                continue
+        else:
+            if re.search(r"^(TL\s*;?\s*DR|Key\s*angles?|Key\s*points?|Three angles)\s*[:：]?", s, re.I):
+                continue
+            if re.search(r"^DM for full report$", s, re.I):
+                continue
+        out.append(s)
+    return out
+
+
+def _dedupe_structured_lines(lines):
+    result = []
+    seen = []
+    for s in lines:
+        if any(_is_similar_any(s, p) for p in seen):
+            continue
+        seen.append(s)
+        result.append(s)
+    return result
 
 
 def _format_ai_social(base_text, link, lang="zh", with_link=True):
@@ -600,19 +645,23 @@ def _format_ai_social(base_text, link, lang="zh", with_link=True):
     if not base:
         return ""
 
-    out = [base]
-    if with_link and link:
-        if lang == "zh":
-            out.extend(["", "👉 解锁深度报告：", link])
-        else:
-            out.extend(["", "Unlock full report:", link])
+    lines = _split_structured_lines(base, lang=lang)
+    lines = _dedupe_structured_lines(lines)
 
     if lang == "zh":
-        out.extend(["私信回复【稀土】获取完整版", "#稀土 #关键矿产 #供应链"])
+        if not lines or not lines[0].startswith("【"):
+            lines = ["【今日重点专题】"] + lines
+        if with_link and link:
+            lines.extend(["", "👉 解锁深度报告：", link])
+        lines.extend(["私信回复【稀土】获取完整版", "#稀土 #关键矿产 #供应链"])
     else:
-        out.extend(["DM for full report", "#RareEarth #CriticalMinerals #SupplyChain"])
+        if not lines or not re.match(r"^today'?s focus", lines[0], re.I):
+            lines = ["Today's Focus"] + lines
+        if with_link and link:
+            lines.extend(["", "Unlock full report:", link])
+        lines.extend(["DM for full report", "#RareEarth #CriticalMinerals #SupplyChain"])
 
-    return "\n".join(out).strip()
+    return "\n".join(lines).strip()
 
 
 def _select_top1_item(items):
@@ -687,29 +736,27 @@ def _collect_angles(items, lang="zh"):
 
 
 def _build_evidence(items, lang="zh"):
-    out = []
-    if lang == "zh":
-        keys = ("title_zh", "title")
-        clip = 28
-        sep = "；"
-    else:
-        keys = ("title_en", "title")
-        clip = 64
-        sep = "; "
-
+    anchors = []
+    title_keys = ["title_zh", "title"] if lang == "zh" else ["title_en", "title"]
     for item in items[:3]:
-        text = ""
-        for key in keys:
-            v = str(item.get(key) or "").strip()
-            if v:
-                text = v
+        title = ""
+        for k in title_keys:
+            t = str(item.get(k) or "").strip()
+            if t:
+                title = t
                 break
-        text = _compact_bullet(text, limit=clip)
-        if text and not any(_is_similar_any(text, p) for p in out):
-            out.append(text)
-        if len(out) >= 2:
+        title = _normalize_punct(title)
+        if not title:
+            continue
+        if lang == "zh":
+            title = _compact_bullet(title, limit=30)
+        else:
+            title = _clip_words(title, max_words=12)
+        if title and not any(_is_similar_any(title, a) for a in anchors):
+            anchors.append(title)
+        if len(anchors) >= 2:
             break
-    return sep.join(out)
+    return "；".join(anchors) if lang == "zh" else "; ".join(anchors)
 
 
 def _build_report_includes(items, lang="zh"):
@@ -870,7 +917,7 @@ def _build_social_copy_cn(top3, daily, site_base_url, reports_index=None):
             base_lines.append(f"补充：{extend}")
 
     link_lines = list(base_lines)
-    if link:
+    if with_link := bool(link):
         link_lines.extend(["", "👉 解锁深度报告：", link])
     link_lines.extend(["私信回复【稀土】获取完整版", "#稀土 #关键矿产 #供应链"])
 
