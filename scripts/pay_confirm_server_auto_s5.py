@@ -6,6 +6,7 @@ Keeps existing pay_confirm_server_auto behavior, and adds:
 - GET  /api/admin/leads/team-brief/list
 - POST /api/admin/leads/team-brief/update
 - GET  /api/admin/leads/team-brief/export
+- GET  /api/admin/leads/team-brief/events
 """
 
 import csv
@@ -30,6 +31,7 @@ _CFG = pcs.Config.from_env()
 _LIST_ENDPOINT = "/api/admin/leads/team-brief/list"
 _UPDATE_ENDPOINT = "/api/admin/leads/team-brief/update"
 _EXPORT_ENDPOINT = "/api/admin/leads/team-brief/export"
+_EVENTS_ENDPOINT = "/api/admin/leads/team-brief/events"
 
 _ALLOWED_STATUSES = {"new", "contacted", "qualified", "won", "lost"}
 _LEAD_LOCK = threading.Lock()
@@ -156,6 +158,17 @@ def _filter_rows(rows: List[Dict], status: str, owner: str, keyword: str) -> Lis
 
     out.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
     return out
+
+
+def _events_for_lead(config, lead_id: str, limit: int = 100) -> List[Dict]:
+    rows = _read_jsonl_rows(_lead_events_path(config))
+    lead_id = _normalize_text(lead_id, 80)
+    out = []
+    for row in rows:
+        if _normalize_text((row or {}).get("lead_id"), 80) == lead_id:
+            out.append(dict(row))
+    out.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
+    return out[: max(1, min(limit, 500))]
 
 
 def _append_lead_event(config, payload: Dict):
@@ -328,8 +341,23 @@ def _patched_do_GET(self):
         if normalized_path in {
             pcs._normalize_path(_LIST_ENDPOINT),
             pcs._normalize_path(_EXPORT_ENDPOINT),
+            pcs._normalize_path(_EVENTS_ENDPOINT),
         }:
             q = parse_qs(parsed.query)
+
+            if normalized_path == pcs._normalize_path(_EVENTS_ENDPOINT):
+                lead_id = _normalize_text((q.get("lead_id", [""])[0] or ""), 80)
+                if not lead_id:
+                    self._json_response(400, {"ok": False, "error": "missing_lead_id"})
+                    return
+                try:
+                    limit = int((q.get("limit", ["100"])[0] or "100"))
+                except ValueError:
+                    limit = 100
+                evts = _events_for_lead(self.config, lead_id=lead_id, limit=limit)
+                self._json_response(200, {"ok": True, "lead_id": lead_id, "total": len(evts), "events": evts})
+                return
+
             status = str((q.get("status", [""])[0] or "")).strip().lower()
             owner = str((q.get("owner", [""])[0] or "")).strip()
             keyword = str((q.get("q", [""])[0] or "")).strip()
