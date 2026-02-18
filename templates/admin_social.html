@@ -300,6 +300,14 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
       .trim();
   };
 
+  const ensureHook = (text, lang='zh') => {
+    let t = String(text || '').trim();
+    if (!t) return t;
+    if (lang === 'zh' && !/^【/.test(t)) t = `【今日重点专题】\n${t}`;
+    if (lang === 'en' && !/^today's focus|^todays focus/i.test(t)) t = `Today's Focus\n${t}`;
+    return t;
+  };
+
   try {
     const cnLink = document.getElementById('copy-cn-link');
     const cnDm = document.getElementById('copy-cn-dm');
@@ -310,6 +318,7 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
       let t = normalizeStructured(cnLink.value);
       t = removeDmLine(t, 'zh');
       t = ensureLinkLine(t, 'zh');
+      t = ensureHook(t, 'zh');
       cnLink.value = t;
     }
 
@@ -319,6 +328,7 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
       if (!/私信回复【稀土】获取完整版/.test(t)) {
         t = `${t}\n私信回复【稀土】获取完整版`.trim();
       }
+      t = ensureHook(t, 'zh');
       cnDm.value = t;
     }
 
@@ -326,6 +336,7 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
       let t = normalizeStructured(enLink.value);
       t = removeDmLine(t, 'en');
       t = ensureLinkLine(t, 'en');
+      t = ensureHook(t, 'en');
       enLink.value = t;
     }
 
@@ -335,7 +346,24 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
       if (!/DM for full report/i.test(t)) {
         t = `${t}\nDM for full report`.trim();
       }
+      t = ensureHook(t, 'en');
       enDm.value = t;
+    }
+
+    // 最终兜底：确保外链版与私信版不完全相同
+    if (cnLink && cnDm && clean(cnLink.value) === clean(cnDm.value)) {
+      cnLink.value = ensureLinkLine(removeDmLine(cnLink.value, 'zh'), 'zh');
+      cnDm.value = removeUrlBlocks(cnDm.value, 'zh');
+      if (!/私信回复【稀土】获取完整版/.test(cnDm.value)) {
+        cnDm.value = `${cnDm.value}\n私信回复【稀土】获取完整版`.trim();
+      }
+    }
+    if (enLink && enDm && clean(enLink.value) === clean(enDm.value)) {
+      enLink.value = ensureLinkLine(removeDmLine(enLink.value, 'en'), 'en');
+      enDm.value = removeUrlBlocks(enDm.value, 'en');
+      if (!/DM for full report/i.test(enDm.value)) {
+        enDm.value = `${enDm.value}\nDM for full report`.trim();
+      }
     }
   } catch (e) {
     console.error('social copy normalize failed', e);
