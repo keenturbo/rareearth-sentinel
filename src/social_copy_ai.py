@@ -9,7 +9,7 @@ import google.generativeai as genai
 
 from .utils import extract_json
 
-GENERATOR_VERSION = "v2.8.11"
+GENERATOR_VERSION = "v2.8.12"
 
 FORBIDDEN_PROMISE_WORDS = [
     "稳赚",
@@ -68,6 +68,19 @@ REQUIRED_CN_LABELS = ["核心事实：", "影响路径：", "投资动作：", "
 REQUIRED_EN_LABELS = ["Core fact:", "Impact path:", "Investor action:", "Counter-risk:", "Evidence anchor:", "⚠️ Risk note:"]
 
 
+ASSEMBLY_NOISE_PATTERNS = [
+    r"要点\s*[:：]\s*[•\u2022]",
+    r"要点\s*[•\u2022]",
+    r"TL\s*;?\s*DR\s*:",
+    r"\bKey\s*angles?\s*:",
+    r"\bKey\s*points?\s*:",
+    r"影响路径\s*[:：]\s*要点",
+    r"证据锚点\s*[:：]\s*要点",
+    r"Impact\s*path\s*:\s*Key\s*angles?",
+    r"Evidence\s*anchor\s*:\s*Key\s*angles?",
+]
+
+
 def _iso_now():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -77,7 +90,11 @@ def _clean_text(text):
     s = s.replace("\r", "\n")
     s = re.sub(r"\n{3,}", "\n\n", s)
     s = re.sub(r"[ \t]+", " ", s)
-    s = s.replace("TL;DR", "").replace("Key angles", "").replace("要点 •", "")
+    s = re.sub(r"\bTL\s*;?\s*DR\s*:\s*", "", s, flags=re.I)
+    s = re.sub(r"\bKey\s*angles?\s*:\s*", "", s, flags=re.I)
+    s = re.sub(r"\bKey\s*points?\s*:\s*", "", s, flags=re.I)
+    s = re.sub(r"^(要点|今日要点|要点摘要)\s*[:：]?\s*[•\u2022]?\s*", "", s, flags=re.I | re.M)
+    s = s.replace("要点 •", "").replace("要点： •", "").replace("要点: •", "")
     s = s.replace("…", "").replace("...", "")
     return s.strip()
 
@@ -88,6 +105,41 @@ def _normalize_punct(text):
     s = s.replace("。；", "。").replace("；。", "。")
     s = re.sub(r"\s+", " ", s)
     return s.strip()
+
+
+def _strip_field_noise(text, lang="zh"):
+    t = _normalize_punct(_clean_text(text))
+    if not t:
+        return ""
+    t = re.sub(r"^(要点|今日要点|要点摘要)\s*[:：]?\s*", "", t, flags=re.I)
+    t = re.sub(r"^(TL\s*;?\s*DR|Key\s*angles?|Key\s*points?|Highlights|Summary)\s*[:：]?\s*", "", t, flags=re.I)
+    t = re.sub(r"^[•\u2022\-*]+\s*", "", t)
+    if lang == "zh":
+        t = re.sub(r"^(核心事实|影响路径|投资动作|反方风险|证据锚点)\s*[:：]\s*", "", t)
+    else:
+        t = re.sub(r"^(Core fact|Impact path|Investor action|Counter-risk|Evidence anchor)\s*:\s*", "", t, flags=re.I)
+    t = re.sub(r"\s*[•\u2022]\s*", " ", t)
+    t = re.sub(r"\s+", " ", t).strip(" -—:：;；")
+    return t
+
+
+def _contains_assembly_noise(text):
+    t = str(text or "")
+    return any(re.search(p, t, re.I) for p in ASSEMBLY_NOISE_PATTERNS)
+
+
+def _sameish(a, b):
+    na = re.sub(r"[^\w\u4e00-\u9fff]+", "", str(a or "").lower())
+    nb = re.sub(r"[^\w\u4e00-\u9fff]+", "", str(b or "").lower())
+    if not na or not nb:
+        return False
+    if na == nb or na in nb or nb in na:
+        return True
+    sa, sb = set(na), set(nb)
+    union = sa | sb
+    if not union:
+        return False
+    return (len(sa & sb) / len(union)) >= 0.72
 
 
 def _contains_stale_absolute_claim(text):
@@ -147,7 +199,7 @@ def _first_sentence(text, lang="zh"):
     else:
         parts = re.split(r"[.!?;\n]+", s)
     parts = [p.strip() for p in parts if p.strip()]
-    return parts[0] if parts else s
+    return _strip_field_noise(parts[0] if parts else s, lang=lang)
 
 
 def _pick_action(daily, lang="zh"):
@@ -158,7 +210,7 @@ def _pick_action(daily, lang="zh"):
             for x in v:
                 t = _clean_text(x)
                 if t:
-                    return t
+                    return _strip_field_noise(t, lang=lang)
         elif isinstance(v, str):
             t = _clean_text(v)
             if t:
@@ -237,7 +289,7 @@ def _soft_limit_cn_social(text, max_chars=220):
         if "：" in s:
             k, v = s.split("：", 1)
             k = k.strip()
-            v = _clip_cn(v, 42)
+            v = _clip_cn(_strip_field_noise(v, lang="zh"), 42)
             s = f"{k}：{v}" if v else f"{k}："
         lines.append(s)
     out = "\n".join(lines).strip()
@@ -254,7 +306,7 @@ def _soft_limit_en_social(text, max_words=120):
             continue
         if ":" in s:
             k, v = s.split(":", 1)
-            s = f"{k.strip()}: {_clip_en_words(v, 18)}"
+            s = f"{k.strip()}: {_clip_en_words(_strip_field_noise(v, lang='en'), 18)}"
         lines.append(s)
     out = "\n".join(lines).strip()
     if _word_count(out) > max_words:
@@ -267,7 +319,8 @@ def _extract_line(text, prefixes):
         raw = line.strip()
         for p in prefixes:
             if raw.lower().startswith(p.lower()):
-                return raw[len(p):].strip(" ：:")
+                body = raw[len(p):].strip(" ：:")
+                return _strip_field_noise(body, lang="en" if "Evidence anchor" in p or "Impact path" in p or "Core fact" in p else "zh")
     return ""
 
 
@@ -316,6 +369,8 @@ def _cache_publishable(cached):
         str(cached.get("en_topic") or ""),
     ])
     if _contains_stale_absolute_claim(combined) or _has_forbidden(combined):
+        return False
+    if _contains_assembly_noise(combined):
         return False
     return True
 
@@ -446,30 +501,30 @@ def _build_rule_fallback_bundle(top3_data, daily_zh, daily_en, fingerprint, reas
     zh_val = _first_non_empty(first.get("value_zh"), first.get("report_contains_zh"), zh_head)
     en_val = _first_non_empty(first.get("value_en"), first.get("report_contains_en"), en_head)
 
-    zh_core = _clip_cn(f"根据今日Top信号，{_first_sentence(zh_head, 'zh')}", 72)
-    en_core = _clip_en_words(f"According to today's top signal, {_first_sentence(en_head, 'en')}", 20)
+    zh_core = _clip_cn(_strip_field_noise(f"根据今日Top信号，{_first_sentence(zh_head, 'zh')}", lang="zh"), 72)
+    en_core = _clip_en_words(_strip_field_noise(f"According to today's top signal, {_first_sentence(en_head, 'en')}", lang="en"), 20)
 
-    zh_impact = _clip_cn(_first_sentence(zh_val, "zh") or "供应链重排速度提升，海外溢价与国内重估预期同步增强。", 66)
+    zh_impact = _clip_cn(_strip_field_noise(_first_sentence(zh_val, "zh") or "供应链重排速度提升，海外溢价与国内重估预期同步增强。", lang="zh"), 66)
     if _looks_like_numbered_scenario(zh_impact, lang="zh"):
         zh_impact = "供应链重排速度提升，海外溢价与国内重估预期同步增强。"
 
-    en_impact = _clip_en_words(_first_sentence(en_val, "en") or "Supply-chain repricing is widening external premiums and domestic revaluation expectations.", 20)
+    en_impact = _clip_en_words(_strip_field_noise(_first_sentence(en_val, "en") or "Supply-chain repricing is widening external premiums and domestic revaluation expectations.", lang="en"), 20)
     if _looks_like_numbered_scenario(en_impact, lang="en"):
         en_impact = "Supply-chain repricing is widening external premiums and domestic revaluation expectations."
 
-    zh_action = _clip_cn(_pick_action(daily_zh, "zh") or "优先跟踪政策资金、加工产能与订单兑现节奏。", 62)
-    en_action = _clip_en_words(_pick_action(daily_en, "en") or "Track policy funding, processing ramp-up, and order conversion before sizing positions.", 20)
+    zh_action = _clip_cn(_strip_field_noise(_pick_action(daily_zh, "zh") or "优先跟踪政策资金、加工产能与订单兑现节奏。", lang="zh"), 62)
+    en_action = _clip_en_words(_strip_field_noise(_pick_action(daily_en, "en") or "Track policy funding, processing ramp-up, and order conversion before sizing positions.", lang="en"), 20)
 
-    zh_risk = _clip_cn("若海外供给兑现快于预期，短期溢价与估值或回撤。", 58)
-    en_risk = _clip_en_words("If non-China supply ramps faster than expected, short-term premiums and valuations may retrace.", 18)
+    zh_risk = _clip_cn(_strip_field_noise("若海外供给兑现快于预期，短期溢价与估值或回撤。", lang="zh"), 58)
+    en_risk = _clip_en_words(_strip_field_noise("If non-China supply ramps faster than expected, short-term premiums and valuations may retrace.", lang="en"), 18)
 
-    zh_ev = _clip_cn(_first_sentence(zh_val, "zh") or _first_sentence(zh_head, "zh"), 72)
-    if (not _is_fact_sentence(zh_ev)) or any(k in zh_ev for k in ["减持", "增配", "规避", "布局", "配置", "优先跟踪"]) or _looks_like_numbered_scenario(zh_ev, lang="zh"):
-        zh_ev = _clip_cn(f"根据今日公开信息，{_first_sentence(zh_head, 'zh')}", 72)
+    zh_ev = _clip_cn(_strip_field_noise(_first_sentence(zh_val, "zh") or _first_sentence(zh_head, "zh"), lang="zh"), 72)
+    if (not _is_fact_sentence(zh_ev)) or any(k in zh_ev for k in ["减持", "增配", "规避", "布局", "配置", "优先跟踪"]) or _looks_like_numbered_scenario(zh_ev, lang="zh") or _sameish(zh_ev, zh_impact) or _sameish(zh_ev, zh_core):
+        zh_ev = _clip_cn(_strip_field_noise(f"根据今日公开信息，{_first_sentence(zh_head, 'zh')}", lang="zh"), 72)
 
-    en_ev = _clip_en_words(_first_sentence(en_val, "en") or _first_sentence(en_head, "en"), 24)
-    if (not _is_fact_sentence(en_ev)) or any(k in en_ev.lower() for k in ACTION_HINTS) or _looks_like_numbered_scenario(en_ev, lang="en"):
-        en_ev = _clip_en_words(f"According to current disclosures, {_first_sentence(en_head, 'en')}", 24)
+    en_ev = _clip_en_words(_strip_field_noise(_first_sentence(en_val, "en") or _first_sentence(en_head, "en"), lang="en"), 24)
+    if (not _is_fact_sentence(en_ev)) or any(k in en_ev.lower() for k in ACTION_HINTS) or _looks_like_numbered_scenario(en_ev, lang="en") or _sameish(en_ev, en_impact) or _sameish(en_ev, en_core):
+        en_ev = _clip_en_words(_strip_field_noise(f"According to current disclosures, {_first_sentence(en_head, 'en')}", lang="en"), 24)
 
     cn_topic = "\n".join([
         f"核心事实：{zh_core}",
@@ -539,6 +594,8 @@ def _validate_payload(payload):
         return False, "stale_claim"
     if _has_forbidden(combined):
         return False, "forbidden_word"
+    if _contains_assembly_noise(combined):
+        return False, "assembly_noise"
 
     if not all(lbl in cn_topic for lbl in REQUIRED_CN_LABELS):
         return False, "missing_cn_labels"
