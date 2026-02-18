@@ -7,6 +7,8 @@ Keeps existing pay_confirm_server_auto behavior, and adds:
 - POST /api/admin/leads/team-brief/update
 - GET  /api/admin/leads/team-brief/export
 - GET  /api/admin/leads/team-brief/events
+- POST /api/admin/leads/team-brief/insert-test
+- POST /api/admin/leads/team-brief/clear-test
 """
 
 import csv
@@ -32,6 +34,8 @@ _LIST_ENDPOINT = "/api/admin/leads/team-brief/list"
 _UPDATE_ENDPOINT = "/api/admin/leads/team-brief/update"
 _EXPORT_ENDPOINT = "/api/admin/leads/team-brief/export"
 _EVENTS_ENDPOINT = "/api/admin/leads/team-brief/events"
+_INSERT_TEST_ENDPOINT = "/api/admin/leads/team-brief/insert-test"
+_CLEAR_TEST_ENDPOINT = "/api/admin/leads/team-brief/clear-test"
 
 _ALLOWED_STATUSES = {"new", "contacted", "qualified", "won", "lost"}
 _LEAD_LOCK = threading.Lock()
@@ -85,6 +89,15 @@ def _write_jsonl_rows(path: str, rows: List[Dict]):
     os.replace(tmp_path, path)
 
 
+def _is_test_row(row: Dict) -> bool:
+    if bool((row or {}).get("test")):
+        return True
+    if _normalize_text((row or {}).get("source_channel"), 40).lower() == "admin_test":
+        return True
+    email = _normalize_text((row or {}).get("email"), 120).lower()
+    return email.startswith("admin-test-")
+
+
 def _normalize_lead_row(row: Dict) -> Dict:
     out = dict(row or {})
     out["lead_id"] = _normalize_text(out.get("lead_id"), 80)
@@ -117,6 +130,11 @@ def _normalize_lead_row(row: Dict) -> Dict:
         out["notes_count"] = int(out.get("notes_count") or 0)
     except (TypeError, ValueError):
         out["notes_count"] = 0
+
+    if bool(out.get("test")):
+        out["test"] = True
+    else:
+        out["test"] = _is_test_row(out)
 
     return out
 
@@ -270,6 +288,86 @@ def _update_lead(config, payload: Dict) -> Tuple[Dict, str]:
         return updated, ""
 
 
+def _insert_test_lead(config, operator: str = "admin") -> Dict:
+    ts = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    lead = {
+        "lead_id": f"tb-test-{ts}-{os.urandom(2).hex()}",
+        "created_at": _utc_now_iso(),
+        "name": "Admin Test Lead",
+        "email": f"admin-test-{ts}@example.com",
+        "company": "Test Company",
+        "role": "Analyst",
+        "country_region": "CN",
+        "brief_need": "custom",
+        "budget_range": "unknown",
+        "message": f"Admin test lead {ts}",
+        "lang": "cn",
+        "source_channel": "admin_test",
+        "utm_source": "admin",
+        "utm_campaign": "team_brief_test",
+        "utm_content": "empty_state",
+        "ip_hash": "admin_test",
+        "status": "new",
+        "owner": "",
+        "next_action_at": "",
+        "updated_at": _utc_now_iso(),
+        "notes_count": 0,
+        "test": True,
+    }
+    with _LEAD_LOCK:
+        rows = _read_jsonl_rows(_leads_path(config))
+        rows.append(lead)
+        _write_jsonl_rows(_leads_path(config), rows)
+    _append_lead_event(
+        config,
+        {
+            "lead_id": lead["lead_id"],
+            "event_type": "lead_created",
+            "note": "admin insert test lead",
+            "operator": operator,
+        },
+    )
+    return lead
+
+
+def _clear_test_leads(config, operator: str = "admin") -> Dict:
+    with _LEAD_LOCK:
+        rows = _read_jsonl_rows(_leads_path(config))
+        before = len(rows)
+        removed_ids = []
+        kept = []
+        for row in rows:
+            n = _normalize_lead_row(row)
+            if _is_test_row(n):
+                removed_ids.append(n.get("lead_id") or "")
+            else:
+                kept.append(n)
+        _write_jsonl_rows(_leads_path(config), kept)
+
+        ev_rows = _read_jsonl_rows(_lead_events_path(config))
+        removed_set = {rid for rid in removed_ids if rid}
+        if removed_set and ev_rows:
+            ev_kept = [e for e in ev_rows if _normalize_text((e or {}).get("lead_id"), 80) not in removed_set]
+            _write_jsonl_rows(_lead_events_path(config), ev_kept)
+
+    _append_lead_event(
+        config,
+        {
+            "lead_id": "_system",
+            "event_type": "test_clear",
+            "note": f"removed {len(removed_ids)} test leads",
+            "operator": operator,
+        },
+    )
+
+    return {
+        "before": before,
+        "after": len(kept),
+        "removed": len(removed_ids),
+        "removed_ids": removed_ids[:20],
+    }
+
+
 def _to_csv(rows: List[Dict]) -> str:
     cols = [
         "lead_id",
@@ -289,6 +387,7 @@ def _to_csv(rows: List[Dict]) -> str:
         "utm_campaign",
         "utm_content",
         "message",
+        "test",
     ]
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=cols)
@@ -326,6 +425,34 @@ def _patched_do_POST(self):
 
             self._json_response(200, {"ok": True, "lead": lead})
             return
+
+        if normalized_path == pcs._normalize_path(_INSERT_TEST_ENDPOINT):
+            lead = _insert_test_lead(self.config, operator="admin")
+            try:
+                base._refresh_team_brief_leads_page()
+            except Exception:
+                pass
+            self._json_response(200, {"ok": True, "lead": lead})
+            return
+
+        if normalized_path == pcs._normalize_path(_CLEAR_TEST_ENDPOINT):
+            content_len = int(self.headers.get("Content-Length", 0))
+            raw = self.rfile.read(content_len) if content_len else b"{}"
+            operator = "admin"
+            try:
+                data = json.loads(raw.decode("utf-8")) if raw else {}
+                if isinstance(data, dict):
+                    operator = _normalize_text(data.get("operator"), 40) or "admin"
+            except Exception:
+                pass
+            result = _clear_test_leads(self.config, operator=operator)
+            try:
+                base._refresh_team_brief_leads_page()
+            except Exception:
+                pass
+            self._json_response(200, {"ok": True, **result})
+            return
+
     except Exception:
         self._json_response(500, {"ok": False, "error": "server_error"})
         return
