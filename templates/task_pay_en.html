@@ -66,7 +66,7 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
 <!-- Cloudflare Web Analytics --><script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "e70b3b5596ee443690a85e4c19e6c15a"}'></script><!-- End Cloudflare Web Analytics -->
 </head>
 <body>
-<div class="container" data-report-id="{{REPORT_ID}}" data-task-id="{{TASK_ID}}" data-report-title="{{REPORT_TITLE}}" data-report-value="{{REPORT_VALUE}}" data-confirm-endpoint="{{PAY_CONFIRM_ENDPOINT}}">
+<div class="container" data-report-id="{{REPORT_ID}}" data-task-id="{{TASK_ID}}" data-report-title="{{REPORT_TITLE}}" data-report-value="{{REPORT_VALUE}}" data-confirm-endpoint="{{PAY_CONFIRM_ENDPOINT}}" data-task-sku-id="en-task-sprint-99" data-task-channel="task_sprint_page">
   <header>
     <div class="title">Sentinel Task Payment</div>
     <div class="nav">
@@ -145,7 +145,7 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
 
         <div class="order-box">
           <div>Order ID: <span id="order-id" class="mono">--</span><button class="copy-btn" data-copy="order-id">Copy</button></div>
-          <div>Payment memo: <span id="pay-memo" class="mono">task_id={{TASK_ID}} report_id={{REPORT_ID}} frequency=weekly tier=$9 order_id=-- email=your@email</span><button class="copy-btn" data-copy="pay-memo">Copy</button></div>
+          <div>Payment memo: <span id="pay-memo" class="mono">task_id={{TASK_ID}} report_id={{REPORT_ID}} frequency=weekly plan=weekly tier=$9 product_type=task_sprint sku_id=en-task-sprint-99 channel=task_sprint_page order_id=-- email=your@email</span><button class="copy-btn" data-copy="pay-memo">Copy</button></div>
         </div>
         <div class="pay-note">Please include your <strong>email</strong> in the payment remark to enable confirmation.</div>
         <button class="pay-btn" id="paid-btn">I have paid</button>
@@ -163,6 +163,8 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
   const reportValue = container ? container.dataset.reportValue : "";
   const confirmEndpoint = container ? container.dataset.confirmEndpoint : "";
   const lang = "en";
+  const taskSkuId = container ? (container.dataset.taskSkuId || "en-task-sprint-99") : "en-task-sprint-99";
+  const taskChannel = container ? (container.dataset.taskChannel || "task_sprint_page") : "task_sprint_page";
   const storageKey = `task_order_id:${taskId || reportId}`;
   let orderId = localStorage.getItem(storageKey);
   if (!orderId) {
@@ -220,7 +222,7 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
     const frequency = planFrequency(plan);
     const price = planPrice();
     if (memoEl) {
-      memoEl.textContent = `task_id=${taskId} report_id=${reportId} frequency=${frequency} plan=${plan} tier=$${price} order_id=${orderId} email=${emailVal}`;
+      memoEl.textContent = `task_id=${taskId} report_id=${reportId} frequency=${frequency} plan=${plan} tier=$${price} product_type=task_sprint sku_id=${taskSkuId} channel=${taskChannel} order_id=${orderId} email=${emailVal}`;
     }
   }
 
@@ -283,6 +285,10 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
     try {
       const payload = {
         order_type: "task",
+        product_type: "task_sprint",
+        sku_id: taskSkuId,
+        channel: taskChannel,
+        source_channel: taskChannel,
         task_id: taskId,
         report_id: reportId,
         report_title: reportTitle,
@@ -323,6 +329,10 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
       const payload = {
         paypal_order_id: token,
         order_type: "task",
+        product_type: "task_sprint",
+        sku_id: taskSkuId,
+        channel: taskChannel,
+        source_channel: taskChannel,
         task_id: taskId,
         report_id: reportId,
         order_id: orderId,
@@ -375,6 +385,10 @@ header .title{font-family:"Source Serif 4",serif;font-size:22px;font-weight:600}
         const price = planPrice();
         const payload = {
           order_type: "task",
+          product_type: "task_sprint",
+          sku_id: taskSkuId,
+          channel: taskChannel,
+          source_channel: taskChannel,
           task_id: taskId,
           report_id: reportId,
           report_title: reportTitle,
