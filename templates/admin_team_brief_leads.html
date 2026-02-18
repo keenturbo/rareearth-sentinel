@@ -271,6 +271,54 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
 </tr>`;
   }
 
+  function renderEmptyStateRow(){
+    const cnLink = `${window.location.origin}/cn/team-brief/`;
+    const enLink = `${window.location.origin}/en/team-brief/`;
+    return `<tr><td colspan="10">
+      <div style="padding:14px;border:1px dashed #dbe3ec;border-radius:10px;background:#fafcff">
+        <div style="font-weight:600;margin-bottom:6px">暂无线索</div>
+        <div class="muted" style="margin-bottom:10px">你可以先打开 Team Brief 页面自测提交流程，或一键写入一条测试线索。</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="timeline-btn" data-empty-action="open-cn">打开中文 Team Brief</button>
+          <button class="timeline-btn" data-empty-action="open-en">Open English Team Brief</button>
+          <button class="modal-close" data-empty-action="copy-cn" data-link="${esc(cnLink)}">复制中文链接</button>
+          <button class="modal-close" data-empty-action="copy-en" data-link="${esc(enLink)}">复制英文链接</button>
+          <button class="save-btn" data-empty-action="insert-test">插入测试线索</button>
+        </div>
+        <div class="muted" style="margin-top:8px">测试线索会写入 team_brief_leads.jsonl，source_channel=admin_test。</div>
+      </div>
+    </td></tr>`;
+  }
+
+  async function insertTestLead(){
+    const now = Date.now();
+    const payload = {
+      name: "Admin Test Lead",
+      email: `admin-test-${now}@example.com`,
+      company: "Test Company",
+      role: "Analyst",
+      country_region: "CN",
+      brief_need: "custom",
+      budget_range: "unknown",
+      message: `Admin test lead ${new Date().toISOString()}`,
+      lang: "cn",
+      source_channel: "admin_test",
+      utm_source: "admin",
+      utm_campaign: "team_brief_test",
+      utm_content: "empty_state"
+    };
+    const res = await fetch('/api/lead/team-brief', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.ok){
+      throw new Error(data?.error || `HTTP ${res.status}`);
+    }
+    return payload.email;
+  }
+
   function setStats(stats, total){
     statTotal.textContent = String(total ?? 0);
     statNew.textContent = String(stats?.new ?? 0);
@@ -319,7 +367,7 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
       }
       const leads = Array.isArray(data.leads) ? data.leads : [];
       if (!leads.length){
-        rowsEl.innerHTML = '<tr><td colspan="10" class="muted">暂无线索</td></tr>';
+        rowsEl.innerHTML = renderEmptyStateRow();
       } else {
         rowsEl.innerHTML = leads.map(rowHtml).join("");
       }
@@ -412,6 +460,50 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
   }
 
   rowsEl.addEventListener("click", async (e) => {
+    const emptyBtn = e.target.closest('[data-empty-action]');
+    if (emptyBtn){
+      const action = emptyBtn.getAttribute('data-empty-action') || '';
+      const link = emptyBtn.getAttribute('data-link') || '';
+      if (action === 'open-cn'){
+        window.open('/cn/team-brief/', '_blank');
+        return;
+      }
+      if (action === 'open-en'){
+        window.open('/en/team-brief/', '_blank');
+        return;
+      }
+      if (action === 'copy-cn' || action === 'copy-en'){
+        const prev = emptyBtn.textContent;
+        try{
+          const ok = await copyText(link);
+          emptyBtn.textContent = ok ? '已复制' : '复制失败';
+        }catch(_){
+          emptyBtn.textContent = '复制失败';
+        }finally{
+          setTimeout(() => { emptyBtn.textContent = prev; }, 1200);
+        }
+        return;
+      }
+      if (action === 'insert-test'){
+        const yes = window.confirm('确认写入一条测试线索吗？');
+        if (!yes) return;
+        const prev = emptyBtn.textContent;
+        emptyBtn.disabled = true;
+        emptyBtn.textContent = '写入中...';
+        try{
+          const email = await insertTestLead();
+          await loadLeads();
+          alert(`已写入测试线索：${email}`);
+        }catch(err){
+          alert(`写入失败：${err.message || err}`);
+        }finally{
+          emptyBtn.disabled = false;
+          emptyBtn.textContent = prev;
+        }
+        return;
+      }
+    }
+
     const saveBtn = e.target.closest(".save-btn");
     if (saveBtn) {
       const tr = saveBtn.closest("tr[data-lead-id]");
