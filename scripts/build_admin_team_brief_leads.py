@@ -17,6 +17,7 @@ _LIST_ENDPOINT = "/api/admin/leads/team-brief/list"
 _UPDATE_ENDPOINT = "/api/admin/leads/team-brief/update"
 _EXPORT_ENDPOINT = "/api/admin/leads/team-brief/export"
 _EVENTS_ENDPOINT = "/api/admin/leads/team-brief/events"
+_CLEAR_TEST_ENDPOINT = "/api/admin/leads/team-brief/clear-test"
 
 _STATUS_ORDER = ["new", "contacted", "qualified", "won", "lost"]
 _STATUS_LABEL = {
@@ -94,11 +95,13 @@ def _render_items(rows):
         status = str(r.get("status") or "new").strip().lower()
         owner = html.escape(str(r.get("owner") or ""))
         next_action = html.escape(_to_dt_local(r.get("next_action_at")))
+        is_test = bool(r.get("test"))
+        test_badge = "<div class='muted' style='color:#d97706'>test</div>" if is_test else ""
 
         out.append(
             f'<tr data-lead-id="{lead_id}">'
             f"<td>{created_at}</td>"
-            f"<td><div>{lead_id}</div><div class='muted'>{status}</div></td>"
+            f"<td><div>{lead_id}</div><div class='muted'>{status}</div>{test_badge}</td>"
             f"<td><div>{name}</div><div class='muted'>{email}</div></td>"
             f"<td><div>{company}</div><div class='muted'>{role}</div></td>"
             f"<td><div>{need}</div><div class='muted'>{budget}</div></td>"
@@ -163,6 +166,7 @@ def build_page(config):
         .replace("{{LEADS_UPDATE_ENDPOINT}}", _UPDATE_ENDPOINT)
         .replace("{{LEADS_EXPORT_ENDPOINT}}", _EXPORT_ENDPOINT)
         .replace("{{LEADS_EVENTS_ENDPOINT}}", _EVENTS_ENDPOINT)
+        .replace("{{LEADS_CLEAR_TEST_ENDPOINT}}", _CLEAR_TEST_ENDPOINT)
     )
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
