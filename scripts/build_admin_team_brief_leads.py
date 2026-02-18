@@ -20,11 +20,12 @@ _EVENTS_ENDPOINT = "/api/admin/leads/team-brief/events"
 _INSERT_TEST_ENDPOINT = "/api/admin/leads/team-brief/insert-test"
 _CLEAR_TEST_ENDPOINT = "/api/admin/leads/team-brief/clear-test"
 
-_STATUS_ORDER = ["new", "contacted", "qualified", "won", "lost"]
+_STATUS_ORDER = ["new", "contacted", "qualified", "proposal_sent", "won", "lost"]
 _STATUS_LABEL = {
     "new": "新线索",
     "contacted": "已联系",
     "qualified": "已评估",
+    "proposal_sent": "已发送报价",
     "won": "已成交",
     "lost": "已丢失",
 }
@@ -105,6 +106,10 @@ def _render_items(rows):
         status = str(r.get("status") or "new").strip().lower()
         owner = html.escape(str(r.get("owner") or ""))
         next_action = html.escape(_to_dt_local(r.get("next_action_at")))
+        quote_currency = html.escape(str(r.get("quote_currency") or "USD"))
+        quote_amount = html.escape(str(r.get("quote_amount") or ""))
+        quote_plan = html.escape(str(r.get("quote_plan") or "basic"))
+        quote_valid_until = html.escape(str(r.get("quote_valid_until") or ""))
         is_test = _is_test_row(r)
         test_badge = "<div class='muted' style='color:#d97706'>test</div>" if is_test else ""
 
@@ -121,6 +126,7 @@ def _render_items(rows):
             f"<select class='status-select'>{_status_options(status)}</select>"
             f"<input class='owner-input' type='text' value='{owner}' placeholder='负责人' />"
             f"<input class='next-action-input' type='datetime-local' value='{next_action}' />"
+            f"<div class='muted' style='margin-top:4px'>报价: {quote_currency} {quote_amount} / {quote_plan} / {quote_valid_until}</div>"
             "</td>"
             "<td>"
             "<textarea class='note-input' rows='2' placeholder='跟进备注（可选）'></textarea>"
@@ -144,6 +150,7 @@ def _counts(rows):
         "new": c.get("new", 0),
         "contacted": c.get("contacted", 0),
         "qualified": c.get("qualified", 0),
+        "proposal_sent": c.get("proposal_sent", 0),
         "won": c.get("won", 0),
         "lost": c.get("lost", 0),
     }
@@ -168,6 +175,7 @@ def build_page(config):
         .replace("{{NEW_COUNT}}", str(cnt["new"]))
         .replace("{{CONTACTED_COUNT}}", str(cnt["contacted"]))
         .replace("{{QUALIFIED_COUNT}}", str(cnt["qualified"]))
+        .replace("{{PROPOSAL_SENT_COUNT}}", str(cnt["proposal_sent"]))
         .replace("{{WON_COUNT}}", str(cnt["won"]))
         .replace("{{LOST_COUNT}}", str(cnt["lost"]))
         .replace("{{LEADS_PATH}}", html.escape(leads_path))
