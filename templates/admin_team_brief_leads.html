@@ -147,7 +147,10 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
   <div class="modal-card">
     <div class="modal-head">
       <div class="modal-title" id="timelineTitle">线索时间线</div>
-      <button id="timelineClose" class="modal-close">关闭</button>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button id="timelineCopy" class="modal-close">复制跟进摘要</button>
+        <button id="timelineClose" class="modal-close">关闭</button>
+      </div>
     </div>
     <div id="timelineBody" class="timeline-list">
       <div class="muted">加载中...</div>
@@ -179,8 +182,11 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
 
   const timelineModal = document.getElementById("timelineModal");
   const timelineClose = document.getElementById("timelineClose");
+  const timelineCopy = document.getElementById("timelineCopy");
   const timelineTitle = document.getElementById("timelineTitle");
   const timelineBody = document.getElementById("timelineBody");
+  let lastTimelineLeadId = "";
+  let lastTimelineEvents = [];
 
   function esc(v){
     return String(v ?? "")
@@ -203,6 +209,25 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
     const d = new Date(v);
     if (Number.isNaN(d.getTime())) return "";
     return d.toISOString();
+  }
+
+  async function copyText(text){
+    const value = String(text || "");
+    if (!value) return false;
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+    const ta = document.createElement("textarea");
+    ta.value = value;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return !!ok;
   }
 
   function statusOptions(current){
@@ -319,6 +344,8 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
   async function loadTimeline(leadId){
     timelineTitle.textContent = `线索时间线 · ${leadId}`;
     timelineBody.innerHTML = '<div class="muted">加载中...</div>';
+    lastTimelineLeadId = leadId;
+    lastTimelineEvents = [];
     openModal();
     try{
       const res = await fetch(`${EVENTS_ENDPOINT}?lead_id=${encodeURIComponent(leadId)}&limit=100`);
@@ -327,6 +354,7 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
         throw new Error(data?.error || `HTTP ${res.status}`);
       }
       const events = Array.isArray(data.events) ? data.events : [];
+      lastTimelineEvents = events;
       if (!events.length){
         timelineBody.innerHTML = '<div class="muted">暂无时间线事件</div>';
         return;
@@ -349,6 +377,38 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
     }catch(err){
       timelineBody.innerHTML = `<div class="muted">加载失败：${esc(err.message || err)}</div>`;
     }
+  }
+
+  function buildTimelineSummary(leadId, events){
+    const evs = Array.isArray(events) ? events : [];
+    if (!evs.length){
+      return `【Team Brief 跟进摘要】\n线索ID：${leadId || '-'}\n暂无时间线事件。`;
+    }
+    const latest = evs[0] || {};
+    const lines = [];
+    lines.push("【Team Brief 跟进摘要】");
+    lines.push(`线索ID：${leadId || '-'}`);
+    lines.push(`最新时间：${latest.created_at || '-'}`);
+    lines.push(`最新状态：${latest.to_status || latest.event_type || '-'}`);
+    if (latest.owner) lines.push(`负责人：${latest.owner}`);
+    if (latest.next_action_at) lines.push(`下次跟进：${latest.next_action_at}`);
+
+    const notes = evs
+      .map(e => ({t: e.created_at || "", n: String(e.note || "").trim()}))
+      .filter(x => x.n)
+      .slice(0, 3);
+
+    lines.push("最近跟进：");
+    if (notes.length){
+      notes.forEach(it => lines.push(`- ${it.t} ${it.n}`));
+    } else {
+      evs.slice(0,3).forEach(e => {
+        const fromTo = [e.from_status, e.to_status].filter(Boolean).join(" -> ");
+        const desc = fromTo || e.event_type || "event";
+        lines.push(`- ${e.created_at || ""} ${desc}`.trim());
+      });
+    }
+    return lines.join("\n");
   }
 
   rowsEl.addEventListener("click", async (e) => {
@@ -404,6 +464,19 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
       if (!tr) return;
       const leadId = tr.getAttribute('data-lead-id') || '';
       loadTimeline(leadId);
+    }
+  });
+
+  timelineCopy.addEventListener('click', async () => {
+    const text = buildTimelineSummary(lastTimelineLeadId, lastTimelineEvents);
+    const prev = timelineCopy.textContent;
+    try{
+      const ok = await copyText(text);
+      timelineCopy.textContent = ok ? '已复制' : '复制失败';
+    }catch(_){
+      timelineCopy.textContent = '复制失败';
+    }finally{
+      setTimeout(() => { timelineCopy.textContent = prev; }, 1200);
     }
   });
 
