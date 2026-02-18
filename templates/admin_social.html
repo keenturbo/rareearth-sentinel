@@ -308,6 +308,45 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     return t;
   };
 
+  const forceVariantDiff = () => {
+    const cnLink = document.getElementById('copy-cn-link');
+    const cnDm = document.getElementById('copy-cn-dm');
+    const enLink = document.getElementById('copy-en-link');
+    const enDm = document.getElementById('copy-en-dm');
+
+    if (cnLink) {
+      cnLink.value = ensureHook(ensureLinkLine(removeDmLine(clean(cnLink.value), 'zh'), 'zh'), 'zh');
+    }
+    if (cnDm) {
+      let t = ensureHook(removeUrlBlocks(clean(cnDm.value), 'zh'), 'zh');
+      if (!/私信回复【稀土】获取完整版/.test(t)) t = `${t}\n私信回复【稀土】获取完整版`.trim();
+      cnDm.value = t;
+    }
+    if (enLink) {
+      enLink.value = ensureHook(ensureLinkLine(removeDmLine(clean(enLink.value), 'en'), 'en'), 'en');
+    }
+    if (enDm) {
+      let t = ensureHook(removeUrlBlocks(clean(enDm.value), 'en'), 'en');
+      if (!/DM for full report/i.test(t)) t = `${t}\nDM for full report`.trim();
+      enDm.value = t;
+    }
+
+    if (cnLink && cnDm && clean(cnLink.value) === clean(cnDm.value)) {
+      cnLink.value = ensureLinkLine(removeDmLine(cnLink.value, 'zh'), 'zh');
+      cnDm.value = removeUrlBlocks(cnDm.value, 'zh');
+      if (!/私信回复【稀土】获取完整版/.test(cnDm.value)) {
+        cnDm.value = `${cnDm.value}\n私信回复【稀土】获取完整版`.trim();
+      }
+    }
+    if (enLink && enDm && clean(enLink.value) === clean(enDm.value)) {
+      enLink.value = ensureLinkLine(removeDmLine(enLink.value, 'en'), 'en');
+      enDm.value = removeUrlBlocks(enDm.value, 'en');
+      if (!/DM for full report/i.test(enDm.value)) {
+        enDm.value = `${enDm.value}\nDM for full report`.trim();
+      }
+    }
+  };
+
   try {
     const cnLink = document.getElementById('copy-cn-link');
     const cnDm = document.getElementById('copy-cn-dm');
@@ -350,23 +389,10 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
       enDm.value = t;
     }
 
-    // 最终兜底：确保外链版与私信版不完全相同
-    if (cnLink && cnDm && clean(cnLink.value) === clean(cnDm.value)) {
-      cnLink.value = ensureLinkLine(removeDmLine(cnLink.value, 'zh'), 'zh');
-      cnDm.value = removeUrlBlocks(cnDm.value, 'zh');
-      if (!/私信回复【稀土】获取完整版/.test(cnDm.value)) {
-        cnDm.value = `${cnDm.value}\n私信回复【稀土】获取完整版`.trim();
-      }
-    }
-    if (enLink && enDm && clean(enLink.value) === clean(enDm.value)) {
-      enLink.value = ensureLinkLine(removeDmLine(enLink.value, 'en'), 'en');
-      enDm.value = removeUrlBlocks(enDm.value, 'en');
-      if (!/DM for full report/i.test(enDm.value)) {
-        enDm.value = `${enDm.value}\nDM for full report`.trim();
-      }
-    }
+    forceVariantDiff();
   } catch (e) {
     console.error('social copy normalize failed', e);
+    try { forceVariantDiff(); } catch (_) {}
   }
 
   const buttons = document.querySelectorAll('[data-copy]');
