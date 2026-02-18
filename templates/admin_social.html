@@ -110,14 +110,13 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     .replace(/。\s*[；;]/g, '。')
     .replace(/([。！？!?])\s*[；;]/g, '$1')
     .replace(/\.\s*;/g, '.')
-    .replace(/(?:\.\.\.|…)/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 
   const stripLineNoise = (s='') => clean(s)
     .replace(/\bTL\s*;\s*DR\s*:\s*/ig, '')
     .replace(/\bKey\s*angles?\s*:\s*/ig, '')
-    .replace(/^\s*(要点|三视角|Three angles|Conclusion|核心结论|Report includes|Opportunity window|机会窗口)\s*[:：]?\s*/i, '')
+    .replace(/^\s*(要点|三视角|Three angles)\s*[:：]?\s*/i, '')
     .replace(/^\s*[•\-\*\u2022]+\s*/g, '')
     .trim();
 
@@ -158,7 +157,6 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     for (const ln of lines) {
       const low = ln.toLowerCase();
       if (low.startsWith('tl;dr')) continue;
-      if (/^https?:\/\//i.test(ln)) { out.push(ln); continue; }
       if (ln.startsWith('#')) { out.push(ln); continue; }
       out.push(stripLineNoise(ln));
     }
@@ -189,6 +187,8 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     for (const ln of dedup) {
       let line = String(ln || '').trim();
       if (!line) continue;
+
+      if (/^https?:\/\//i.test(line)) { merged.push(line); continue; }
 
       const parsed = parseLabeledLine(line);
       const body = parsed ? parsed.body : line.replace(/^\d+\.\s*/, '').trim();
@@ -263,16 +263,80 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     return rebuilt.join('\n').replace(/\n{3,}/g,'\n\n').trim();
   };
 
+  const ensureLinkLine = (text, lang='zh') => {
+    const hasUrl = /https?:\/\//i.test(text || '');
+    if (hasUrl) return text;
+    const origin = window.location.origin || '';
+    const fallback = lang === 'zh' ? `${origin}/cn/pricing/` : `${origin}/en/pricing/`;
+    const lead = lang === 'zh' ? '👉 解锁深度报告：' : 'Unlock full report:';
+    return `${text}\n\n${lead}\n${fallback}`.trim();
+  };
+
+  const removeDmLine = (text, lang='zh') => {
+    return String(text || '')
+      .split('\n')
+      .filter(l => {
+        const s = l.trim();
+        if (!s) return true;
+        if (lang === 'zh') return !s.startsWith('私信回复【稀土】获取完整版');
+        return !/^dm for full report$/i.test(s);
+      })
+      .join('\n')
+      .trim();
+  };
+
+  const removeUrlBlocks = (text, lang='zh') => {
+    return String(text || '')
+      .split('\n')
+      .filter(l => {
+        const s = l.trim();
+        if (!s) return true;
+        if (/^https?:\/\//i.test(s)) return false;
+        if (lang === 'zh' && /^👉\s*解锁深度报告[:：]?$/i.test(s)) return false;
+        if (lang === 'en' && /^unlock full report[:：]?$/i.test(s)) return false;
+        return true;
+      })
+      .join('\n')
+      .trim();
+  };
+
   try {
     const cnLink = document.getElementById('copy-cn-link');
     const cnDm = document.getElementById('copy-cn-dm');
     const enLink = document.getElementById('copy-en-link');
     const enDm = document.getElementById('copy-en-dm');
 
-    if (cnLink) cnLink.value = normalizeStructured(cnLink.value);
-    if (cnDm) cnDm.value = normalizeStructured(cnDm.value);
-    if (enLink) enLink.value = normalizeStructured(enLink.value);
-    if (enDm) enDm.value = normalizeStructured(enDm.value);
+    if (cnLink) {
+      let t = normalizeStructured(cnLink.value);
+      t = removeDmLine(t, 'zh');
+      t = ensureLinkLine(t, 'zh');
+      cnLink.value = t;
+    }
+
+    if (cnDm) {
+      let t = normalizeStructured(cnDm.value);
+      t = removeUrlBlocks(t, 'zh');
+      if (!/私信回复【稀土】获取完整版/.test(t)) {
+        t = `${t}\n私信回复【稀土】获取完整版`.trim();
+      }
+      cnDm.value = t;
+    }
+
+    if (enLink) {
+      let t = normalizeStructured(enLink.value);
+      t = removeDmLine(t, 'en');
+      t = ensureLinkLine(t, 'en');
+      enLink.value = t;
+    }
+
+    if (enDm) {
+      let t = normalizeStructured(enDm.value);
+      t = removeUrlBlocks(t, 'en');
+      if (!/DM for full report/i.test(t)) {
+        t = `${t}\nDM for full report`.trim();
+      }
+      enDm.value = t;
+    }
   } catch (e) {
     console.error('social copy normalize failed', e);
   }
