@@ -9,7 +9,7 @@ import google.generativeai as genai
 
 from .utils import extract_json
 
-GENERATOR_VERSION = "v2.8.12"
+GENERATOR_VERSION = "v2.8.12.1"
 
 FORBIDDEN_PROMISE_WORDS = [
     "稳赚",
@@ -107,6 +107,21 @@ def _normalize_punct(text):
     return s.strip()
 
 
+def _ensure_structured_newlines(text, lang="zh"):
+    t = str(text or "").replace("\r", "\n")
+    if lang == "zh":
+        labels = ["核心事实", "影响路径", "投资动作", "反方风险", "证据锚点", "⚠️ 风险提示"]
+        for lbl in labels:
+            t = re.sub(rf"\s*{re.escape(lbl)}\s*[:：]\s*", f"\n{lbl}：", t)
+    else:
+        labels = ["Core fact", "Impact path", "Investor action", "Counter-risk", "Evidence anchor", "⚠️ Risk note"]
+        for lbl in labels:
+            t = re.sub(rf"\s*{re.escape(lbl)}\s*:\s*", f"\n{lbl}: ", t, flags=re.I)
+    t = re.sub(r"\n{3,}", "\n\n", t)
+    t = t.lstrip("\n")
+    return t
+
+
 def _strip_field_noise(text, lang="zh"):
     t = _normalize_punct(_clean_text(text))
     if not t:
@@ -202,6 +217,20 @@ def _first_sentence(text, lang="zh"):
     return _strip_field_noise(parts[0] if parts else s, lang=lang)
 
 
+def _pick_sentence_with_number(text, lang="zh"):
+    s = _normalize_punct(_clean_text(text))
+    if not s:
+        return ""
+    parts = re.split(r"[。！？；\n]+", s) if lang == "zh" else re.split(r"[.!?;\n]+", s)
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        if re.search(r"\d|%|亿美元|亿元|million|billion|202\d|Q[1-4]|月|日", p, re.I):
+            return _strip_field_noise(p, lang=lang)
+    return ""
+
+
 def _pick_action(daily, lang="zh"):
     keys = ["strategy", "strategies", "tactics", "tactical", "action_items", "bullets"]
     for k in keys:
@@ -243,6 +272,11 @@ def _is_fact_sentence(text):
         r"注资",
     ]
     return any(re.search(tok, t, re.I) for tok in fact_tokens)
+
+
+def _has_numeric_anchor(text):
+    t = str(text or "")
+    return bool(re.search(r"\d|%|亿美元|亿元|million|billion|202\d|Q[1-4]|月|日", t, re.I))
 
 
 def _looks_like_numbered_scenario(text, lang="zh"):
@@ -518,13 +552,15 @@ def _build_rule_fallback_bundle(top3_data, daily_zh, daily_en, fingerprint, reas
     zh_risk = _clip_cn(_strip_field_noise("若海外供给兑现快于预期，短期溢价与估值或回撤。", lang="zh"), 58)
     en_risk = _clip_en_words(_strip_field_noise("If non-China supply ramps faster than expected, short-term premiums and valuations may retrace.", lang="en"), 18)
 
-    zh_ev = _clip_cn(_strip_field_noise(_first_sentence(zh_val, "zh") or _first_sentence(zh_head, "zh"), lang="zh"), 72)
-    if (not _is_fact_sentence(zh_ev)) or any(k in zh_ev for k in ["减持", "增配", "规避", "布局", "配置", "优先跟踪"]) or _looks_like_numbered_scenario(zh_ev, lang="zh") or _sameish(zh_ev, zh_impact) or _sameish(zh_ev, zh_core):
-        zh_ev = _clip_cn(_strip_field_noise(f"根据今日公开信息，{_first_sentence(zh_head, 'zh')}", lang="zh"), 72)
+    zh_ev = _pick_sentence_with_number(zh_val, "zh") or _pick_sentence_with_number(zh_head, "zh")
+    zh_ev = _clip_cn(_strip_field_noise(zh_ev or _first_sentence(zh_val, "zh"), lang="zh"), 72)
+    if (not _is_fact_sentence(zh_ev)) or (not _has_numeric_anchor(zh_ev)) or any(k in zh_ev for k in ["减持", "增配", "规避", "布局", "配置", "优先跟踪"]) or _looks_like_numbered_scenario(zh_ev, lang="zh") or _sameish(zh_ev, zh_impact) or _sameish(zh_ev, zh_core):
+        zh_ev = _clip_cn(_strip_field_noise(zh_val, lang="zh"), 72)
 
-    en_ev = _clip_en_words(_strip_field_noise(_first_sentence(en_val, "en") or _first_sentence(en_head, "en"), lang="en"), 24)
-    if (not _is_fact_sentence(en_ev)) or any(k in en_ev.lower() for k in ACTION_HINTS) or _looks_like_numbered_scenario(en_ev, lang="en") or _sameish(en_ev, en_impact) or _sameish(en_ev, en_core):
-        en_ev = _clip_en_words(_strip_field_noise(f"According to current disclosures, {_first_sentence(en_head, 'en')}", lang="en"), 24)
+    en_ev = _pick_sentence_with_number(en_val, "en") or _pick_sentence_with_number(en_head, "en")
+    en_ev = _clip_en_words(_strip_field_noise(en_ev or _first_sentence(en_val, "en"), lang="en"), 24)
+    if (not _is_fact_sentence(en_ev)) or (not _has_numeric_anchor(en_ev)) or any(k in en_ev.lower() for k in ACTION_HINTS) or _looks_like_numbered_scenario(en_ev, lang="en") or _sameish(en_ev, en_impact) or _sameish(en_ev, en_core):
+        en_ev = _clip_en_words(_strip_field_noise(en_val, lang="en"), 24)
 
     cn_topic = "\n".join([
         f"核心事实：{zh_core}",
@@ -544,8 +580,8 @@ def _build_rule_fallback_bundle(top3_data, daily_zh, daily_en, fingerprint, reas
         "⚠️ Risk note: Not investment advice. Manage triggers and position size.",
     ]).strip()
 
-    cn_topic = _sanitize_stale_claims(_normalize_punct(cn_topic))
-    en_topic = _sanitize_stale_claims(_normalize_punct(en_topic))
+    cn_topic = _ensure_structured_newlines(_sanitize_stale_claims(_normalize_punct(cn_topic)), lang="zh")
+    en_topic = _ensure_structured_newlines(_sanitize_stale_claims(_normalize_punct(en_topic)), lang="en")
 
     cn_social = _soft_limit_cn_social(cn_topic, 220)
     en_social = _soft_limit_en_social(en_topic, 120)
@@ -581,8 +617,8 @@ def _validate_payload(payload):
 
     cn_social = _sanitize_stale_claims(_normalize_punct(_clean_text(payload.get("cn_social"))))
     en_social = _sanitize_stale_claims(_normalize_punct(_clean_text(payload.get("en_social"))))
-    cn_topic = _sanitize_stale_claims(_normalize_punct(_clean_text(payload.get("cn_topic"))))
-    en_topic = _sanitize_stale_claims(_normalize_punct(_clean_text(payload.get("en_topic"))))
+    cn_topic = _ensure_structured_newlines(_sanitize_stale_claims(_normalize_punct(_clean_text(payload.get("cn_topic")))), lang="zh")
+    en_topic = _ensure_structured_newlines(_sanitize_stale_claims(_normalize_punct(_clean_text(payload.get("en_topic")))), lang="en")
 
     if _char_count_no_space(cn_social) > 220:
         cn_social = _soft_limit_cn_social(cn_social, 220)
@@ -610,9 +646,9 @@ def _validate_payload(payload):
     if _looks_like_numbered_scenario(en_ev, lang="en"):
         return False, "evidence_en_numbered"
 
-    if (not _is_fact_sentence(cn_ev)) or any(k in cn_ev for k in ["减持", "增配", "规避", "布局", "配置", "优先跟踪"]):
+    if (not _is_fact_sentence(cn_ev)) or (not _has_numeric_anchor(cn_ev)) or any(k in cn_ev for k in ["减持", "增配", "规避", "布局", "配置", "优先跟踪"]):
         return False, "evidence_zh"
-    if (not _is_fact_sentence(en_ev)) or any(k in en_ev.lower() for k in ACTION_HINTS):
+    if (not _is_fact_sentence(en_ev)) or (not _has_numeric_anchor(en_ev)) or any(k in en_ev.lower() for k in ACTION_HINTS):
         return False, "evidence_en"
 
     cn_impact = _extract_line(cn_topic, ["影响路径：", "影响路径:"])
