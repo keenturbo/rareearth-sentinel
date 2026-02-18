@@ -268,9 +268,28 @@ def _build_weekly_pack_list(packs, reports, lang, weekly_sku_id=""):
     return "".join(blocks)
 
 
-def _build_task_cards(catalog, lang):
+def _pick_task_report_id(reports, lang):
+    lang_field = "preview_en" if lang == "en" else "preview_zh"
+    for row in reports:
+        rid = str(row.get("report_id") or "").strip()
+        if not rid:
+            continue
+        preview = row.get(lang_field) or {}
+        title = str(preview.get("title") or "").strip() if isinstance(preview, dict) else ""
+        if title:
+            return rid
+    for row in reports:
+        rid = str(row.get("report_id") or "").strip()
+        if rid:
+            return rid
+    return ""
+
+
+def _build_task_cards(catalog, reports, lang):
     blocks = []
     subdir = "en" if lang == "en" else "cn"
+    task_report_id = _pick_task_report_id(reports, lang)
+
     for sku in catalog:
         if str(sku.get("sku_type") or "").lower() != "task_sprint":
             continue
@@ -281,7 +300,7 @@ def _build_task_cards(catalog, lang):
         desc = _escape(sku.get("description"))
         price = _fmt_price(sku.get("price"), sku.get("currency"), lang)
         cta = _escape(sku.get("cta_text") or ("Start" if lang == "en" else "启动"))
-        href = f"/{subdir}/premium/"
+        href = f"/{subdir}/task/pay/{task_report_id}.html" if task_report_id else f"/{subdir}/premium/"
         sku_id = _escape(sku.get("sku_id") or "")
         blocks.append(
             "<section class=\"card\">"
@@ -400,8 +419,8 @@ def build_product_pages(config):
         ("templates/pricing_en.html", os.path.join(config.static_dir, "en", "pricing", "index.html"), "{{PRICING_CARDS}}", _build_pricing_cards(catalog, "en"), "en", "pricing_page"),
         ("templates/weekly_pack.html", os.path.join(config.static_dir, "cn", "weekly-pack", "index.html"), "{{WEEKLY_PACK_LIST}}", _build_weekly_pack_list(packs, reports, "cn", weekly_sku_id=weekly_sku_cn), "cn", "weekly_pack_page"),
         ("templates/weekly_pack_en.html", os.path.join(config.static_dir, "en", "weekly-pack", "index.html"), "{{WEEKLY_PACK_LIST}}", _build_weekly_pack_list(packs, reports, "en", weekly_sku_id=weekly_sku_en), "en", "weekly_pack_page"),
-        ("templates/task_sprint.html", os.path.join(config.static_dir, "cn", "task", "sprint", "index.html"), "{{TASK_SPRINT_CARDS}}", _build_task_cards(catalog, "cn"), "cn", "task_sprint_page"),
-        ("templates/task_sprint_en.html", os.path.join(config.static_dir, "en", "task", "sprint", "index.html"), "{{TASK_SPRINT_CARDS}}", _build_task_cards(catalog, "en"), "en", "task_sprint_page"),
+        ("templates/task_sprint.html", os.path.join(config.static_dir, "cn", "task", "sprint", "index.html"), "{{TASK_SPRINT_CARDS}}", _build_task_cards(catalog, reports, "cn"), "cn", "task_sprint_page"),
+        ("templates/task_sprint_en.html", os.path.join(config.static_dir, "en", "task", "sprint", "index.html"), "{{TASK_SPRINT_CARDS}}", _build_task_cards(catalog, reports, "en"), "en", "task_sprint_page"),
     ]
 
     for tpl_rel, out_path, slot, body, page_lang, page_channel in mappings:
