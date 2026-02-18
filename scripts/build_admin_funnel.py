@@ -83,13 +83,6 @@ def _ratio(a, b):
 
 
 def _render_funnel_rows(counts):
-    labels = {
-        "view_pricing": "view_pricing",
-        "click_pay": "click_pay",
-        "order_created": "order_created",
-        "order_captured": "order_captured",
-        "unlock_success": "unlock_success",
-    }
     rows = []
     prev = None
     for key in STAGES:
@@ -97,7 +90,7 @@ def _render_funnel_rows(counts):
         conv = "-" if prev is None else _ratio(val, prev)
         rows.append(
             "<tr>"
-            f"<td>{labels[key]}</td>"
+            f"<td>{key}</td>"
             f"<td>{val}</td>"
             f"<td>{conv}</td>"
             "</tr>"
@@ -129,11 +122,9 @@ def _group_by(rows, key_name):
     return items
 
 
-def _render_group_rows(items, key_title):
+def _render_group_rows(items):
     if not items:
-        return (
-            "<tr><td colspan='6' class='muted'>暂无数据</td></tr>"
-        )
+        return "<tr><td colspan='7' class='muted'>暂无数据</td></tr>"
 
     rows = []
     for key, stats in items[:20]:
@@ -202,8 +193,8 @@ def build_admin_funnel_page(config):
         .replace("{{SUMMARY_30D}}", _summary_html(cnt_30d, other_30d))
         .replace("{{FUNNEL_ROWS_7D}}", _render_funnel_rows(cnt_7d))
         .replace("{{FUNNEL_ROWS_30D}}", _render_funnel_rows(cnt_30d))
-        .replace("{{SKU_ROWS}}", _render_group_rows(sku_items, "sku_id"))
-        .replace("{{CHANNEL_ROWS}}", _render_group_rows(channel_items, "channel"))
+        .replace("{{SKU_ROWS}}", _render_group_rows(sku_items))
+        .replace("{{CHANNEL_ROWS}}", _render_group_rows(channel_items))
     )
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
