@@ -20,7 +20,7 @@ header .sub{font-size:12px;color:var(--muted)}
 .section{background:#fff;border-radius:12px;padding:16px;box-shadow:0 6px 14px rgba(0,0,0,0.05)}
 .section-title{font-weight:600;margin-bottom:4px}
 .meta{font-size:12px;color:var(--muted);margin-bottom:8px}
-textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px;padding:10px;font-size:12px;line-height:1.5;color:#0b1220;resize:vertical;background:#f9fbff}
+textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px;padding:10px;font-size:12px;line-height:1.5;color:#0b1220;resize:vertical;background:#f9fbff;white-space:pre-wrap}
 .actions{display:flex;align-items:center;gap:8px;margin-top:10px}
 .btn{font-size:12px;border:1px solid #d1d5db;background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -104,14 +104,27 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
 </div>
 <script>
 (function(){
-  const clean = (s='') => String(s || '')
-    .replace(/\r/g, ' ')
-    .replace(/\u00A0/g, ' ')
-    .replace(/。\s*[；;]/g, '。')
-    .replace(/([。！？!?])\s*[；;]/g, '$1')
-    .replace(/\.\s*;/g, '.')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const clean = (s='') => {
+    const raw = String(s || '').replace(/\r/g, '\n').replace(/\u00A0/g, ' ');
+    const lines = raw.split('\n').map(l => l.replace(/[ \t]+/g, ' ').trim());
+    return lines.filter((l, i, arr) => !(l === '' && (i === 0 || i === arr.length - 1))).join('\n');
+  };
+
+  const splitLabelsIntoLines = (s='', lang='zh') => {
+    let t = String(s || '');
+    if (lang === 'zh') {
+      const labels = ['核心事实','影响路径','投资动作','反方风险','证据锚点','⚠️ 风险提示'];
+      labels.forEach(lbl => {
+        t = t.replace(new RegExp('\\s*' + lbl + '\\s*[:：]\\s*', 'g'), '\\n' + lbl + '：');
+      });
+    } else {
+      const labels = ['Core fact','Impact path','Investor action','Counter-risk','Evidence anchor','⚠️ Risk note'];
+      labels.forEach(lbl => {
+        t = t.replace(new RegExp('\\s*' + lbl + '\\s*:\\s*', 'gi'), '\\n' + lbl + ': ');
+      });
+    }
+    return t.replace(/^\n+/, '');
+  };
 
   const stripLineNoise = (s='') => clean(s)
     .replace(/\bTL\s*;\s*DR\s*:\s*/ig, '')
@@ -148,8 +161,9 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     return t.trim();
   };
 
-  const normalizeStructured = (raw='') => {
-    const t = String(raw || '');
+  const normalizeStructured = (raw='', lang='zh') => {
+    const expanded = splitLabelsIntoLines(raw, lang);
+    const t = String(expanded || '');
     const lines = t.split('\n').map(x => x.trim()).filter(Boolean);
     if (!lines.length) return '';
 
@@ -303,8 +317,14 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
   const ensureHook = (text, lang='zh') => {
     let t = String(text || '').trim();
     if (!t) return t;
-    if (lang === 'zh' && !/^【/.test(t)) t = `【今日重点专题】\n${t}`;
-    if (lang === 'en' && !/^today's focus|^todays focus/i.test(t)) t = `Today's Focus\n${t}`;
+
+    if (lang === 'zh') {
+      t = t.replace(/【今日重点专题】/g, '').trim();
+      t = `【今日重点专题】\n${t}`.trim();
+    } else {
+      t = t.replace(/^today'?s focus\s*/ig, '').trim();
+      t = `Today's Focus\n${t}`.trim();
+    }
     return t;
   };
 
@@ -354,7 +374,7 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     const enDm = document.getElementById('copy-en-dm');
 
     if (cnLink) {
-      let t = normalizeStructured(cnLink.value);
+      let t = normalizeStructured(cnLink.value, 'zh');
       t = removeDmLine(t, 'zh');
       t = ensureLinkLine(t, 'zh');
       t = ensureHook(t, 'zh');
@@ -362,7 +382,7 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     }
 
     if (cnDm) {
-      let t = normalizeStructured(cnDm.value);
+      let t = normalizeStructured(cnDm.value, 'zh');
       t = removeUrlBlocks(t, 'zh');
       if (!/私信回复【稀土】获取完整版/.test(t)) {
         t = `${t}\n私信回复【稀土】获取完整版`.trim();
@@ -372,7 +392,7 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     }
 
     if (enLink) {
-      let t = normalizeStructured(enLink.value);
+      let t = normalizeStructured(enLink.value, 'en');
       t = removeDmLine(t, 'en');
       t = ensureLinkLine(t, 'en');
       t = ensureHook(t, 'en');
@@ -380,7 +400,7 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
     }
 
     if (enDm) {
-      let t = normalizeStructured(enDm.value);
+      let t = normalizeStructured(enDm.value, 'en');
       t = removeUrlBlocks(t, 'en');
       if (!/DM for full report/i.test(t)) {
         t = `${t}\nDM for full report`.trim();
