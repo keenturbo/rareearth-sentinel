@@ -14,7 +14,13 @@ header{display:flex;justify-content:space-between;align-items:center;margin-bott
 header h1{font-family:"Noto Serif SC",serif;margin:0;font-size:22px}
 header .meta{font-size:12px;color:var(--muted)}
 .section{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px}
+.toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.stats{font-size:12px;color:var(--muted)}
+.filters{display:flex;gap:8px;flex-wrap:wrap}
+.filter-btn{font-size:12px;border:1px solid #d1d5db;background:#fff;border-radius:999px;padding:5px 10px;cursor:pointer;color:#374151}
+.filter-btn.active{border-color:#1e3a8a;color:#1e3a8a;background:#eff6ff}
 .card{border-top:1px solid #eef2f7;padding-top:12px;margin-top:12px}
+.card.hidden{display:none}
 .card-title{font-weight:600;margin-bottom:4px}
 .card-meta{font-size:12px;color:var(--muted);margin-bottom:6px}
 .card-actions a{display:inline-block;margin-right:10px;font-size:12px;color:var(--accent);text-decoration:none}
@@ -38,6 +44,14 @@ header .meta{font-size:12px;color:var(--muted)}
   </header>
 
   <section class="section" data-confirm-endpoint="{{CONFIRM_ENDPOINT}}">
+    <div class="toolbar">
+      <div class="stats" id="taskOrderStats">统计中...</div>
+      <div class="filters">
+        <button type="button" class="filter-btn active" data-task-filter="all">全部</button>
+        <button type="button" class="filter-btn" data-task-filter="task_sprint">task_sprint</button>
+        <button type="button" class="filter-btn" data-task-filter="task_sprint_delivered">task_sprint 已交付</button>
+      </div>
+    </div>
     {{ORDERS_LIST}}
   </section>
 </div>
@@ -46,10 +60,60 @@ header .meta{font-size:12px;color:var(--muted)}
   const section = document.querySelector('.section');
   if (!section) return;
   const endpoint = section.dataset.confirmEndpoint || '';
-  if (!endpoint) return;
+
+  function cards(){
+    return Array.from(section.querySelectorAll('.card'));
+  }
+
+  function isTaskSprintCard(card){
+    const t = (card.textContent || '').toLowerCase();
+    if (t.includes('task_sprint') || t.includes('task sprint')) return true;
+    return true;
+  }
+
+  function isDeliveredTaskCard(card){
+    const t = (card.textContent || '').toLowerCase();
+    const unlockHref = card.querySelector('.unlock-link a')?.getAttribute('href') || '';
+    return (
+      unlockHref.includes('/task/') ||
+      t.includes('confirmed') ||
+      t.includes('已确认') ||
+      (t.includes('fulfillment_status') && t.includes('delivered'))
+    );
+  }
+
+  function updateStats(){
+    const all = cards();
+    const sprint = all.filter(isTaskSprintCard);
+    const delivered = sprint.filter(isDeliveredTaskCard);
+    const stats = section.querySelector('#taskOrderStats');
+    if (!stats) return;
+    stats.textContent = `订单 ${all.length} · task_sprint ${sprint.length} · 已交付 ${delivered.length}`;
+  }
+
+  function applyFilter(mode){
+    cards().forEach(card => {
+      let visible = true;
+      if (mode === 'task_sprint') visible = isTaskSprintCard(card);
+      if (mode === 'task_sprint_delivered') visible = isTaskSprintCard(card) && isDeliveredTaskCard(card);
+      card.classList.toggle('hidden', !visible);
+    });
+    section.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.taskFilter === mode);
+    });
+  }
+
   section.addEventListener('click', async (e) => {
+    const filterBtn = e.target.closest('.filter-btn');
+    if (filterBtn) {
+      applyFilter(filterBtn.dataset.taskFilter || 'all');
+      return;
+    }
+
     const btn = e.target.closest('.confirm-btn');
     if (!btn) return;
+    if (!endpoint) return;
+
     const orderId = btn.getAttribute('data-order-id');
     const reportId = btn.getAttribute('data-report-id');
     const taskId = btn.getAttribute('data-task-id');
@@ -77,6 +141,7 @@ header .meta{font-size:12px;color:var(--muted)}
             confirmWrap.innerHTML = '<span class="confirmed">已确认</span>';
           }
         }
+        updateStats();
       } else {
         btn.textContent = '确认失败';
         btn.disabled = false;
@@ -86,6 +151,9 @@ header .meta{font-size:12px;color:var(--muted)}
       btn.disabled = false;
     }
   });
+
+  updateStats();
+  applyFilter('all');
 })();
 </script>
 </body>
