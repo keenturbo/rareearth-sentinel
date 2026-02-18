@@ -117,6 +117,7 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
       <input id="filterQ" type="text" placeholder="关键词（姓名/公司/邮箱）" />
       <button id="btnRefresh" class="primary">刷新</button>
       <button id="btnExport">导出CSV</button>
+      <button id="btnClearTest">清理测试线索</button>
     </div>
 
     <div class="table-wrap">
@@ -164,6 +165,8 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
   const UPDATE_ENDPOINT = "{{LEADS_UPDATE_ENDPOINT}}";
   const EXPORT_ENDPOINT = "{{LEADS_EXPORT_ENDPOINT}}";
   const EVENTS_ENDPOINT = "{{LEADS_EVENTS_ENDPOINT}}";
+  const INSERT_TEST_ENDPOINT = "{{LEADS_INSERT_TEST_ENDPOINT}}";
+  const CLEAR_TEST_ENDPOINT = "{{LEADS_CLEAR_TEST_ENDPOINT}}";
 
   const rowsEl = document.getElementById("leadsRows");
   const statTotal = document.getElementById("statTotal");
@@ -179,6 +182,7 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
   const filterQ = document.getElementById("filterQ");
   const btnRefresh = document.getElementById("btnRefresh");
   const btnExport = document.getElementById("btnExport");
+  const btnClearTest = document.getElementById("btnClearTest");
 
   const timelineModal = document.getElementById("timelineModal");
   const timelineClose = document.getElementById("timelineClose");
@@ -243,10 +247,11 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
 
   function rowHtml(lead){
     const utm = [lead.utm_source, lead.utm_campaign, lead.utm_content].filter(Boolean).join(" / ");
+    const testBadge = lead.test ? "<div class='muted' style='color:#d97706'>test</div>" : "";
     return `
 <tr data-lead-id="${esc(lead.lead_id)}">
   <td>${esc(lead.created_at || "")}</td>
-  <td><div>${esc(lead.lead_id || "")}</div><div class="muted">${esc(lead.status || "new")}</div></td>
+  <td><div>${esc(lead.lead_id || "")}</div><div class="muted">${esc(lead.status || "new")}</div>${testBadge}</td>
   <td><div>${esc(lead.name || "")}</div><div class="muted">${esc(lead.email || "")}</div></td>
   <td><div>${esc(lead.company || "")}</div><div class="muted">${esc(lead.role || "")}</div></td>
   <td><div>${esc(lead.brief_need || "")}</div><div class="muted">${esc(lead.budget_range || "")}</div></td>
@@ -285,38 +290,35 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
           <button class="modal-close" data-empty-action="copy-en" data-link="${esc(enLink)}">复制英文链接</button>
           <button class="save-btn" data-empty-action="insert-test">插入测试线索</button>
         </div>
-        <div class="muted" style="margin-top:8px">测试线索会写入 team_brief_leads.jsonl，source_channel=admin_test。</div>
+        <div class="muted" style="margin-top:8px">测试线索会写入 team_brief_leads.jsonl，source_channel=admin_test，test=true。</div>
       </div>
     </td></tr>`;
   }
 
   async function insertTestLead(){
-    const now = Date.now();
-    const payload = {
-      name: "Admin Test Lead",
-      email: `admin-test-${now}@example.com`,
-      company: "Test Company",
-      role: "Analyst",
-      country_region: "CN",
-      brief_need: "custom",
-      budget_range: "unknown",
-      message: `Admin test lead ${new Date().toISOString()}`,
-      lang: "cn",
-      source_channel: "admin_test",
-      utm_source: "admin",
-      utm_campaign: "team_brief_test",
-      utm_content: "empty_state"
-    };
-    const res = await fetch('/api/lead/team-brief', {
+    const res = await fetch(INSERT_TEST_ENDPOINT, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(payload),
+      body: JSON.stringify({operator: 'admin'}),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data?.ok){
       throw new Error(data?.error || `HTTP ${res.status}`);
     }
-    return payload.email;
+    return data?.lead?.email || data?.lead?.lead_id || 'ok';
+  }
+
+  async function clearTestLeads(){
+    const res = await fetch(CLEAR_TEST_ENDPOINT, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({operator: 'admin'}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.ok){
+      throw new Error(data?.error || `HTTP ${res.status}`);
+    }
+    return data;
   }
 
   function setStats(stats, total){
@@ -491,9 +493,9 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
         emptyBtn.disabled = true;
         emptyBtn.textContent = '写入中...';
         try{
-          const email = await insertTestLead();
+          const key = await insertTestLead();
           await loadLeads();
-          alert(`已写入测试线索：${email}`);
+          alert(`已写入测试线索：${key}`);
         }catch(err){
           alert(`写入失败：${err.message || err}`);
         }finally{
@@ -583,6 +585,24 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
   btnExport.addEventListener("click", () => {
     const qs = buildQuery();
     window.open(`${EXPORT_ENDPOINT}?${qs}`, "_blank");
+  });
+
+  btnClearTest.addEventListener('click', async () => {
+    const yes = window.confirm('确认清理所有测试线索（test=true / source_channel=admin_test）吗？');
+    if (!yes) return;
+    const prev = btnClearTest.textContent;
+    btnClearTest.disabled = true;
+    btnClearTest.textContent = '清理中...';
+    try{
+      const data = await clearTestLeads();
+      await loadLeads();
+      alert(`已清理测试线索 ${data.removed || 0} 条（剩余 ${data.after || 0}）`);
+    }catch(err){
+      alert(`清理失败：${err.message || err}`);
+    }finally{
+      btnClearTest.disabled = false;
+      btnClearTest.textContent = prev;
+    }
   });
 
   loadLeads();
