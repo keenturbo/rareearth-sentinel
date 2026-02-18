@@ -21,6 +21,10 @@ header .sub{font-size:12px;color:var(--muted)}
 .stat{background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px}
 .stat .k{font-size:12px;color:var(--muted)}
 .stat .v{font-size:18px;font-weight:700}
+.owner-board{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:10px;margin:0 0 12px 0}
+.owner-card{border:1px solid #e5e7eb;background:#fff;border-radius:10px;padding:10px}
+.owner-card .k{font-size:12px;color:var(--muted)}
+.owner-card .v{font-size:16px;font-weight:700;color:#0f172a}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
 .toolbar select,.toolbar input,.toolbar button{height:34px;border:1px solid #dbe3ec;border-radius:8px;padding:0 10px;background:#fff}
 .toolbar button{cursor:pointer}
@@ -30,14 +34,30 @@ table{width:100%;border-collapse:collapse;font-size:12px}
 th,td{border-top:1px solid #eef2f7;padding:8px;text-align:left;vertical-align:top}
 th{background:#f8fafc;color:#334155;white-space:nowrap}
 .muted{color:#6b7280}
-.message-cell{max-width:360px;word-break:break-word}
+.message-cell{max-width:320px;word-break:break-word}
+.timeline-cell{min-width:100px}
 .status-select,.owner-input,.next-action-input,.note-input{width:100%;margin-bottom:6px;border:1px solid #dbe3ec;border-radius:6px;padding:6px;font:inherit;background:#fff}
 .action-row{display:flex;align-items:center;gap:8px}
-.save-btn{height:30px;padding:0 10px;border:1px solid #1d4ed8;background:#1d4ed8;color:#fff;border-radius:6px;cursor:pointer}
-.save-btn:hover{opacity:.92}
+.save-btn,.timeline-btn{height:30px;padding:0 10px;border:1px solid #1d4ed8;background:#1d4ed8;color:#fff;border-radius:6px;cursor:pointer}
+.save-btn:hover,.timeline-btn:hover{opacity:.92}
 .save-msg.ok{color:var(--ok)}
 .save-msg.err{color:#b91c1c}
-@media (max-width:980px){.stats{grid-template-columns:repeat(2,minmax(120px,1fr))}}
+
+.modal{position:fixed;inset:0;background:rgba(2,6,23,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:999}
+.modal.show{display:flex}
+.modal-card{width:min(860px,95vw);max-height:85vh;overflow:auto;background:#fff;border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,.22);padding:14px}
+.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.modal-title{font-weight:700}
+.modal-close{height:30px;padding:0 10px;border:1px solid #dbe3ec;background:#fff;border-radius:6px;cursor:pointer}
+.timeline-list{display:flex;flex-direction:column;gap:8px}
+.timeline-item{border:1px solid #e5e7eb;border-radius:8px;padding:8px;background:#fafafa}
+.timeline-item .t{font-size:12px;color:#475569}
+.timeline-item .e{font-size:13px;color:#0f172a;margin-top:4px;word-break:break-word}
+
+@media (max-width:980px){
+  .stats{grid-template-columns:repeat(2,minmax(120px,1fr))}
+  .owner-board{grid-template-columns:repeat(2,minmax(140px,1fr))}
+}
 </style>
 </head>
 <body>
@@ -82,6 +102,8 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
       <div class="stat"><div class="k">已丢失</div><div class="v" id="statLost">{{LOST_COUNT}}</div></div>
     </div>
 
+    <div id="ownerBoard" class="owner-board"></div>
+
     <div class="toolbar">
       <select id="filterStatus">
         <option value="">全部状态</option>
@@ -110,6 +132,7 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
             <th>需求说明</th>
             <th>状态/负责人/下次跟进</th>
             <th>备注与操作</th>
+            <th>时间线</th>
           </tr>
         </thead>
         <tbody id="leadsRows">
@@ -120,11 +143,24 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
   </section>
 </div>
 
+<div id="timelineModal" class="modal" aria-hidden="true">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div class="modal-title" id="timelineTitle">线索时间线</div>
+      <button id="timelineClose" class="modal-close">关闭</button>
+    </div>
+    <div id="timelineBody" class="timeline-list">
+      <div class="muted">加载中...</div>
+    </div>
+  </div>
+</div>
+
 <script>
 (() => {
   const LIST_ENDPOINT = "{{LEADS_LIST_ENDPOINT}}";
   const UPDATE_ENDPOINT = "{{LEADS_UPDATE_ENDPOINT}}";
   const EXPORT_ENDPOINT = "{{LEADS_EXPORT_ENDPOINT}}";
+  const EVENTS_ENDPOINT = "{{LEADS_EVENTS_ENDPOINT}}";
 
   const rowsEl = document.getElementById("leadsRows");
   const statTotal = document.getElementById("statTotal");
@@ -133,12 +169,18 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
   const statQualified = document.getElementById("statQualified");
   const statWon = document.getElementById("statWon");
   const statLost = document.getElementById("statLost");
+  const ownerBoard = document.getElementById("ownerBoard");
 
   const filterStatus = document.getElementById("filterStatus");
   const filterOwner = document.getElementById("filterOwner");
   const filterQ = document.getElementById("filterQ");
   const btnRefresh = document.getElementById("btnRefresh");
   const btnExport = document.getElementById("btnExport");
+
+  const timelineModal = document.getElementById("timelineModal");
+  const timelineClose = document.getElementById("timelineClose");
+  const timelineTitle = document.getElementById("timelineTitle");
+  const timelineBody = document.getElementById("timelineBody");
 
   function esc(v){
     return String(v ?? "")
@@ -197,6 +239,10 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
       <span class="save-msg muted"></span>
     </div>
   </td>
+  <td class="timeline-cell">
+    <button class="timeline-btn">查看时间线</button>
+    <div class="timeline-msg muted"></div>
+  </td>
 </tr>`;
   }
 
@@ -207,6 +253,22 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
     statQualified.textContent = String(stats?.qualified ?? 0);
     statWon.textContent = String(stats?.won ?? 0);
     statLost.textContent = String(stats?.lost ?? 0);
+  }
+
+  function renderOwnerBoard(leads){
+    const m = new Map();
+    (Array.isArray(leads) ? leads : []).forEach((lead) => {
+      const owner = String(lead.owner || "").trim() || "未分配";
+      m.set(owner, (m.get(owner) || 0) + 1);
+    });
+    const arr = Array.from(m.entries()).sort((a,b) => b[1] - a[1]).slice(0, 8);
+    if (!arr.length){
+      ownerBoard.innerHTML = '<div class="owner-card"><div class="k">负责人看板</div><div class="v">暂无数据</div></div>';
+      return;
+    }
+    ownerBoard.innerHTML = arr.map(([owner, cnt]) =>
+      `<div class="owner-card"><div class="k">${esc(owner)}</div><div class="v">${cnt}</div></div>`
+    ).join('');
   }
 
   function buildQuery(){
@@ -232,11 +294,12 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
       }
       const leads = Array.isArray(data.leads) ? data.leads : [];
       if (!leads.length){
-        rowsEl.innerHTML = '<tr><td colspan="9" class="muted">暂无线索</td></tr>';
+        rowsEl.innerHTML = '<tr><td colspan="10" class="muted">暂无线索</td></tr>';
       } else {
         rowsEl.innerHTML = leads.map(rowHtml).join("");
       }
       setStats(data.stats || {}, data.total || leads.length);
+      renderOwnerBoard(leads);
     }catch(err){
       alert(`加载失败：${err.message || err}`);
     }finally{
@@ -244,50 +307,109 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
     }
   }
 
-  rowsEl.addEventListener("click", async (e) => {
-    const btn = e.target.closest(".save-btn");
-    if (!btn) return;
-    const tr = btn.closest("tr[data-lead-id]");
-    if (!tr) return;
+  function openModal(){
+    timelineModal.classList.add('show');
+    timelineModal.setAttribute('aria-hidden', 'false');
+  }
+  function closeModal(){
+    timelineModal.classList.remove('show');
+    timelineModal.setAttribute('aria-hidden', 'true');
+  }
 
-    const leadId = tr.getAttribute("data-lead-id") || "";
-    const status = tr.querySelector(".status-select")?.value || "new";
-    const owner = tr.querySelector(".owner-input")?.value || "";
-    const nextLocal = tr.querySelector(".next-action-input")?.value || "";
-    const note = tr.querySelector(".note-input")?.value || "";
-    const msg = tr.querySelector(".save-msg");
-
-    const payload = {
-      lead_id: leadId,
-      status,
-      owner,
-      next_action_at: toIso(nextLocal),
-      note,
-      operator: "admin",
-    };
-
-    btn.disabled = true;
-    if (msg){ msg.textContent = "保存中..."; msg.className = "save-msg muted"; }
-
+  async function loadTimeline(leadId){
+    timelineTitle.textContent = `线索时间线 · ${leadId}`;
+    timelineBody.innerHTML = '<div class="muted">加载中...</div>';
+    openModal();
     try{
-      const res = await fetch(UPDATE_ENDPOINT, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(payload),
-      });
+      const res = await fetch(`${EVENTS_ENDPOINT}?lead_id=${encodeURIComponent(leadId)}&limit=100`);
       const data = await res.json();
       if (!res.ok || !data?.ok){
         throw new Error(data?.error || `HTTP ${res.status}`);
       }
-      if (msg){ msg.textContent = "已保存"; msg.className = "save-msg ok"; }
-      const noteEl = tr.querySelector(".note-input");
-      if (noteEl) noteEl.value = "";
-      loadLeads();
+      const events = Array.isArray(data.events) ? data.events : [];
+      if (!events.length){
+        timelineBody.innerHTML = '<div class="muted">暂无时间线事件</div>';
+        return;
+      }
+      timelineBody.innerHTML = events.map((ev) => {
+        const t = esc(ev.created_at || '');
+        const type = esc(ev.event_type || 'event');
+        const note = esc(ev.note || '');
+        const fromTo = [ev.from_status, ev.to_status].filter(Boolean).map(esc).join(' -> ');
+        const owner = esc(ev.owner || '');
+        const nextAction = esc(ev.next_action_at || '');
+        const detailParts = [];
+        if (fromTo) detailParts.push(`状态: ${fromTo}`);
+        if (owner) detailParts.push(`负责人: ${owner}`);
+        if (nextAction) detailParts.push(`下次跟进: ${nextAction}`);
+        if (note) detailParts.push(`备注: ${note}`);
+        const detail = detailParts.join(' | ') || '—';
+        return `<div class="timeline-item"><div class="t">${t} · ${type}</div><div class="e">${detail}</div></div>`;
+      }).join('');
     }catch(err){
-      if (msg){ msg.textContent = `失败：${err.message || err}`; msg.className = "save-msg err"; }
-    }finally{
-      btn.disabled = false;
+      timelineBody.innerHTML = `<div class="muted">加载失败：${esc(err.message || err)}</div>`;
     }
+  }
+
+  rowsEl.addEventListener("click", async (e) => {
+    const saveBtn = e.target.closest(".save-btn");
+    if (saveBtn) {
+      const tr = saveBtn.closest("tr[data-lead-id]");
+      if (!tr) return;
+
+      const leadId = tr.getAttribute("data-lead-id") || "";
+      const status = tr.querySelector(".status-select")?.value || "new";
+      const owner = tr.querySelector(".owner-input")?.value || "";
+      const nextLocal = tr.querySelector(".next-action-input")?.value || "";
+      const note = tr.querySelector(".note-input")?.value || "";
+      const msg = tr.querySelector(".save-msg");
+
+      const payload = {
+        lead_id: leadId,
+        status,
+        owner,
+        next_action_at: toIso(nextLocal),
+        note,
+        operator: "admin",
+      };
+
+      saveBtn.disabled = true;
+      if (msg){ msg.textContent = "保存中..."; msg.className = "save-msg muted"; }
+
+      try{
+        const res = await fetch(UPDATE_ENDPOINT, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || !data?.ok){
+          throw new Error(data?.error || `HTTP ${res.status}`);
+        }
+        if (msg){ msg.textContent = "已保存"; msg.className = "save-msg ok"; }
+        const noteEl = tr.querySelector(".note-input");
+        if (noteEl) noteEl.value = "";
+        loadLeads();
+      }catch(err){
+        if (msg){ msg.textContent = `失败：${err.message || err}`; msg.className = "save-msg err"; }
+      }finally{
+        saveBtn.disabled = false;
+      }
+      return;
+    }
+
+    const tlBtn = e.target.closest('.timeline-btn');
+    if (tlBtn){
+      const tr = tlBtn.closest('tr[data-lead-id]');
+      if (!tr) return;
+      const leadId = tr.getAttribute('data-lead-id') || '';
+      loadTimeline(leadId);
+    }
+  });
+
+  timelineClose.addEventListener('click', closeModal);
+  timelineModal.addEventListener('click', (e) => {
+    if (e.target === timelineModal) closeModal();
   });
 
   btnRefresh.addEventListener("click", loadLeads);
