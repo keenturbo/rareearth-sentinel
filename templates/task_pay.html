@@ -62,7 +62,7 @@ header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
 <!-- Cloudflare Web Analytics --><script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "e70b3b5596ee443690a85e4c19e6c15a"}'></script><!-- End Cloudflare Web Analytics -->
 </head>
 <body>
-<div class="container" data-report-id="{{REPORT_ID}}" data-task-id="{{TASK_ID}}" data-report-title="{{REPORT_TITLE}}" data-report-value="{{REPORT_VALUE}}" data-confirm-endpoint="{{PAY_CONFIRM_ENDPOINT}}">
+<div class="container" data-report-id="{{REPORT_ID}}" data-task-id="{{TASK_ID}}" data-report-title="{{REPORT_TITLE}}" data-report-value="{{REPORT_VALUE}}" data-confirm-endpoint="{{PAY_CONFIRM_ENDPOINT}}" data-task-sku-id="cn-task-sprint-499" data-task-channel="task_sprint_page">
   <header>
     <div class="title">哨兵任务付费</div>
     <div class="nav">
@@ -134,7 +134,7 @@ header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
 
         <div class="order-box">
           <div>订单号：<span id="order-id" class="mono">--</span><button class="copy-btn" data-copy="order-id">复制</button></div>
-          <div>付款备注：<span id="pay-memo" class="mono">task_id={{TASK_ID}} report_id={{REPORT_ID}} frequency=weekly tier=$9 order_id=-- email=你的邮箱</span><button class="copy-btn" data-copy="pay-memo">复制</button></div>
+          <div>付款备注：<span id="pay-memo" class="mono">task_id={{TASK_ID}} report_id={{REPORT_ID}} frequency=weekly plan=weekly tier=$9 product_type=task_sprint sku_id=cn-task-sprint-499 channel=task_sprint_page order_id=-- email=你的邮箱</span><button class="copy-btn" data-copy="pay-memo">复制</button></div>
         </div>
         <div class="pay-note">付款时请务必填写<strong>邮箱</strong>，否则无法自动确认。</div>
         <button class="pay-btn" id="paid-btn">我已付款</button>
@@ -152,6 +152,8 @@ header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
   const reportValue = container ? container.dataset.reportValue : "";
   const confirmEndpoint = container ? container.dataset.confirmEndpoint : "";
   const lang = "cn";
+  const taskSkuId = container ? (container.dataset.taskSkuId || "cn-task-sprint-499") : "cn-task-sprint-499";
+  const taskChannel = container ? (container.dataset.taskChannel || "task_sprint_page") : "task_sprint_page";
   const storageKey = `task_order_id:${taskId || reportId}`;
   let orderId = localStorage.getItem(storageKey);
   if (!orderId) {
@@ -204,7 +206,7 @@ header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
     const frequency = planFrequency(plan);
     const price = planPrice();
     if (memoEl) {
-      memoEl.textContent = `task_id=${taskId} report_id=${reportId} frequency=${frequency} plan=${plan} tier=$${price} order_id=${orderId} email=${emailVal}`;
+      memoEl.textContent = `task_id=${taskId} report_id=${reportId} frequency=${frequency} plan=${plan} tier=$${price} product_type=task_sprint sku_id=${taskSkuId} channel=${taskChannel} order_id=${orderId} email=${emailVal}`;
     }
   }
 
@@ -282,6 +284,10 @@ header .title{font-family:"Noto Serif SC",serif;font-size:22px;font-weight:600}
         const price = planPrice();
         const payload = {
           order_type: "task",
+          product_type: "task_sprint",
+          sku_id: taskSkuId,
+          channel: taskChannel,
+          source_channel: taskChannel,
           task_id: taskId,
           report_id: reportId,
           report_title: reportTitle,
