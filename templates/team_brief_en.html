@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Team Brief (Monthly Service) | RareEarth Sentinel</title>
+<style>
+:root{--ink:#0b1220;--muted:#536170;--bg:#f7f9fc;--card:#ffffff;--accent:#1d4ed8}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans",sans-serif;background:linear-gradient(180deg,#f7f9fc,#e9eef5);color:var(--ink)}
+.container{max-width:980px;margin:0 auto;padding:22px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+header h1{margin:0;font-size:24px}
+header .sub{font-size:12px;color:var(--muted)}
+.card{background:#fff;border-radius:12px;padding:16px;box-shadow:0 6px 14px rgba(0,0,0,0.05);margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+@media(max-width:860px){.grid{grid-template-columns:1fr}}
+label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:6px}
+input,select,textarea{font-size:13px;padding:8px;border:1px solid #d1d5db;border-radius:8px;background:#fff}
+textarea{min-height:120px;resize:vertical}
+.btn{font-size:13px;border:1px solid #d1d5db;background:#fff;border-radius:8px;padding:8px 12px;cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.actions{display:flex;gap:8px;margin-top:10px}
+.status{font-size:12px;color:var(--muted);margin-top:8px}
+ul{margin:8px 0 0 18px;padding:0}
+li{margin:4px 0}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>Team Brief (Monthly Service)</h1>
+      <div class="sub">Updated {{LAST_UPDATE}}</div>
+    </div>
+    <div class="sub"><a href="/en/pricing/">Back to Pricing</a> · <a href="/en/">Back to Home</a></div>
+  </header>
+
+  <section class="card">
+    <h2 style="margin:0 0 8px;font-size:18px">Monthly critical-minerals intelligence for teams</h2>
+    <p style="margin:0;color:#334155;font-size:14px;line-height:1.6">
+      A monthly brief built for strategy, procurement, and investment teams.
+      Deliverables include monthly overview, event breakdown, trigger checklist, and next-month watchlist.
+    </p>
+    <ul>
+      <li>Audience: Investment / Procurement / Strategy & Compliance teams</li>
+      <li>Pricing: Starting from $399 / month</li>
+      <li>Delivery: Web + PDF + email follow-up</li>
+    </ul>
+  </section>
+
+  <section class="card" id="lead-card" data-endpoint="{{TEAM_BRIEF_LEAD_ENDPOINT}}" data-lang="{{PAGE_LANG}}">
+    <h2 style="margin:0 0 8px;font-size:18px">Request a quote</h2>
+    <div class="grid">
+      <label>Name
+        <input id="name" placeholder="Your name" />
+      </label>
+      <label>Email (required)
+        <input id="email" type="email" placeholder="name@company.com" />
+      </label>
+      <label>Company (required)
+        <input id="company" placeholder="Company name" />
+      </label>
+      <label>Role
+        <input id="role" placeholder="e.g. Procurement Manager" />
+      </label>
+      <label>Country/Region
+        <input id="country_region" placeholder="US / EU / JP ..." />
+      </label>
+      <label>Need type
+        <select id="brief_need">
+          <option value="market_risk">Market risk monitoring</option>
+          <option value="policy_watch">Policy watch</option>
+          <option value="supplier_mapping">Supplier mapping</option>
+          <option value="custom">Custom</option>
+        </select>
+      </label>
+      <label>Budget range
+        <select id="budget_range">
+          <option value="lt_500">&lt; $500 / month</option>
+          <option value="500_2000">$500 - $2000 / month</option>
+          <option value="2000_plus">$2000+ / month</option>
+          <option value="unknown">Undecided</option>
+        </select>
+      </label>
+      <label>Source channel
+        <select id="source_channel">
+          <option value="direct">direct</option>
+          <option value="linkedin">linkedin</option>
+          <option value="x">x</option>
+          <option value="xueqiu">xueqiu</option>
+          <option value="wechat">wechat</option>
+          <option value="telegram">telegram</option>
+          <option value="other">other</option>
+        </select>
+      </label>
+    </div>
+    <label style="margin-top:10px;display:flex;flex-direction:column;gap:6px;font-size:12px;color:#536170">Message (required)
+      <textarea id="message" placeholder="Describe what your team wants to monitor, scope, update frequency, etc."></textarea>
+    </label>
+    <input id="utm_source" type="hidden" />
+    <input id="utm_campaign" type="hidden" />
+    <input id="utm_content" type="hidden" />
+    <input id="website" type="hidden" />
+
+    <div class="actions">
+      <button id="submit" class="btn primary">Submit request</button>
+      <button id="reset" class="btn" type="button">Reset</button>
+    </div>
+    <div class="status" id="status">We will get back to you shortly.</div>
+  </section>
+</div>
+
+<script>
+(function(){
+  const card = document.getElementById('lead-card');
+  if (!card) return;
+  const endpoint = card.dataset.endpoint || '/api/lead/team-brief';
+  const lang = card.dataset.lang || 'en';
+
+  const $ = (id) => document.getElementById(id);
+  const status = $('status');
+  const setStatus = (msg) => { if (status) status.textContent = msg; };
+
+  const qs = new URLSearchParams(window.location.search || '');
+  $('utm_source').value = qs.get('utm_source') || '';
+  $('utm_campaign').value = qs.get('utm_campaign') || '';
+  $('utm_content').value = qs.get('utm_content') || '';
+
+  const emailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v || '').trim());
+
+  const readPayload = () => ({
+    name: $('name').value.trim(),
+    email: $('email').value.trim(),
+    company: $('company').value.trim(),
+    role: $('role').value.trim(),
+    country_region: $('country_region').value.trim(),
+    brief_need: $('brief_need').value,
+    budget_range: $('budget_range').value,
+    source_channel: $('source_channel').value,
+    message: $('message').value.trim(),
+    utm_source: $('utm_source').value || '',
+    utm_campaign: $('utm_campaign').value || '',
+    utm_content: $('utm_content').value || '',
+    lang,
+    website: $('website').value || ''
+  });
+
+  const resetForm = () => {
+    ['name','email','company','role','country_region','message'].forEach((id)=>{ $(id).value=''; });
+    $('brief_need').value = 'market_risk';
+    $('budget_range').value = 'unknown';
+    $('source_channel').value = 'direct';
+  };
+
+  $('reset').addEventListener('click', resetForm);
+
+  $('submit').addEventListener('click', async () => {
+    const btn = $('submit');
+    const payload = readPayload();
+
+    if (!payload.email || !emailOk(payload.email)) {
+      setStatus('Please enter a valid email.');
+      return;
+    }
+    if (!payload.company) {
+      setStatus('Please enter company name.');
+      return;
+    }
+    if (!payload.message) {
+      setStatus('Please enter your request details.');
+      return;
+    }
+
+    btn.disabled = true;
+    setStatus('Submitting...');
+
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const data = res.ok ? await res.json() : null;
+      if (data && data.ok) {
+        setStatus('Submitted successfully. We will contact you shortly.');
+        resetForm();
+      } else {
+        setStatus((data && data.error) ? `Submit failed: ${data.error}` : 'Submit failed, please try again later.');
+      }
+    } catch (e) {
+      setStatus('Submit failed, please try again later.');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+})();
+</script>
+</body>
+</html>

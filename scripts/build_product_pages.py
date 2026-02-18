@@ -17,6 +17,7 @@ except Exception:
 
 
 FUNNEL_ENDPOINT = "/api/pay/funnel"
+TEAM_BRIEF_LEAD_ENDPOINT = "/api/lead/team-brief"
 
 
 def _read_json(path, default):
@@ -186,6 +187,8 @@ def _build_pricing_cards(catalog, lang):
             href = f"/{subdir}/weekly-pack/"
         elif sku_type == "task_sprint":
             href = f"/{subdir}/task/sprint/"
+        elif sku_type == "team_brief":
+            href = f"/{subdir}/team-brief/"
         else:
             href = f"/{subdir}/premium/"
 
@@ -394,6 +397,33 @@ def _build_pack_payment_pages(config, catalog, packs, reports, last_update):
             _write(out_path, html_out)
 
 
+def _build_team_brief_pages(config, last_update):
+    pairs = [
+        (
+            os.path.join(ROOT, "templates", "team_brief.html"),
+            os.path.join(config.static_dir, "cn", "team-brief", "index.html"),
+            "cn",
+        ),
+        (
+            os.path.join(ROOT, "templates", "team_brief_en.html"),
+            os.path.join(config.static_dir, "en", "team-brief", "index.html"),
+            "en",
+        ),
+    ]
+    for template_path, output_path, lang in pairs:
+        if not os.path.exists(template_path):
+            continue
+        html_out = _render_template(
+            template_path,
+            {
+                "{{LAST_UPDATE}}": last_update,
+                "{{TEAM_BRIEF_LEAD_ENDPOINT}}": TEAM_BRIEF_LEAD_ENDPOINT,
+                "{{PAGE_LANG}}": lang,
+            },
+        )
+        _write(output_path, html_out)
+
+
 def build_product_pages(config):
     catalog_path = os.path.join(config.data_dir, "products", "catalog.json")
     packs_path = os.path.join(config.data_dir, "products", "packs.json")
@@ -440,6 +470,7 @@ def build_product_pages(config):
         _write(out_path, html)
 
     _build_pack_payment_pages(config, catalog, packs, reports, last_update)
+    _build_team_brief_pages(config, last_update)
 
 
 def main():

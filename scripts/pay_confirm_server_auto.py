@@ -10,11 +10,14 @@ Purpose:
 - Provide minimal funnel endpoint and event logging.
 """
 
+import hashlib
 import json
 import os
 import re
 import subprocess
 import sys
+import threading
+import time
 from datetime import datetime
 from typing import Dict, Tuple
 from urllib.parse import urlparse
@@ -28,6 +31,7 @@ import pay_confirm_server as pcs  # type: ignore
 
 
 _FUNNEL_ENDPOINT = "/api/pay/funnel"
+_TEAM_BRIEF_LEAD_ENDPOINT = "/api/lead/team-brief"
 _ALLOWED_FUNNEL_EVENTS = {
     "view_pricing",
     "click_pay",
@@ -35,6 +39,13 @@ _ALLOWED_FUNNEL_EVENTS = {
     "order_captured",
     "unlock_success",
 }
+_ALLOWED_BRIEF_NEEDS = {"market_risk", "policy_watch", "supplier_mapping", "custom"}
+_ALLOWED_BUDGET_RANGES = {"lt_500", "500_2000", "2000_plus", "unknown"}
+_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+_LEAD_WINDOW_SECONDS = 60
+_LEAD_MAX_PER_WINDOW = 6
+_LEAD_HITS = {}
+_LEAD_LOCK = threading.Lock()
 
 _CFG = pcs.Config.from_env()
 
@@ -51,6 +62,124 @@ def _utc_now_iso() -> str:
 
 def _analytics_events_path(config) -> str:
     return os.path.join(config.data_dir, "analytics", "funnel_events.jsonl")
+
+
+def _team_brief_leads_path(config) -> str:
+    return os.path.join(config.data_dir, "pay", "team_brief_leads.jsonl")
+
+
+def _refresh_team_brief_leads_page():
+    script = os.path.join(ROOT, "scripts", "build_admin_team_brief_leads.py")
+    if not os.path.exists(script):
+        return
+    try:
+        subprocess.run(
+            [sys.executable, script],
+            cwd=ROOT,
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
+
+
+def _normalize_text(value, max_len=400):
+    text = str(value or "").strip()
+    text = re.sub(r"\s+", " ", text)
+    return text[:max_len]
+
+
+def _valid_email(email: str) -> bool:
+    return bool(_EMAIL_RE.match(str(email or "").strip()))
+
+
+def _hash_ip(ip: str) -> str:
+    raw = str(ip or "0.0.0.0").encode("utf-8", errors="ignore")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _lead_rate_ok(ip_hash: str) -> bool:
+    now = time.time()
+    with _LEAD_LOCK:
+        hits = _LEAD_HITS.get(ip_hash, [])
+        hits = [t for t in hits if now - t <= _LEAD_WINDOW_SECONDS]
+        if len(hits) >= _LEAD_MAX_PER_WINDOW:
+            _LEAD_HITS[ip_hash] = hits
+            return False
+        hits.append(now)
+        _LEAD_HITS[ip_hash] = hits
+    return True
+
+
+def _normalize_lang(value: str) -> str:
+    v = str(value or "").strip().lower()
+    if v.startswith("en"):
+        return "en"
+    return "cn"
+
+
+def _normalize_team_brief_lead(data: Dict, client_ip: str) -> Tuple[Dict, str]:
+    payload = data if isinstance(data, dict) else {}
+
+    # simple honeypot
+    if _normalize_text(payload.get("website"), 120):
+        return {}, "bot_detected"
+
+    name = _normalize_text(payload.get("name"), 80)
+    email = _normalize_text(payload.get("email"), 120)
+    company = _normalize_text(payload.get("company"), 120)
+    role = _normalize_text(payload.get("role"), 120)
+    country = _normalize_text(payload.get("country_region"), 80)
+    message = _normalize_text(payload.get("message"), 1200)
+
+    if not email or not _valid_email(email):
+        return {}, "invalid_email"
+    if not company:
+        return {}, "missing_company"
+    if not message:
+        return {}, "missing_message"
+
+    brief_need = _normalize_text(payload.get("brief_need"), 40).lower() or "custom"
+    if brief_need not in _ALLOWED_BRIEF_NEEDS:
+        brief_need = "custom"
+
+    budget = _normalize_text(payload.get("budget_range"), 40).lower() or "unknown"
+    if budget not in _ALLOWED_BUDGET_RANGES:
+        budget = "unknown"
+
+    lang = _normalize_lang(payload.get("lang"))
+    source_channel = _normalize_text(payload.get("source_channel"), 40).lower() or "direct"
+    utm_source = _normalize_text(payload.get("utm_source"), 80)
+    utm_campaign = _normalize_text(payload.get("utm_campaign"), 80)
+    utm_content = _normalize_text(payload.get("utm_content"), 120)
+
+    ip_hash = _hash_ip(client_ip)
+    if not _lead_rate_ok(ip_hash):
+        return {}, "rate_limited"
+
+    lead_id = f"tb-{datetime.utcnow().strftime('%Y%m%d')}-{os.urandom(3).hex()}"
+
+    lead = {
+        "lead_id": lead_id,
+        "created_at": _utc_now_iso(),
+        "name": name,
+        "email": email,
+        "company": company,
+        "role": role,
+        "country_region": country,
+        "brief_need": brief_need,
+        "budget_range": budget,
+        "message": message,
+        "lang": lang,
+        "source_channel": source_channel,
+        "utm_source": utm_source,
+        "utm_campaign": utm_campaign,
+        "utm_content": utm_content,
+        "ip_hash": ip_hash,
+        "status": "new",
+    }
+    return lead, ""
 
 
 def _append_funnel_event(
@@ -399,6 +528,35 @@ def _patched_do_post(self):
     try:
         parsed = urlparse(self.path)
         normalized_path = pcs._normalize_path(parsed.path)
+
+        if normalized_path == pcs._normalize_path(_TEAM_BRIEF_LEAD_ENDPOINT):
+            content_len = int(self.headers.get("Content-Length", 0))
+            raw = self.rfile.read(content_len) if content_len else b"{}"
+            try:
+                data = json.loads(raw.decode("utf-8")) if raw else {}
+            except json.JSONDecodeError:
+                self._json_response(400, {"ok": False, "error": "bad_json"})
+                return
+
+            lead, err = _normalize_team_brief_lead(data or {}, self.client_address[0] if self.client_address else "")
+            if err == "bot_detected":
+                self._json_response(200, {"ok": True})
+                return
+            if err:
+                code = 429 if err == "rate_limited" else 400
+                self._json_response(code, {"ok": False, "error": err})
+                return
+
+            _ORIGINAL_APPEND_JSONL(_team_brief_leads_path(self.config), lead)
+            try:
+                pcs._refresh_admin_orders()
+            except Exception:
+                pass
+            _refresh_team_brief_leads_page()
+
+            self._json_response(200, {"ok": True, "lead_id": lead.get("lead_id")})
+            return
+
         if normalized_path == pcs._normalize_path(_FUNNEL_ENDPOINT):
             content_len = int(self.headers.get("Content-Length", 0))
             raw = self.rfile.read(content_len) if content_len else b"{}"
