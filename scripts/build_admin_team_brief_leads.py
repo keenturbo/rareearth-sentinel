@@ -17,6 +17,7 @@ _LIST_ENDPOINT = "/api/admin/leads/team-brief/list"
 _UPDATE_ENDPOINT = "/api/admin/leads/team-brief/update"
 _EXPORT_ENDPOINT = "/api/admin/leads/team-brief/export"
 _EVENTS_ENDPOINT = "/api/admin/leads/team-brief/events"
+_INSERT_TEST_ENDPOINT = "/api/admin/leads/team-brief/insert-test"
 _CLEAR_TEST_ENDPOINT = "/api/admin/leads/team-brief/clear-test"
 
 _STATUS_ORDER = ["new", "contacted", "qualified", "won", "lost"]
@@ -67,6 +68,15 @@ def _to_dt_local(value):
     return text
 
 
+def _is_test_row(row):
+    if bool(row.get("test")):
+        return True
+    if str(row.get("source_channel") or "").strip().lower() == "admin_test":
+        return True
+    email = str(row.get("email") or "").strip().lower()
+    return email.startswith("admin-test-")
+
+
 def _render_items(rows):
     if not rows:
         return '<tr><td colspan="10" class="muted">暂无线索</td></tr>'
@@ -95,7 +105,7 @@ def _render_items(rows):
         status = str(r.get("status") or "new").strip().lower()
         owner = html.escape(str(r.get("owner") or ""))
         next_action = html.escape(_to_dt_local(r.get("next_action_at")))
-        is_test = bool(r.get("test"))
+        is_test = _is_test_row(r)
         test_badge = "<div class='muted' style='color:#d97706'>test</div>" if is_test else ""
 
         out.append(
@@ -166,6 +176,7 @@ def build_page(config):
         .replace("{{LEADS_UPDATE_ENDPOINT}}", _UPDATE_ENDPOINT)
         .replace("{{LEADS_EXPORT_ENDPOINT}}", _EXPORT_ENDPOINT)
         .replace("{{LEADS_EVENTS_ENDPOINT}}", _EVENTS_ENDPOINT)
+        .replace("{{LEADS_INSERT_TEST_ENDPOINT}}", _INSERT_TEST_ENDPOINT)
         .replace("{{LEADS_CLEAR_TEST_ENDPOINT}}", _CLEAR_TEST_ENDPOINT)
     )
 
