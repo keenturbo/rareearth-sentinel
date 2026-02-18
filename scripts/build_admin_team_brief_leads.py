@@ -16,6 +16,7 @@ from src.utils import isoformat, now_cst
 _LIST_ENDPOINT = "/api/admin/leads/team-brief/list"
 _UPDATE_ENDPOINT = "/api/admin/leads/team-brief/update"
 _EXPORT_ENDPOINT = "/api/admin/leads/team-brief/export"
+_EVENTS_ENDPOINT = "/api/admin/leads/team-brief/events"
 
 _STATUS_ORDER = ["new", "contacted", "qualified", "won", "lost"]
 _STATUS_LABEL = {
@@ -67,7 +68,7 @@ def _to_dt_local(value):
 
 def _render_items(rows):
     if not rows:
-        return '<tr><td colspan="9" class="muted">暂无线索</td></tr>'
+        return '<tr><td colspan="10" class="muted">暂无线索</td></tr>'
 
     out = []
     for r in rows[:300]:
@@ -115,6 +116,10 @@ def _render_items(rows):
             "<span class='save-msg muted'></span>"
             "</div>"
             "</td>"
+            "<td class='timeline-cell'>"
+            "<button class='timeline-btn'>查看时间线</button>"
+            "<div class='timeline-msg muted'></div>"
+            "</td>"
             "</tr>"
         )
     return "".join(out)
@@ -157,6 +162,7 @@ def build_page(config):
         .replace("{{LEADS_LIST_ENDPOINT}}", _LIST_ENDPOINT)
         .replace("{{LEADS_UPDATE_ENDPOINT}}", _UPDATE_ENDPOINT)
         .replace("{{LEADS_EXPORT_ENDPOINT}}", _EXPORT_ENDPOINT)
+        .replace("{{LEADS_EVENTS_ENDPOINT}}", _EVENTS_ENDPOINT)
     )
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
