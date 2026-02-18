@@ -105,7 +105,12 @@ textarea{width:100%;min-height:240px;border:1px solid #e2e8f0;border-radius:10px
 <script>
 (function(){
   const clean = (s='') => {
-    const raw = String(s || '').replace(/\r/g, '\n').replace(/\u00A0/g, ' ');
+    const raw = String(s || '')
+      .replace(/\\r\\n/g, '\n')
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '\n')
+      .replace(/\r/g, '\n')
+      .replace(/\u00A0/g, ' ');
     const lines = raw.split('\n').map(l => l.replace(/[ \t]+/g, ' ').trim());
     return lines.filter((l, i, arr) => !(l === '' && (i === 0 || i === arr.length - 1))).join('\n');
   };
