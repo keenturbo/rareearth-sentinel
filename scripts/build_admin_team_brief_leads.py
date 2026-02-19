@@ -45,6 +45,21 @@ _CLOSE_REASON_LABEL = {
     "unknown": "原因未知",
 }
 
+_TEMPLATE_LIBRARY = {
+    "basic": {
+        "cn": "【Team Brief 报价摘要】\n对象：{company} / {name}\n方案：basic\n报价：{amount}\n有效期：{valid}\n交付：月度关键矿产风险简报（4次），含行动建议与证据锚点。\n如确认，请回复“同意报价”。",
+        "en": "Team Brief Quote\nAccount: {company} / {name}\nPlan: basic\nPrice: {amount}\nValid until: {valid}\nDelivery: Monthly critical-minerals brief (4 updates) with action points and evidence anchors.\nPlease reply \"Accepted\" to proceed.",
+    },
+    "pro": {
+        "cn": "【Team Brief 报价摘要】\n对象：{company} / {name}\n方案：pro\n报价：{amount}\n有效期：{valid}\n交付：月度简报（8次）+ 每周风险清单 + 1次专项复盘。\n如确认，请回复“同意报价”。",
+        "en": "Team Brief Quote\nAccount: {company} / {name}\nPlan: pro\nPrice: {amount}\nValid until: {valid}\nDelivery: Monthly brief (8 updates) + weekly risk checklist + one thematic review.\nPlease reply \"Accepted\" to proceed.",
+    },
+    "custom": {
+        "cn": "【Team Brief 报价摘要】\n对象：{company} / {name}\n方案：custom\n报价：{amount}\n有效期：{valid}\n交付：按需求定制（范围、频率、交付物另行确认）。\n如确认，请回复“同意报价”。",
+        "en": "Team Brief Quote\nAccount: {company} / {name}\nPlan: custom\nPrice: {amount}\nValid until: {valid}\nDelivery: Customized scope/frequency/output to be confirmed with your team.\nPlease reply \"Accepted\" to proceed.",
+    },
+}
+
 
 def _read_jsonl(path):
     rows = []
@@ -183,6 +198,7 @@ def _render_items(rows):
         quote_currency = html.escape(str(r.get("quote_currency") or "USD"))
         quote_amount = html.escape(str(r.get("quote_amount") or ""))
         quote_plan = html.escape(str(r.get("quote_plan") or "basic"))
+        proposal_template = html.escape(str(r.get("proposal_template") or str(r.get("quote_plan") or "basic")))
         quote_valid_until_raw = str(r.get("quote_valid_until") or "")
         quote_valid_until = html.escape(quote_valid_until_raw)
         close_reason_code = str(r.get("close_reason_code") or "").strip().lower()
@@ -215,6 +231,8 @@ def _render_items(rows):
             "<td>"
             "<div class='quote-box'>"
             "<div class='action-row' style='margin-bottom:6px'>"
+            f"<select class='quote-template' style='max-width:110px'><option value='basic'{' selected' if proposal_template == 'basic' else ''}>basic模板</option><option value='pro'{' selected' if proposal_template == 'pro' else ''}>pro模板</option><option value='custom'{' selected' if proposal_template == 'custom' else ''}>custom模板</option></select>"
+            "<button class='apply-template-btn'>套用模板</button>"
             f"<select class='quote-currency' style='max-width:90px'><option value='USD'{' selected' if quote_currency == 'USD' else ''}>USD</option><option value='CNY'{' selected' if quote_currency == 'CNY' else ''}>CNY</option></select>"
             f"<input class='quote-amount' type='number' step='0.01' min='0' value='{quote_amount}' placeholder='报价金额' style='max-width:120px' />"
             f"<select class='quote-plan' style='max-width:110px'><option value='basic'{' selected' if quote_plan == 'basic' else ''}>basic</option><option value='pro'{' selected' if quote_plan == 'pro' else ''}>pro</option><option value='custom'{' selected' if quote_plan == 'custom' else ''}>custom</option></select>"
@@ -227,6 +245,10 @@ def _render_items(rows):
             "<button class='send-proposal-btn'>标记已发送报价</button>"
             "</div>"
             "<div class='quote-preview'></div>"
+            "</div>"
+            "<div class='action-row' style='margin-bottom:6px'>"
+            f"<select class='close-reason-select' style='max-width:220px'>{_reason_options(status, close_reason_code)}</select>"
+            "<input class='close-reason-note-input' type='text' placeholder='归因备注（可选）' value='" + close_reason_note + "' />"
             "</div>"
             "<textarea class='note-input' rows='2' placeholder='跟进备注（可选）'></textarea>"
             "<div class='action-row'>"
@@ -354,11 +376,15 @@ def _inject_upsell_script(html_doc: str) -> str:
     if marker not in html_doc:
         return html_doc
 
+    template_json = json.dumps(_TEMPLATE_LIBRARY, ensure_ascii=False)
+
     patch = r'''
 <script>
 (() => {
   const rowsEl = document.getElementById('leadsRows');
   if (!rowsEl) return;
+
+  const TEMPLATE_LIBRARY = __TEMPLATE_LIBRARY_JSON__;
 
   function esc(v){
     return String(v ?? '')
@@ -397,39 +423,35 @@ def _inject_upsell_script(html_doc: str) -> str:
       quote_currency: tr.querySelector('.quote-currency')?.value || 'USD',
       quote_amount: tr.querySelector('.quote-amount')?.value || '',
       quote_plan: tr.querySelector('.quote-plan')?.value || 'basic',
+      proposal_template: tr.querySelector('.quote-template')?.value || tr.querySelector('.quote-plan')?.value || 'basic',
       quote_valid_until: tr.querySelector('.quote-valid-until')?.value || '',
       company: tr.children[3]?.querySelector('div')?.textContent?.trim() || '',
       name: tr.children[2]?.querySelector('div')?.textContent?.trim() || '',
     };
   }
 
-  function upsellTextCN(lead){
-    const plan = 'Task Sprint（14天）';
-    const amount = lead.quote_amount ? `${lead.quote_currency || 'USD'} ${lead.quote_amount}` : '按方案报价';
-    const valid = lead.quote_valid_until || '以沟通确认为准';
-    return [
-      '【续购建议】',
-      `对象：${lead.company || '-'} / ${lead.name || '-'}`,
-      `推荐方案：${plan}`,
-      `参考报价：${amount}`,
-      `有效期：${valid}`,
-      '交付内容：14天关键矿产信号跟踪（含阈值、风险提示与动作建议）',
-      '如确认继续跟踪，请回复“继续跟踪”。'
-    ].join('\n');
+  function quoteTextCN(lead){
+    const tplKey = lead.proposal_template || lead.quote_plan || 'basic';
+    const tpl = (TEMPLATE_LIBRARY[tplKey] && TEMPLATE_LIBRARY[tplKey].cn) || (TEMPLATE_LIBRARY.basic && TEMPLATE_LIBRARY.basic.cn) || '';
+    const amount = lead.quote_amount ? `${lead.quote_currency || 'USD'} ${lead.quote_amount}` : '待确认';
+    const valid = lead.quote_valid_until || '待确认';
+    return tpl
+      .replaceAll('{company}', lead.company || '-')
+      .replaceAll('{name}', lead.name || '-')
+      .replaceAll('{amount}', amount)
+      .replaceAll('{valid}', valid);
   }
 
-  function upsellTextEN(lead){
+  function quoteTextEN(lead){
+    const tplKey = lead.proposal_template || lead.quote_plan || 'basic';
+    const tpl = (TEMPLATE_LIBRARY[tplKey] && TEMPLATE_LIBRARY[tplKey].en) || (TEMPLATE_LIBRARY.basic && TEMPLATE_LIBRARY.basic.en) || '';
     const amount = lead.quote_amount ? `${lead.quote_currency || 'USD'} ${lead.quote_amount}` : 'TBD';
     const valid = lead.quote_valid_until || 'TBD';
-    return [
-      'Upsell Recommendation',
-      `Account: ${lead.company || '-'} / ${lead.name || '-'}`,
-      'Suggested plan: Task Sprint (14 days)',
-      `Reference price: ${amount}`,
-      `Valid until: ${valid}`,
-      'Delivery: 14-day critical minerals signal tracking with thresholds, risk notes, and action points.',
-      'Please reply "Continue" if you want to proceed.'
-    ].join('\n');
+    return tpl
+      .replaceAll('{company}', lead.company || '-')
+      .replaceAll('{name}', lead.name || '-')
+      .replaceAll('{amount}', amount)
+      .replaceAll('{valid}', valid);
   }
 
   function ensureUpsellCard(tr){
@@ -475,6 +497,7 @@ def _inject_upsell_script(html_doc: str) -> str:
       quote_currency: lead.quote_currency,
       quote_amount: lead.quote_amount,
       quote_plan: lead.quote_plan,
+      proposal_template: lead.proposal_template,
       quote_valid_until: lead.quote_valid_until,
       note: `[upsell_sent] sku=${sku}`,
       operator: 'admin'
@@ -496,24 +519,61 @@ def _inject_upsell_script(html_doc: str) -> str:
     const tr = e.target.closest('tr[data-lead-id]');
     if (!tr) return;
 
-    const genBtn = e.target.closest('.gen-upsell-btn');
+    const applyTplBtn = e.target.closest('.apply-template-btn');
+    if (applyTplBtn){
+      const lead = getLeadFromRow(tr);
+      const selected = tr.querySelector('.quote-template')?.value || lead.proposal_template || lead.quote_plan || 'basic';
+      lead.proposal_template = selected;
+      tr.dataset.quoteCn = quoteTextCN(lead);
+      tr.dataset.quoteEn = quoteTextEN(lead);
+      tr.querySelector('.quote-preview')?.replaceChildren(document.createTextNode(tr.dataset.quoteCn || ''));
+      try {
+        const payload = {
+          lead_id: lead.lead_id,
+          status: lead.status,
+          owner: lead.owner,
+          next_action_at: lead.next_action_at,
+          quote_currency: lead.quote_currency,
+          quote_amount: lead.quote_amount,
+          quote_plan: lead.quote_plan,
+          proposal_template: selected,
+          quote_valid_until: lead.quote_valid_until,
+          proposal_template_applied: true,
+          operator: 'admin'
+        };
+        const res = await fetch('/api/admin/leads/team-brief/update', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          credentials: 'same-origin',
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data?.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      } catch(err){
+        const p = tr.querySelector('.quote-preview');
+        if (p) p.textContent = `模板记录失败：${err.message || err}`;
+      }
+      return;
+    }
+
+    const genBtn = e.target.closest('.gen-quote-btn');
     if (genBtn){
       const lead = getLeadFromRow(tr);
-      const cn = upsellTextCN(lead);
-      const en = upsellTextEN(lead);
-      tr.dataset.upsellCn = cn;
-      tr.dataset.upsellEn = en;
-      const p = tr.querySelector('.upsell-preview');
+      const cn = quoteTextCN(lead);
+      const en = quoteTextEN(lead);
+      tr.dataset.quoteCn = cn;
+      tr.dataset.quoteEn = en;
+      const p = tr.querySelector('.quote-preview');
       if (p) p.textContent = cn;
       return;
     }
 
-    const copyCnBtn = e.target.closest('.copy-upsell-cn-btn');
+    const copyCnBtn = e.target.closest('.copy-quote-cn-btn');
     if (copyCnBtn){
-      let text = tr.dataset.upsellCn || '';
+      let text = tr.dataset.quoteCn || '';
       if (!text){
-        text = upsellTextCN(getLeadFromRow(tr));
-        tr.dataset.upsellCn = text;
+        text = quoteTextCN(getLeadFromRow(tr));
+        tr.dataset.quoteCn = text;
       }
       const prev = copyCnBtn.textContent;
       try{
@@ -527,12 +587,12 @@ def _inject_upsell_script(html_doc: str) -> str:
       return;
     }
 
-    const copyEnBtn = e.target.closest('.copy-upsell-en-btn');
+    const copyEnBtn = e.target.closest('.copy-quote-en-btn');
     if (copyEnBtn){
-      let text = tr.dataset.upsellEn || '';
+      let text = tr.dataset.quoteEn || '';
       if (!text){
-        text = upsellTextEN(getLeadFromRow(tr));
-        tr.dataset.upsellEn = text;
+        text = quoteTextEN(getLeadFromRow(tr));
+        tr.dataset.quoteEn = text;
       }
       const prev = copyEnBtn.textContent;
       try{
@@ -577,7 +637,7 @@ def _inject_upsell_script(html_doc: str) -> str:
   decorateWonRows();
 })();
 </script>
-'''
+'''.replace('__TEMPLATE_LIBRARY_JSON__', template_json)
 
     return html_doc.replace(marker, patch + "\n" + marker)
 
