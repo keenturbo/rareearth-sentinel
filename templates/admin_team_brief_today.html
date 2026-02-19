@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>管理员 · 团队简报今日执行清单</title>
+<style>
+:root{--ink:#0b1220;--muted:#536170;--bg:#f7f9fc;--card:#ffffff;--accent:#1d4ed8;--warn:#d97706;--danger:#dc2626;--ok:#16a34a}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans",sans-serif;background:linear-gradient(180deg,#f7f9fc,#e9eef5);color:var(--ink)}
+.container{max-width:1280px;margin:0 auto;padding:22px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+header h1{margin:0;font-size:20px}
+header .sub{font-size:12px;color:var(--muted)}
+.header-links{display:flex;gap:8px;flex-wrap:wrap}
+.header-links a{text-decoration:none;color:var(--muted)}
+.header-links a:hover{color:var(--accent)}
+.section{background:#fff;border-radius:12px;padding:14px;box-shadow:0 6px 14px rgba(0,0,0,.05)}
+.cards{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:10px;margin-bottom:12px}
+.card{border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#fff}
+.card .k{font-size:12px;color:var(--muted)}
+.card .v{font-size:20px;font-weight:700}
+.card.warn .v{color:var(--warn)}
+.card.danger .v{color:var(--danger)}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.toolbar button{height:32px;border:1px solid #dbe3ec;border-radius:8px;background:#fff;padding:0 10px;cursor:pointer}
+.toolbar .primary{background:#1d4ed8;border-color:#1d4ed8;color:#fff}
+.grid{display:grid;grid-template-columns:1fr;gap:10px}
+.block{border:1px solid #e5e7eb;border-radius:10px;background:#fafcff;overflow:hidden}
+.block h3{margin:0;padding:10px 12px;font-size:14px;border-bottom:1px solid #e5e7eb;background:#f8fafc}
+.block .actions{padding:8px 12px;border-bottom:1px solid #e5e7eb;display:flex;gap:8px;flex-wrap:wrap}
+.block .actions button{height:28px;border:1px solid #dbe3ec;border-radius:999px;background:#fff;padding:0 12px;cursor:pointer}
+.table-wrap{overflow:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{padding:8px;border-top:1px solid #eef2f7;text-align:left;vertical-align:top}
+th{white-space:nowrap;background:#f8fafc;color:#334155}
+.muted{color:#6b7280}
+.mark-btn{height:28px;border:1px solid #1d4ed8;background:#1d4ed8;color:#fff;border-radius:6px;padding:0 10px;cursor:pointer}
+.mark-btn.done{background:#16a34a;border-color:#16a34a}
+@media (max-width:980px){.cards{grid-template-columns:repeat(2,minmax(140px,1fr))}}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>管理员 · 团队简报今日执行清单</h1>
+      <div class="sub">更新 {{LAST_UPDATE}}</div>
+    </div>
+    <div class="header-links">
+      <a href="/cn/admin/leads/team-brief/">团队简报线索</a>
+      <span>·</span>
+      <a href="/cn/admin/funnel/">漏斗</a>
+      <span>·</span>
+      <a href="/cn/admin/orders/">订单</a>
+      <span>·</span>
+      <a href="/cn/">返回中文首页</a>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="cards">
+      <div class="card"><div class="k">高优先（qualified）</div><div class="v" id="cntHigh">0</div></div>
+      <div class="card"><div class="k">今日待跟进</div><div class="v" id="cntToday">0</div></div>
+      <div class="card danger"><div class="k">已逾期</div><div class="v" id="cntOverdue">0</div></div>
+      <div class="card warn"><div class="k">报价3天内到期</div><div class="v" id="cntExpiring">0</div></div>
+    </div>
+
+    <div class="toolbar">
+      <button id="btnRefresh" class="primary">刷新</button>
+      <button id="btnCopyMaster">复制今日总清单</button>
+      <button id="btnExportMaster">导出今日总清单CSV</button>
+      <span id="msg" class="muted"></span>
+    </div>
+
+    <div class="grid">
+      <div class="block" id="blockHigh">
+        <h3>高优先（qualified 且未报价）</h3>
+        <div class="actions">
+          <button data-copy="high">复制</button>
+          <button data-export="high">导出CSV</button>
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>线索ID</th><th>公司</th><th>负责人</th><th>状态</th><th>下次跟进</th><th>到期</th><th>操作</th></tr></thead><tbody id="rowsHigh"><tr><td colspan="7" class="muted">加载中...</td></tr></tbody></table></div>
+      </div>
+
+      <div class="block" id="blockToday">
+        <h3>今日待跟进</h3>
+        <div class="actions">
+          <button data-copy="today">复制</button>
+          <button data-export="today">导出CSV</button>
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>线索ID</th><th>公司</th><th>负责人</th><th>状态</th><th>下次跟进</th><th>到期</th><th>操作</th></tr></thead><tbody id="rowsToday"><tr><td colspan="7" class="muted">加载中...</td></tr></tbody></table></div>
+      </div>
+
+      <div class="block" id="blockOverdue">
+        <h3>已逾期</h3>
+        <div class="actions">
+          <button data-copy="overdue">复制</button>
+          <button data-export="overdue">导出CSV</button>
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>线索ID</th><th>公司</th><th>负责人</th><th>状态</th><th>下次跟进</th><th>到期</th><th>操作</th></tr></thead><tbody id="rowsOverdue"><tr><td colspan="7" class="muted">加载中...</td></tr></tbody></table></div>
+      </div>
+
+      <div class="block" id="blockExpiring">
+        <h3>报价3天内到期</h3>
+        <div class="actions">
+          <button data-copy="expiring">复制</button>
+          <button data-export="expiring">导出CSV</button>
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>线索ID</th><th>公司</th><th>负责人</th><th>状态</th><th>下次跟进</th><th>到期</th><th>操作</th></tr></thead><tbody id="rowsExpiring"><tr><td colspan="7" class="muted">加载中...</td></tr></tbody></table></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const TODAY_LIST_ENDPOINT = String("{{TODAY_LIST_ENDPOINT}}" || '/api/admin/leads/team-brief/today-list').trim();
+  const LIST_ENDPOINT = String("{{LEADS_LIST_ENDPOINT}}" || '/api/admin/leads/team-brief/list').trim();
+  const UPDATE_ENDPOINT = String("{{LEADS_UPDATE_ENDPOINT}}" || '/api/admin/leads/team-brief/update').trim();
+
+  const rowsHigh = document.getElementById('rowsHigh');
+  const rowsToday = document.getElementById('rowsToday');
+  const rowsOverdue = document.getElementById('rowsOverdue');
+  const rowsExpiring = document.getElementById('rowsExpiring');
+  const msg = document.getElementById('msg');
+
+  const cntHigh = document.getElementById('cntHigh');
+  const cntToday = document.getElementById('cntToday');
+  const cntOverdue = document.getElementById('cntOverdue');
+  const cntExpiring = document.getElementById('cntExpiring');
+
+  const btnRefresh = document.getElementById('btnRefresh');
+  const btnCopyMaster = document.getElementById('btnCopyMaster');
+  const btnExportMaster = document.getElementById('btnExportMaster');
+
+  let latest = {high_priority:[], today:[], overdue:[], expiring:[]};
+
+  function esc(v){
+    return String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
+  }
+
+  function safeUrl(ep, query=''){
+    const rel = ep.startsWith('/') ? ep : ('/' + ep);
+    const u = new URL(rel, window.location.origin);
+    if (query) u.search = query;
+    return u.toString();
+  }
+
+  async function safeFetch(ep, options={}){
+    const opts = Object.assign({}, options || {});
+    const query = opts.query || '';
+    delete opts.query;
+    return fetch(safeUrl(ep, query), Object.assign({credentials:'same-origin'}, opts));
+  }
+
+  function parseDt(v){
+    const d = new Date(String(v||''));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  function fmt(v){
+    return String(v||'').replace('T',' ').replace('Z','').slice(0,16);
+  }
+
+  function tableRow(x){
+    const leadId = esc(x.lead_id || '');
+    const company = esc(x.company || '-');
+    const owner = esc(x.owner || '未分配');
+    const status = esc(x.status || 'new');
+    const nextAction = esc(fmt(x.next_action_at || ''));
+    const qvu = esc(x.quote_valid_until || '-');
+    return `<tr data-lead-id="${leadId}">
+      <td>${leadId}</td>
+      <td>${company}</td>
+      <td>${owner}</td>
+      <td>${status}</td>
+      <td>${nextAction || '-'}</td>
+      <td>${qvu}</td>
+      <td><button class="mark-btn" data-mark="${leadId}">标记已处理</button></td>
+    </tr>`;
+  }
+
+  function renderSection(el, rows){
+    const arr = Array.isArray(rows) ? rows : [];
+    if (!arr.length){
+      el.innerHTML = '<tr><td colspan="7" class="muted">暂无数据</td></tr>';
+      return;
+    }
+    el.innerHTML = arr.map(tableRow).join('');
+  }
+
+  function deriveFromLeads(leads){
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const expEnd = new Date(today); expEnd.setDate(today.getDate()+3);
+    const active = (Array.isArray(leads)?leads:[]).filter(x => !['won','lost'].includes(String(x.status||'').toLowerCase()));
+
+    const high = active.filter(x => String(x.status||'').toLowerCase()==='qualified');
+    const dueToday = active.filter(x => {
+      const d = parseDt(x.next_action_at);
+      if (!d) return false;
+      const dd = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      return dd.getTime() === today.getTime();
+    });
+    const overdue = active.filter(x => {
+      const d = parseDt(x.next_action_at);
+      return !!d && d.getTime() < now.getTime();
+    });
+    const expiring = active.filter(x => {
+      const s = String(x.quote_valid_until||'').slice(0,10);
+      if (!s) return false;
+      const d = new Date(s + 'T00:00:00');
+      if (Number.isNaN(d.getTime())) return false;
+      return d.getTime() >= today.getTime() && d.getTime() <= expEnd.getTime();
+    });
+    return {high_priority: high, today: dueToday, overdue, expiring};
+  }
+
+  function setCounts(data){
+    cntHigh.textContent = String((data.high_priority||[]).length);
+    cntToday.textContent = String((data.today||[]).length);
+    cntOverdue.textContent = String((data.overdue||[]).length);
+    cntExpiring.textContent = String((data.expiring||[]).length);
+  }
+
+  function toSummary(title, rows){
+    const arr = Array.isArray(rows)?rows:[];
+    const lines = [`【${title}】`];
+    if (!arr.length){
+      lines.push('暂无');
+      return lines.join('\n');
+    }
+    arr.forEach((x,i)=>{
+      lines.push(`${i+1}. ${x.lead_id||'-'} | ${x.company||'-'} | 负责人:${x.owner||'未分配'} | 状态:${x.status||'-'} | 下次:${fmt(x.next_action_at||'')||'-'} | 到期:${x.quote_valid_until||'-'}`);
+    });
+    return lines.join('\n');
+  }
+
+  async function copyText(text){
+    const t = String(text||'');
+    if (!t) return false;
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(t);
+      return true;
+    }
+    const ta = document.createElement('textarea');
+    ta.value = t;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return !!ok;
+  }
+
+  function csvEscape(v){
+    const s = String(v ?? '');
+    if (s.includes('"') || s.includes(',') || s.includes('\n')) return '"' + s.replaceAll('"','""') + '"';
+    return s;
+  }
+
+  function exportCsv(filename, rows){
+    const cols = ['lead_id','company','owner','status','next_action_at','quote_valid_until','source_channel'];
+    const lines = [cols.join(',')];
+    (rows||[]).forEach(x => lines.push(cols.map(k => csvEscape(x[k]||'')).join(',')));
+    const blob = new Blob(['\uFEFF' + lines.join('\n')], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function markHandled(leadId){
+    const lead = [...latest.high_priority, ...latest.today, ...latest.overdue, ...latest.expiring].find(x => String(x.lead_id||'')===String(leadId||''));
+    if (!lead) throw new Error('lead_not_found');
+
+    const payload = {
+      lead_id: lead.lead_id,
+      status: lead.status || 'new',
+      owner: lead.owner || '',
+      next_action_at: lead.next_action_at || '',
+      quote_currency: lead.quote_currency || 'USD',
+      quote_amount: lead.quote_amount || '',
+      quote_plan: lead.quote_plan || 'basic',
+      quote_valid_until: lead.quote_valid_until || '',
+      note: `[handled_today ${new Date().toISOString().slice(0,10)}]`,
+      operator: 'admin'
+    };
+
+    const res = await safeFetch(UPDATE_ENDPOINT, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+    return true;
+  }
+
+  async function loadToday(){
+    btnRefresh.disabled = true;
+    msg.textContent = '加载中...';
+    try{
+      let data = null;
+      const r0 = await safeFetch(TODAY_LIST_ENDPOINT, {query:'limit=800'});
+      if (r0.ok){
+        const j0 = await r0.json().catch(()=>null);
+        if (j0 && j0.ok){
+          data = {
+            high_priority: Array.isArray(j0.high_priority) ? j0.high_priority : [],
+            today: Array.isArray(j0.today) ? j0.today : [],
+            overdue: Array.isArray(j0.overdue) ? j0.overdue : [],
+            expiring: Array.isArray(j0.expiring) ? j0.expiring : []
+          };
+        }
+      }
+
+      if (!data){
+        const r1 = await safeFetch(LIST_ENDPOINT, {query:'limit=800'});
+        const j1 = await r1.json();
+        if (!r1.ok || !j1?.ok) throw new Error(j1?.error || `HTTP ${r1.status}`);
+        data = deriveFromLeads(Array.isArray(j1.leads) ? j1.leads : []);
+      }
+
+      latest = data;
+      setCounts(latest);
+      renderSection(rowsHigh, latest.high_priority);
+      renderSection(rowsToday, latest.today);
+      renderSection(rowsOverdue, latest.overdue);
+      renderSection(rowsExpiring, latest.expiring);
+      msg.textContent = '已更新';
+    }catch(err){
+      msg.textContent = `加载失败：${err.message || err}`;
+      rowsHigh.innerHTML = rowsToday.innerHTML = rowsOverdue.innerHTML = rowsExpiring.innerHTML = '<tr><td colspan="7" class="muted">加载失败</td></tr>';
+      setCounts({high_priority:[],today:[],overdue:[],expiring:[]});
+    }finally{
+      btnRefresh.disabled = false;
+    }
+  }
+
+  document.addEventListener('click', async (e) => {
+    const btnMark = e.target.closest('[data-mark]');
+    if (btnMark){
+      const leadId = btnMark.getAttribute('data-mark') || '';
+      btnMark.disabled = true;
+      try{
+        await markHandled(leadId);
+        btnMark.classList.add('done');
+        btnMark.textContent = '已记录';
+        await loadToday();
+      }catch(err){
+        alert(`标记失败：${err.message || err}`);
+      }finally{
+        btnMark.disabled = false;
+      }
+      return;
+    }
+
+    const btnCopy = e.target.closest('[data-copy]');
+    if (btnCopy){
+      const key = btnCopy.getAttribute('data-copy');
+      const rows = latest[key] || [];
+      const titleMap = {high:'高优先', today:'今日待跟进', overdue:'已逾期', expiring:'报价将到期'};
+      const ok = await copyText(toSummary(titleMap[key] || '清单', rows)).catch(()=>false);
+      alert(ok ? '已复制' : '复制失败');
+      return;
+    }
+
+    const btnExport = e.target.closest('[data-export]');
+    if (btnExport){
+      const key = btnExport.getAttribute('data-export');
+      const rows = latest[key] || [];
+      const day = new Date().toISOString().slice(0,10);
+      exportCsv(`team-brief-${key}-${day}.csv`, rows);
+      return;
+    }
+  });
+
+  btnRefresh.addEventListener('click', loadToday);
+
+  btnCopyMaster.addEventListener('click', async () => {
+    const text = [
+      toSummary('高优先', latest.high_priority),
+      '',
+      toSummary('今日待跟进', latest.today),
+      '',
+      toSummary('已逾期', latest.overdue),
+      '',
+      toSummary('报价将到期', latest.expiring)
+    ].join('\n');
+    const ok = await copyText(text).catch(()=>false);
+    alert(ok ? '已复制今日总清单' : '复制失败');
+  });
+
+  btnExportMaster.addEventListener('click', () => {
+    const rows = [
+      ...(latest.high_priority || []),
+      ...(latest.today || []),
+      ...(latest.overdue || []),
+      ...(latest.expiring || [])
+    ];
+    const uniq = [];
+    const seen = new Set();
+    for (const x of rows){
+      const id = String(x.lead_id || '');
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      uniq.push(x);
+    }
+    exportCsv(`team-brief-master-${new Date().toISOString().slice(0,10)}.csv`, uniq);
+  });
+
+  loadToday();
+})();
+</script>
+</body>
+</html>
