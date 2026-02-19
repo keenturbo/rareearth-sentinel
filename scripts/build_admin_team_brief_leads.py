@@ -582,6 +582,18 @@ def _inject_upsell_script(html_doc: str) -> str:
     return html_doc.replace(marker, patch + "\n" + marker)
 
 
+def _ensure_weekly_nav_link(html_doc: str) -> str:
+    if "/cn/admin/leads/team-brief/weekly/" in html_doc:
+        return html_doc
+    target = '<a href="/cn/admin/leads/team-brief/">团队简报线索</a>'
+    replacement = (
+        '<a href="/cn/admin/leads/team-brief/">团队简报线索</a>\n'
+        '      <span>·</span>\n'
+        '      <a href="/cn/admin/leads/team-brief/weekly/">周报</a>'
+    )
+    return html_doc.replace(target, replacement, 1)
+
+
 def build_page(config):
     leads_path = os.path.join(config.data_dir, "pay", "team_brief_leads.jsonl")
     template_path = os.path.join(ROOT, "templates", "admin_team_brief_leads.html")
@@ -625,6 +637,7 @@ def build_page(config):
     )
 
     html_out = _inject_upsell_script(html_out)
+    html_out = _ensure_weekly_nav_link(html_out)
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:

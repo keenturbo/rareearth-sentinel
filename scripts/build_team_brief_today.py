@@ -14,6 +14,18 @@ _LIST_ENDPOINT = "/api/admin/leads/team-brief/list"
 _UPDATE_ENDPOINT = "/api/admin/leads/team-brief/update"
 
 
+def _ensure_weekly_nav_link(html_doc: str) -> str:
+    if "/cn/admin/leads/team-brief/weekly/" in html_doc:
+        return html_doc
+    target = '<a href="/cn/admin/leads/team-brief/">团队简报线索</a>'
+    replacement = (
+        '<a href="/cn/admin/leads/team-brief/">团队简报线索</a>\n'
+        '      <span>·</span>\n'
+        '      <a href="/cn/admin/leads/team-brief/weekly/">周报</a>'
+    )
+    return html_doc.replace(target, replacement, 1)
+
+
 def build_page(config: Config):
     template_path = os.path.join(ROOT, "templates", "admin_team_brief_today.html")
     output_path = os.path.join(config.static_dir, "cn", "admin", "leads", "team-brief", "today", "index.html")
@@ -30,6 +42,7 @@ def build_page(config: Config):
         .replace("{{LEADS_LIST_ENDPOINT}}", _LIST_ENDPOINT)
         .replace("{{LEADS_UPDATE_ENDPOINT}}", _UPDATE_ENDPOINT)
     )
+    html_out = _ensure_weekly_nav_link(html_out)
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
