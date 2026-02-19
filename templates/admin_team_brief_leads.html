@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>管理员 · Team Brief 线索</title>
+<title>管理员 · 团队简报线索</title>
 <style>
 :root{--ink:#0b1220;--muted:#536170;--bg:#f7f9fc;--card:#ffffff;--accent:#1d4ed8;--ok:#16a34a;--warn:#d97706}
 *{box-sizing:border-box}
@@ -68,7 +68,7 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
 <div class="container">
   <header>
     <div>
-      <h1>管理员 · Team Brief 线索</h1>
+      <h1>管理员 · 团队简报线索</h1>
       <div class="sub">总数 {{TOTAL_COUNT}} · 更新 {{LAST_UPDATE}}</div>
     </div>
     <div class="sub header-links">
@@ -84,7 +84,7 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
       <span>·</span>
       <a href="/cn/admin/keywords/">关键词</a>
       <span>·</span>
-      <a href="/cn/admin/leads/team-brief/">Team Brief线索</a>
+      <a href="/cn/admin/leads/team-brief/">团队简报线索</a>
       <span>·</span>
       <a href="/cn/admin/products/validate/">产品校验</a>
       <span>·</span>
@@ -179,6 +179,22 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
   const EVENTS_ENDPOINT = normEndpoint("{{LEADS_EVENTS_ENDPOINT}}", "/api/admin/leads/team-brief/events");
   const INSERT_TEST_ENDPOINT = normEndpoint("{{LEADS_INSERT_TEST_ENDPOINT}}", "/api/admin/leads/team-brief/insert-test");
   const CLEAR_TEST_ENDPOINT = normEndpoint("{{LEADS_CLEAR_TEST_ENDPOINT}}", "/api/admin/leads/team-brief/clear-test");
+
+  function safeApiUrl(endpoint, query){
+    const ep = String(endpoint || '').trim();
+    const rel = ep.startsWith('/') ? ep : ('/' + ep);
+    const u = new URL(rel, window.location.origin);
+    if (query) u.search = String(query);
+    return u.toString();
+  }
+
+  async function safeFetch(endpoint, options = {}){
+    const opts = Object.assign({}, options || {});
+    const query = opts.query || '';
+    delete opts.query;
+    const url = safeApiUrl(endpoint, query);
+    return fetch(url, Object.assign({credentials: 'same-origin'}, opts));
+  }
 
   const rowsEl = document.getElementById("leadsRows");
   const statTotal = document.getElementById("statTotal");
@@ -351,7 +367,7 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
   }
 
   async function insertTestLead(){
-    const res = await fetch(INSERT_TEST_ENDPOINT, {
+    const res = await safeFetch(INSERT_TEST_ENDPOINT, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({operator: 'admin'}),
@@ -364,7 +380,7 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
   }
 
   async function clearTestLeads(){
-    const res = await fetch(CLEAR_TEST_ENDPOINT, {
+    const res = await safeFetch(CLEAR_TEST_ENDPOINT, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({operator: 'admin'}),
@@ -418,7 +434,7 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
     btnRefresh.disabled = true;
     try{
       const qs = buildQuery();
-      const res = await fetch(`${LIST_ENDPOINT}?${qs}`);
+      const res = await safeFetch(LIST_ENDPOINT, { query: qs });
       const data = await res.json();
       if (!res.ok || !data?.ok){
         throw new Error(data?.error || `HTTP ${res.status}`);
@@ -432,7 +448,7 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
       setStats(data.stats || {}, data.total || leads.length);
       renderOwnerBoard(leads);
     }catch(err){
-      alert(`加载失败：${err.message || err}`);
+      console.error("loadLeads failed:", err); rowsEl.innerHTML = `<tr><td colspan="10"><div class="muted">加载失败：${esc(err.message || err)}（可点“刷新”重试）</div></td></tr>`;
     }finally{
       btnRefresh.disabled = false;
     }
@@ -454,7 +470,7 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
     lastTimelineEvents = [];
     openModal();
     try{
-      const res = await fetch(`${EVENTS_ENDPOINT}?lead_id=${encodeURIComponent(leadId)}&limit=100`);
+      const res = await safeFetch(EVENTS_ENDPOINT, { query: `lead_id=${encodeURIComponent(leadId)}&limit=100` });
       const data = await res.json();
       if (!res.ok || !data?.ok){
         throw new Error(data?.error || `HTTP ${res.status}`);
@@ -551,7 +567,7 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
     if (saveBtn) saveBtn.disabled = true;
     if (msg){ msg.textContent = '保存中...'; msg.className = 'save-msg muted'; }
     try{
-      const res = await fetch(UPDATE_ENDPOINT, {
+      const res = await safeFetch(UPDATE_ENDPOINT, {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify(payload),
@@ -723,7 +739,7 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
 
   btnExport.addEventListener("click", () => {
     const qs = buildQuery();
-    window.open(`${EXPORT_ENDPOINT}?${qs}`, "_blank");
+    window.open(safeApiUrl(EXPORT_ENDPOINT, qs), "_blank");
   });
 
   btnClearTest.addEventListener('click', async () => {
