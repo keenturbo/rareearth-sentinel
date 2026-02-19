@@ -206,8 +206,12 @@ def _render_items(rows):
             f"<input class='next-action-input' type='datetime-local' value='{next_action}' />"
             f"<div class='muted' style='margin-top:4px'>报价: {quote_currency} {quote_amount} / {quote_plan} / {quote_valid_until}</div>"
             f"<div class='muted' style='margin-top:4px'>归因: {close_reason_text or '-'}</div>"
-            (f"<div class='muted' style='margin-top:2px'>{close_reason_note}</div>" if close_reason_note else "")
-            "</td>"
+            + (
+                f"<div class='muted' style='margin-top:2px'>{close_reason_note}</div>"
+                if close_reason_note
+                else ""
+            )
+            + "</td>"
             "<td>"
             "<div class='quote-box'>"
             "<div class='action-row' style='margin-bottom:6px'>"
