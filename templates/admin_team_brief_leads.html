@@ -167,12 +167,18 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
 
 <script>
 (() => {
-  const LIST_ENDPOINT = "{{LEADS_LIST_ENDPOINT}}";
-  const UPDATE_ENDPOINT = "{{LEADS_UPDATE_ENDPOINT}}";
-  const EXPORT_ENDPOINT = "{{LEADS_EXPORT_ENDPOINT}}";
-  const EVENTS_ENDPOINT = "{{LEADS_EVENTS_ENDPOINT}}";
-  const INSERT_TEST_ENDPOINT = "{{LEADS_INSERT_TEST_ENDPOINT}}";
-  const CLEAR_TEST_ENDPOINT = "{{LEADS_CLEAR_TEST_ENDPOINT}}";
+  function normEndpoint(v, fallback){
+    const s = String(v || '').trim();
+    if (!s || s.includes('{') || s.includes('}')) return fallback;
+    return s;
+  }
+
+  const LIST_ENDPOINT = normEndpoint("{{LEADS_LIST_ENDPOINT}}", "/api/admin/leads/team-brief/list");
+  const UPDATE_ENDPOINT = normEndpoint("{{LEADS_UPDATE_ENDPOINT}}", "/api/admin/leads/team-brief/update");
+  const EXPORT_ENDPOINT = normEndpoint("{{LEADS_EXPORT_ENDPOINT}}", "/api/admin/leads/team-brief/export");
+  const EVENTS_ENDPOINT = normEndpoint("{{LEADS_EVENTS_ENDPOINT}}", "/api/admin/leads/team-brief/events");
+  const INSERT_TEST_ENDPOINT = normEndpoint("{{LEADS_INSERT_TEST_ENDPOINT}}", "/api/admin/leads/team-brief/insert-test");
+  const CLEAR_TEST_ENDPOINT = normEndpoint("{{LEADS_CLEAR_TEST_ENDPOINT}}", "/api/admin/leads/team-brief/clear-test");
 
   const rowsEl = document.getElementById("leadsRows");
   const statTotal = document.getElementById("statTotal");
