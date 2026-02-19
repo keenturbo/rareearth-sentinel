@@ -17,6 +17,9 @@ header .sub{font-size:12px;color:var(--muted)}
 .header-links a:hover{color:var(--accent)}
 .section{background:#fff;border-radius:12px;padding:16px;box-shadow:0 6px 14px rgba(0,0,0,0.05)}
 .path{font-size:12px;color:var(--muted);margin-bottom:10px;word-break:break-all}
+.dashboard-sticky{position:sticky;top:0;z-index:30;background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px;box-shadow:0 4px 12px rgba(15,23,42,.06);margin-bottom:12px}
+.dashboard-sticky .stats{margin-bottom:10px}
+.dashboard-sticky .owner-board{margin-bottom:10px}
 .stats{display:grid;grid-template-columns:repeat(5,minmax(110px,1fr));gap:10px;margin-bottom:12px}
 .stat{background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px}
 .stat .k{font-size:12px;color:var(--muted)}
@@ -66,6 +69,7 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
 @media (max-width:980px){
   .stats{grid-template-columns:repeat(2,minmax(120px,1fr))}
   .owner-board{grid-template-columns:repeat(2,minmax(140px,1fr))}
+  .dashboard-sticky{position:static}
 }
 </style>
 </head>
@@ -102,52 +106,57 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
   <section class="section">
     <div class="path">leads: {{LEADS_PATH}}</div>
 
-    <div class="stats">
-      <div class="stat"><div class="k">总线索</div><div class="v" id="statTotal">{{TOTAL_COUNT}}</div></div>
-      <div class="stat"><div class="k">新线索</div><div class="v" id="statNew">{{NEW_COUNT}}</div></div>
-      <div class="stat"><div class="k">已联系</div><div class="v" id="statContacted">{{CONTACTED_COUNT}}</div></div>
-      <div class="stat"><div class="k">已评估</div><div class="v" id="statQualified">{{QUALIFIED_COUNT}}</div></div>
-      <div class="stat"><div class="k">已发送报价</div><div class="v" id="statProposalSent">{{PROPOSAL_SENT_COUNT}}</div></div>
-      <div class="stat"><div class="k">已成交</div><div class="v" id="statWon">{{WON_COUNT}}</div></div>
-      <div class="stat"><div class="k">已丢失</div><div class="v" id="statLost">{{LOST_COUNT}}</div></div>
-      <div class="stat"><div class="k">今日待跟进</div><div class="v" id="statDueToday">{{FOLLOWUP_TODAY_COUNT}}</div></div>
-      <div class="stat danger"><div class="k">已逾期</div><div class="v" id="statOverdue">{{OVERDUE_COUNT}}</div></div>
-      <div class="stat warn"><div class="k">报价3天内到期</div><div class="v" id="statQuoteExpiring">{{QUOTE_EXPIRING_COUNT}}</div></div>
-    </div>
+    <div class="dashboard-sticky">
+      <div class="stats">
+        <div class="stat"><div class="k">总线索</div><div class="v" id="statTotal">{{TOTAL_COUNT}}</div></div>
+        <div class="stat"><div class="k">新线索</div><div class="v" id="statNew">{{NEW_COUNT}}</div></div>
+        <div class="stat"><div class="k">已联系</div><div class="v" id="statContacted">{{CONTACTED_COUNT}}</div></div>
+        <div class="stat"><div class="k">已评估</div><div class="v" id="statQualified">{{QUALIFIED_COUNT}}</div></div>
+        <div class="stat"><div class="k">已发送报价</div><div class="v" id="statProposalSent">{{PROPOSAL_SENT_COUNT}}</div></div>
+        <div class="stat"><div class="k">已成交</div><div class="v" id="statWon">{{WON_COUNT}}</div></div>
+        <div class="stat"><div class="k">已丢失</div><div class="v" id="statLost">{{LOST_COUNT}}</div></div>
+        <div class="stat"><div class="k">今日待跟进</div><div class="v" id="statDueToday">{{FOLLOWUP_TODAY_COUNT}}</div></div>
+        <div class="stat danger"><div class="k">已逾期</div><div class="v" id="statOverdue">{{OVERDUE_COUNT}}</div></div>
+        <div class="stat warn"><div class="k">报价3天内到期</div><div class="v" id="statQuoteExpiring">{{QUOTE_EXPIRING_COUNT}}</div></div>
+      </div>
 
-    <div class="stats" style="grid-template-columns:repeat(4,minmax(120px,1fr));margin-top:-2px;">
-      <div class="stat"><div class="k">新线索→已联系</div><div class="v" id="rateContacted">{{RATE_CONTACTED}}</div></div>
-      <div class="stat"><div class="k">已联系→已评估</div><div class="v" id="rateQualified">{{RATE_QUALIFIED}}</div></div>
-      <div class="stat"><div class="k">已评估→已报价</div><div class="v" id="rateProposal">{{RATE_PROPOSAL}}</div></div>
-      <div class="stat"><div class="k">已报价→成交</div><div class="v" id="rateWon">{{RATE_WON}}</div></div>
-    </div>
+      <div class="stats" style="grid-template-columns:repeat(4,minmax(120px,1fr));margin-top:-2px;">
+        <div class="stat"><div class="k">新线索→已联系</div><div class="v" id="rateContacted">{{RATE_CONTACTED}}</div></div>
+        <div class="stat"><div class="k">已联系→已评估</div><div class="v" id="rateQualified">{{RATE_QUALIFIED}}</div></div>
+        <div class="stat"><div class="k">已评估→已报价</div><div class="v" id="rateProposal">{{RATE_PROPOSAL}}</div></div>
+        <div class="stat"><div class="k">已报价→成交</div><div class="v" id="rateWon">{{RATE_WON}}</div></div>
+      </div>
 
-    <div id="ownerBoard" class="owner-board">{{OWNER_BOARD_ITEMS}}</div>
-    <div id="channelBoard" class="owner-board">{{CHANNEL_BOARD_ITEMS}}</div>
+      <div id="ownerBoard" class="owner-board">{{OWNER_BOARD_ITEMS}}</div>
+      <div id="channelBoard" class="owner-board">{{CHANNEL_BOARD_ITEMS}}</div>
 
-    <div class="toolbar">
-      <select id="filterStatus">
-        <option value="">全部状态</option>
-        <option value="new">新线索</option>
-        <option value="contacted">已联系</option>
-        <option value="qualified">已评估</option>
-        <option value="proposal_sent">已发送报价</option>
-        <option value="won">已成交</option>
-        <option value="lost">已丢失</option>
-      </select>
-      <input id="filterOwner" type="text" placeholder="负责人（可选）" />
-      <input id="filterQ" type="text" placeholder="关键词（姓名/公司/邮箱）" />
-      <button id="btnRefresh" class="primary">刷新</button>
-      <button id="btnExport">导出CSV</button>
-      <button id="btnClearTest">清理测试线索</button>
-    </div>
+      <div class="toolbar">
+        <select id="filterStatus">
+          <option value="">全部状态</option>
+          <option value="new">新线索</option>
+          <option value="contacted">已联系</option>
+          <option value="qualified">已评估</option>
+          <option value="proposal_sent">已发送报价</option>
+          <option value="won">已成交</option>
+          <option value="lost">已丢失</option>
+        </select>
+        <input id="filterOwner" type="text" placeholder="负责人（可选）" />
+        <input id="filterQ" type="text" placeholder="关键词（姓名/公司/邮箱）" />
+        <button id="btnRefresh" class="primary">刷新</button>
+        <button id="btnExport">导出CSV</button>
+        <button id="btnClearTest">清理测试线索</button>
+      </div>
 
-    <div class="quickbar">
-      <button id="btnQuickAll" class="quick-btn active">全部</button>
-      <button id="btnQuickToday" class="quick-btn">仅看今日待跟进</button>
-      <button id="btnQuickOverdue" class="quick-btn">仅看已逾期</button>
-      <button id="btnQuickExpiring" class="quick-btn">仅看报价将到期</button>
-      <button id="btnQuickProposal" class="quick-btn">仅看已发送报价</button>
+      <div class="quickbar">
+        <button id="btnQuickAll" class="quick-btn active">全部</button>
+        <button id="btnQuickToday" class="quick-btn">仅看今日待跟进</button>
+        <button id="btnQuickOverdue" class="quick-btn">仅看已逾期</button>
+        <button id="btnQuickExpiring" class="quick-btn">仅看报价将到期</button>
+        <button id="btnQuickProposal" class="quick-btn">仅看已发送报价</button>
+        <button id="btnCopyToday" class="quick-btn">复制今日跟进清单</button>
+        <button id="btnExportTodayCsv" class="quick-btn">导出今日清单CSV</button>
+        <button id="btnExportOverdueCsv" class="quick-btn">导出逾期清单CSV</button>
+      </div>
     </div>
 
     <div class="table-wrap">
@@ -251,6 +260,9 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
   const btnQuickOverdue = document.getElementById("btnQuickOverdue");
   const btnQuickExpiring = document.getElementById("btnQuickExpiring");
   const btnQuickProposal = document.getElementById("btnQuickProposal");
+  const btnCopyToday = document.getElementById("btnCopyToday");
+  const btnExportTodayCsv = document.getElementById("btnExportTodayCsv");
+  const btnExportOverdueCsv = document.getElementById("btnExportOverdueCsv");
 
   const timelineModal = document.getElementById("timelineModal");
   const timelineClose = document.getElementById("timelineClose");
@@ -339,13 +351,14 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
     return {dueToday, overdue, expiring};
   }
 
-  function applyQuickFilter(leads){
+  function applyQuickFilter(leads, modeOverride){
     const arr = Array.isArray(leads) ? leads.slice() : [];
-    if (quickMode === 'all') return arr;
-    if (quickMode === 'proposal'){
+    const mode = modeOverride || quickMode;
+    if (mode === 'all') return arr;
+    if (mode === 'proposal'){
       return arr.filter(x => String(x.status || '').toLowerCase() === 'proposal_sent');
     }
-    if (quickMode === 'due_today'){
+    if (mode === 'due_today'){
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       return arr.filter(x => {
@@ -355,14 +368,14 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
         return nad.getTime() === today.getTime();
       });
     }
-    if (quickMode === 'overdue'){
+    if (mode === 'overdue'){
       const now = new Date();
       return arr.filter(x => {
         const na = parseDateTime(x.next_action_at || '');
         return !!na && na.getTime() < now.getTime();
       });
     }
-    if (quickMode === 'expiring'){
+    if (mode === 'expiring'){
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const expEnd = new Date(today);
@@ -373,6 +386,76 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
       });
     }
     return arr;
+  }
+
+  function sortByNextAction(leads){
+    const arr = Array.isArray(leads) ? leads.slice() : [];
+    arr.sort((a,b) => {
+      const da = parseDateTime(a.next_action_at || '') || new Date('2999-12-31');
+      const db = parseDateTime(b.next_action_at || '') || new Date('2999-12-31');
+      return da.getTime() - db.getTime();
+    });
+    return arr;
+  }
+
+  function formatDateLocal(date){
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  function buildFollowupSummary(leads){
+    const rows = sortByNextAction(leads);
+    if (!rows.length) return `【今日跟进清单】\n日期：${formatDateLocal(new Date())}\n暂无今日待跟进线索。`;
+    const lines = [];
+    lines.push(`【今日跟进清单】`);
+    lines.push(`日期：${formatDateLocal(new Date())}`);
+    rows.forEach((x, i) => {
+      lines.push(`${i+1}. ${x.lead_id || '-'} | ${x.company || '-'} | 负责人:${x.owner || '未分配'} | 状态:${x.status || 'new'} | 下次跟进:${x.next_action_at || '-'} | 报价到期:${x.quote_valid_until || '-'}`);
+    });
+    return lines.join("\n");
+  }
+
+  function csvEscape(v){
+    const s = String(v ?? '');
+    if (s.includes('"') || s.includes(',') || s.includes('\n')){
+      return '"' + s.replaceAll('"', '""') + '"';
+    }
+    return s;
+  }
+
+  function leadsToCsvRows(leads){
+    const rows = sortByNextAction(leads);
+    return rows.map(x => ({
+      lead_id: x.lead_id || '',
+      status: x.status || '',
+      owner: x.owner || '',
+      name: x.name || '',
+      email: x.email || '',
+      company: x.company || '',
+      source_channel: x.source_channel || '',
+      next_action_at: x.next_action_at || '',
+      quote_valid_until: x.quote_valid_until || ''
+    }));
+  }
+
+  function downloadCsv(filename, rows){
+    const headers = ['lead_id','status','owner','name','email','company','source_channel','next_action_at','quote_valid_until'];
+    const lines = [headers.join(',')];
+    (rows || []).forEach(r => {
+      lines.push(headers.map(h => csvEscape(r[h] || '')).join(','));
+    });
+    const csv = '\uFEFF' + lines.join('\n');
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   function renderDash(leads){
@@ -949,6 +1032,37 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
       btnClearTest.textContent = prev;
     }
   });
+
+  if (btnCopyToday){
+    btnCopyToday.addEventListener('click', async () => {
+      const list = applyQuickFilter(latestLeads, 'due_today');
+      const text = buildFollowupSummary(list);
+      const ok = await copyText(text).catch(() => false);
+      alert(ok ? '已复制今日跟进清单' : '复制失败，请手动复制');
+    });
+  }
+
+  if (btnExportTodayCsv){
+    btnExportTodayCsv.addEventListener('click', () => {
+      const rows = leadsToCsvRows(applyQuickFilter(latestLeads, 'due_today'));
+      if (!rows.length){
+        alert('今日暂无待跟进线索');
+        return;
+      }
+      downloadCsv(`team-brief-due-today-${formatDateLocal(new Date())}.csv`, rows);
+    });
+  }
+
+  if (btnExportOverdueCsv){
+    btnExportOverdueCsv.addEventListener('click', () => {
+      const rows = leadsToCsvRows(applyQuickFilter(latestLeads, 'overdue'));
+      if (!rows.length){
+        alert('暂无逾期线索');
+        return;
+      }
+      downloadCsv(`team-brief-overdue-${formatDateLocal(new Date())}.csv`, rows);
+    });
+  }
 
   btnQuickAll.addEventListener('click', () => { quickMode = 'all'; setQuickActive(btnQuickAll); renderLeadsByQuick(); });
   btnQuickToday.addEventListener('click', () => { quickMode = 'due_today'; setQuickActive(btnQuickToday); renderLeadsByQuick(); });
