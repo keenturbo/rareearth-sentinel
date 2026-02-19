@@ -3,7 +3,8 @@ import html
 import json
 import os
 import sys
-from collections import Counter
+from collections import Counter, defaultdict
+from datetime import datetime, timedelta
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT not in sys.path:
@@ -69,6 +70,34 @@ def _to_dt_local(value):
     return text
 
 
+def _parse_datetime(value):
+    s = str(value or "").strip()
+    if not s:
+        return None
+    s = s.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(s)
+    except Exception:
+        pass
+    s2 = s.replace("+00:00", "")
+    for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(s2[:19], fmt)
+        except Exception:
+            continue
+    return None
+
+
+def _parse_date(value):
+    s = str(value or "").strip()
+    if not s:
+        return None
+    try:
+        return datetime.strptime(s[:10], "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
 def _is_test_row(row):
     if bool(row.get("test")):
         return True
@@ -105,16 +134,18 @@ def _render_items(rows):
         )
         status = str(r.get("status") or "new").strip().lower()
         owner = html.escape(str(r.get("owner") or ""))
-        next_action = html.escape(_to_dt_local(r.get("next_action_at")))
+        next_action_raw = str(r.get("next_action_at") or "")
+        next_action = html.escape(_to_dt_local(next_action_raw))
         quote_currency = html.escape(str(r.get("quote_currency") or "USD"))
         quote_amount = html.escape(str(r.get("quote_amount") or ""))
         quote_plan = html.escape(str(r.get("quote_plan") or "basic"))
-        quote_valid_until = html.escape(str(r.get("quote_valid_until") or ""))
+        quote_valid_until_raw = str(r.get("quote_valid_until") or "")
+        quote_valid_until = html.escape(quote_valid_until_raw)
         is_test = _is_test_row(r)
         test_badge = "<div class='muted' style='color:#d97706'>test</div>" if is_test else ""
 
         out.append(
-            f'<tr data-lead-id="{lead_id}">'
+            f'<tr data-lead-id="{lead_id}" data-status="{html.escape(status)}" data-owner="{owner}" data-channel="{channel}" data-next-action="{html.escape(next_action_raw)}" data-quote-valid="{html.escape(quote_valid_until_raw)}">'
             f"<td>{created_at}</td>"
             f"<td><div>{lead_id}</div><div class='muted'>{status}</div>{test_badge}</td>"
             f"<td><div>{name}</div><div class='muted'>{email}</div></td>"
@@ -129,6 +160,21 @@ def _render_items(rows):
             f"<div class='muted' style='margin-top:4px'>报价: {quote_currency} {quote_amount} / {quote_plan} / {quote_valid_until}</div>"
             "</td>"
             "<td>"
+            "<div class='quote-box'>"
+            "<div class='action-row' style='margin-bottom:6px'>"
+            f"<select class='quote-currency' style='max-width:90px'><option value='USD'{' selected' if quote_currency == 'USD' else ''}>USD</option><option value='CNY'{' selected' if quote_currency == 'CNY' else ''}>CNY</option></select>"
+            f"<input class='quote-amount' type='number' step='0.01' min='0' value='{quote_amount}' placeholder='报价金额' style='max-width:120px' />"
+            f"<select class='quote-plan' style='max-width:110px'><option value='basic'{' selected' if quote_plan == 'basic' else ''}>basic</option><option value='pro'{' selected' if quote_plan == 'pro' else ''}>pro</option><option value='custom'{' selected' if quote_plan == 'custom' else ''}>custom</option></select>"
+            f"<input class='quote-valid-until' type='date' value='{quote_valid_until}' style='max-width:150px' />"
+            "</div>"
+            "<div class='action-row' style='margin-bottom:6px'>"
+            "<button class='gen-quote-btn'>生成报价</button>"
+            "<button class='copy-quote-cn-btn'>复制中文报价</button>"
+            "<button class='copy-quote-en-btn'>Copy EN Quote</button>"
+            "<button class='send-proposal-btn'>标记已发送报价</button>"
+            "</div>"
+            "<div class='quote-preview'></div>"
+            "</div>"
             "<textarea class='note-input' rows='2' placeholder='跟进备注（可选）'></textarea>"
             "<div class='action-row'>"
             "<button class='save-btn'>保存</button>"
@@ -156,6 +202,100 @@ def _counts(rows):
     }
 
 
+def _pct(n, d):
+    try:
+        n = float(n)
+        d = float(d)
+    except Exception:
+        return "0%"
+    if d <= 0:
+        return "0%"
+    return f"{(n * 100.0 / d):.0f}%"
+
+
+def _extra_metrics(rows):
+    now = now_cst()
+    if getattr(now, "tzinfo", None):
+        now = now.replace(tzinfo=None)
+    today = now.date()
+    expiring_end = today + timedelta(days=3)
+
+    followup_today = 0
+    overdue = 0
+    quote_expiring = 0
+
+    owner_map = defaultdict(lambda: {"total": 0, "proposal_sent": 0, "won": 0})
+    channel_map = defaultdict(lambda: {"total": 0, "won": 0})
+
+    for r in rows:
+        st = str(r.get("status") or "new").strip().lower()
+
+        owner = str(r.get("owner") or "").strip() or "unassigned"
+        owner_map[owner]["total"] += 1
+        if st == "proposal_sent":
+            owner_map[owner]["proposal_sent"] += 1
+        if st == "won":
+            owner_map[owner]["won"] += 1
+
+        ch = str(r.get("source_channel") or "").strip() or "unknown"
+        channel_map[ch]["total"] += 1
+        if st == "won":
+            channel_map[ch]["won"] += 1
+
+        nxt = _parse_datetime(r.get("next_action_at"))
+        if nxt:
+            nxt_cmp = nxt.replace(tzinfo=None) if getattr(nxt, "tzinfo", None) else nxt
+            if nxt_cmp.date() == today:
+                followup_today += 1
+            if nxt_cmp < now:
+                overdue += 1
+
+        qd = _parse_date(r.get("quote_valid_until"))
+        if qd and today <= qd <= expiring_end:
+            quote_expiring += 1
+
+    owner_rows = sorted(owner_map.items(), key=lambda kv: kv[1]["total"], reverse=True)[:8]
+    channel_rows = sorted(channel_map.items(), key=lambda kv: kv[1]["total"], reverse=True)[:8]
+
+    return {
+        "followup_today": followup_today,
+        "overdue": overdue,
+        "quote_expiring": quote_expiring,
+        "owner_rows": owner_rows,
+        "channel_rows": channel_rows,
+    }
+
+
+def _render_owner_board(owner_rows):
+    if not owner_rows:
+        return '<div class="owner-card"><div class="k">负责人看板</div><div class="v">暂无数据</div></div>'
+    out = []
+    for owner, s in owner_rows:
+        out.append(
+            "<div class='owner-card'>"
+            f"<div class='k'>{html.escape(owner)}</div>"
+            f"<div class='v'>{int(s.get('total',0))}</div>"
+            f"<div class='muted'>报价 {int(s.get('proposal_sent',0))} · 成交 {int(s.get('won',0))}</div>"
+            "</div>"
+        )
+    return "".join(out)
+
+
+def _render_channel_board(channel_rows):
+    if not channel_rows:
+        return '<div class="owner-card"><div class="k">渠道看板</div><div class="v">暂无数据</div></div>'
+    out = []
+    for ch, s in channel_rows:
+        out.append(
+            "<div class='owner-card'>"
+            f"<div class='k'>{html.escape(ch)}</div>"
+            f"<div class='v'>{int(s.get('total',0))}</div>"
+            f"<div class='muted'>成交 {int(s.get('won',0))}</div>"
+            "</div>"
+        )
+    return "".join(out)
+
+
 def build_page(config):
     leads_path = os.path.join(config.data_dir, "pay", "team_brief_leads.jsonl")
     template_path = os.path.join(ROOT, "templates", "admin_team_brief_leads.html")
@@ -163,6 +303,7 @@ def build_page(config):
 
     rows = _read_jsonl(leads_path)
     cnt = _counts(rows)
+    extra = _extra_metrics(rows)
 
     if not os.path.exists(template_path):
         return
@@ -178,6 +319,15 @@ def build_page(config):
         .replace("{{PROPOSAL_SENT_COUNT}}", str(cnt["proposal_sent"]))
         .replace("{{WON_COUNT}}", str(cnt["won"]))
         .replace("{{LOST_COUNT}}", str(cnt["lost"]))
+        .replace("{{FOLLOWUP_TODAY_COUNT}}", str(extra["followup_today"]))
+        .replace("{{OVERDUE_COUNT}}", str(extra["overdue"]))
+        .replace("{{QUOTE_EXPIRING_COUNT}}", str(extra["quote_expiring"]))
+        .replace("{{RATE_CONTACTED}}", _pct(cnt["contacted"], cnt["new"] or len(rows)))
+        .replace("{{RATE_QUALIFIED}}", _pct(cnt["qualified"], cnt["contacted"]))
+        .replace("{{RATE_PROPOSAL}}", _pct(cnt["proposal_sent"], cnt["qualified"]))
+        .replace("{{RATE_WON}}", _pct(cnt["won"], cnt["proposal_sent"]))
+        .replace("{{OWNER_BOARD_ITEMS}}", _render_owner_board(extra["owner_rows"]))
+        .replace("{{CHANNEL_BOARD_ITEMS}}", _render_channel_board(extra["channel_rows"]))
         .replace("{{LEADS_PATH}}", html.escape(leads_path))
         .replace("{{LEADS_ROWS}}", _render_items(rows))
         .replace("{{LEADS_LIST_ENDPOINT}}", _LIST_ENDPOINT)

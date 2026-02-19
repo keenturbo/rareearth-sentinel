@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>管理员 · 团队简报线索</title>
 <style>
-:root{--ink:#0b1220;--muted:#536170;--bg:#f7f9fc;--card:#ffffff;--accent:#1d4ed8;--ok:#16a34a;--warn:#d97706}
+:root{--ink:#0b1220;--muted:#536170;--bg:#f7f9fc;--card:#ffffff;--accent:#1d4ed8;--ok:#16a34a;--warn:#d97706;--danger:#dc2626}
 *{box-sizing:border-box}
 body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans",sans-serif;background:linear-gradient(180deg,#f7f9fc,#e9eef5);color:var(--ink)}
 .container{max-width:1280px;margin:0 auto;padding:22px}
@@ -17,18 +17,23 @@ header .sub{font-size:12px;color:var(--muted)}
 .header-links a:hover{color:var(--accent)}
 .section{background:#fff;border-radius:12px;padding:16px;box-shadow:0 6px 14px rgba(0,0,0,0.05)}
 .path{font-size:12px;color:var(--muted);margin-bottom:10px;word-break:break-all}
-.stats{display:grid;grid-template-columns:repeat(7,minmax(110px,1fr));gap:10px;margin-bottom:12px}
+.stats{display:grid;grid-template-columns:repeat(5,minmax(110px,1fr));gap:10px;margin-bottom:12px}
 .stat{background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px}
 .stat .k{font-size:12px;color:var(--muted)}
 .stat .v{font-size:18px;font-weight:700}
+.stat.warn .v{color:var(--warn)}
+.stat.danger .v{color:var(--danger)}
 .owner-board{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:10px;margin:0 0 12px 0}
 .owner-card{border:1px solid #e5e7eb;background:#fff;border-radius:10px;padding:10px}
 .owner-card .k{font-size:12px;color:var(--muted)}
 .owner-card .v{font-size:16px;font-weight:700;color:#0f172a}
-.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
 .toolbar select,.toolbar input,.toolbar button{height:34px;border:1px solid #dbe3ec;border-radius:8px;padding:0 10px;background:#fff}
 .toolbar button{cursor:pointer}
 .toolbar .primary{background:#1d4ed8;color:#fff;border-color:#1d4ed8}
+.quickbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.quick-btn{height:30px;border:1px solid #dbe3ec;border-radius:999px;padding:0 12px;background:#fff;color:#334155;cursor:pointer}
+.quick-btn.active{background:#1d4ed8;border-color:#1d4ed8;color:#fff}
 .table-wrap{overflow:auto}
 table{width:100%;border-collapse:collapse;font-size:12px}
 th,td{border-top:1px solid #eef2f7;padding:8px;text-align:left;vertical-align:top}
@@ -105,9 +110,20 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
       <div class="stat"><div class="k">已发送报价</div><div class="v" id="statProposalSent">{{PROPOSAL_SENT_COUNT}}</div></div>
       <div class="stat"><div class="k">已成交</div><div class="v" id="statWon">{{WON_COUNT}}</div></div>
       <div class="stat"><div class="k">已丢失</div><div class="v" id="statLost">{{LOST_COUNT}}</div></div>
+      <div class="stat"><div class="k">今日待跟进</div><div class="v" id="statDueToday">{{FOLLOWUP_TODAY_COUNT}}</div></div>
+      <div class="stat danger"><div class="k">已逾期</div><div class="v" id="statOverdue">{{OVERDUE_COUNT}}</div></div>
+      <div class="stat warn"><div class="k">报价3天内到期</div><div class="v" id="statQuoteExpiring">{{QUOTE_EXPIRING_COUNT}}</div></div>
     </div>
 
-    <div id="ownerBoard" class="owner-board"></div>
+    <div class="stats" style="grid-template-columns:repeat(4,minmax(120px,1fr));margin-top:-2px;">
+      <div class="stat"><div class="k">新线索→已联系</div><div class="v" id="rateContacted">{{RATE_CONTACTED}}</div></div>
+      <div class="stat"><div class="k">已联系→已评估</div><div class="v" id="rateQualified">{{RATE_QUALIFIED}}</div></div>
+      <div class="stat"><div class="k">已评估→已报价</div><div class="v" id="rateProposal">{{RATE_PROPOSAL}}</div></div>
+      <div class="stat"><div class="k">已报价→成交</div><div class="v" id="rateWon">{{RATE_WON}}</div></div>
+    </div>
+
+    <div id="ownerBoard" class="owner-board">{{OWNER_BOARD_ITEMS}}</div>
+    <div id="channelBoard" class="owner-board">{{CHANNEL_BOARD_ITEMS}}</div>
 
     <div class="toolbar">
       <select id="filterStatus">
@@ -124,6 +140,14 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
       <button id="btnRefresh" class="primary">刷新</button>
       <button id="btnExport">导出CSV</button>
       <button id="btnClearTest">清理测试线索</button>
+    </div>
+
+    <div class="quickbar">
+      <button id="btnQuickAll" class="quick-btn active">全部</button>
+      <button id="btnQuickToday" class="quick-btn">仅看今日待跟进</button>
+      <button id="btnQuickOverdue" class="quick-btn">仅看已逾期</button>
+      <button id="btnQuickExpiring" class="quick-btn">仅看报价将到期</button>
+      <button id="btnQuickProposal" class="quick-btn">仅看已发送报价</button>
     </div>
 
     <div class="table-wrap">
@@ -204,7 +228,16 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
   const statProposalSent = document.getElementById("statProposalSent");
   const statWon = document.getElementById("statWon");
   const statLost = document.getElementById("statLost");
+  const statDueToday = document.getElementById("statDueToday");
+  const statOverdue = document.getElementById("statOverdue");
+  const statQuoteExpiring = document.getElementById("statQuoteExpiring");
+  const rateContacted = document.getElementById("rateContacted");
+  const rateQualified = document.getElementById("rateQualified");
+  const rateProposal = document.getElementById("rateProposal");
+  const rateWon = document.getElementById("rateWon");
+
   const ownerBoard = document.getElementById("ownerBoard");
+  const channelBoard = document.getElementById("channelBoard");
 
   const filterStatus = document.getElementById("filterStatus");
   const filterOwner = document.getElementById("filterOwner");
@@ -213,6 +246,12 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
   const btnExport = document.getElementById("btnExport");
   const btnClearTest = document.getElementById("btnClearTest");
 
+  const btnQuickAll = document.getElementById("btnQuickAll");
+  const btnQuickToday = document.getElementById("btnQuickToday");
+  const btnQuickOverdue = document.getElementById("btnQuickOverdue");
+  const btnQuickExpiring = document.getElementById("btnQuickExpiring");
+  const btnQuickProposal = document.getElementById("btnQuickProposal");
+
   const timelineModal = document.getElementById("timelineModal");
   const timelineClose = document.getElementById("timelineClose");
   const timelineCopy = document.getElementById("timelineCopy");
@@ -220,6 +259,9 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
   const timelineBody = document.getElementById("timelineBody");
   let lastTimelineLeadId = "";
   let lastTimelineEvents = [];
+
+  let latestLeads = [];
+  let quickMode = "all";
 
   function esc(v){
     return String(v ?? "")
@@ -242,6 +284,129 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
     const d = new Date(v);
     if (Number.isNaN(d.getTime())) return "";
     return d.toISOString();
+  }
+
+  function pct(n, d){
+    const nn = Number(n || 0), dd = Number(d || 0);
+    if (!dd) return "0%";
+    return `${Math.round((nn * 100) / dd)}%`;
+  }
+
+  function parseDateTime(v){
+    const s = String(v || '').trim();
+    if (!s) return null;
+    const d = new Date(s);
+    if (!Number.isNaN(d.getTime())) return d;
+    return null;
+  }
+
+  function parseDateOnly(v){
+    const s = String(v || '').trim();
+    if (!s) return null;
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return null;
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  }
+
+  function getLocalStatusStats(leads){
+    const base = {new:0, contacted:0, qualified:0, proposal_sent:0, won:0, lost:0};
+    for (const lead of (leads || [])){
+      const st = String(lead.status || 'new').trim().toLowerCase();
+      if (Object.prototype.hasOwnProperty.call(base, st)) base[st] += 1;
+    }
+    return base;
+  }
+
+  function getDerivedStats(leads){
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const expEnd = new Date(today);
+    expEnd.setDate(today.getDate() + 3);
+
+    let dueToday = 0, overdue = 0, expiring = 0;
+    for (const lead of (leads || [])){
+      const na = parseDateTime(lead.next_action_at || '');
+      if (na){
+        const nad = new Date(na.getFullYear(), na.getMonth(), na.getDate());
+        if (nad.getTime() === today.getTime()) dueToday += 1;
+        if (na.getTime() < now.getTime()) overdue += 1;
+      }
+      const qd = parseDateOnly(lead.quote_valid_until || '');
+      if (qd){
+        if (qd.getTime() >= today.getTime() && qd.getTime() <= expEnd.getTime()) expiring += 1;
+      }
+    }
+    return {dueToday, overdue, expiring};
+  }
+
+  function applyQuickFilter(leads){
+    const arr = Array.isArray(leads) ? leads.slice() : [];
+    if (quickMode === 'all') return arr;
+    if (quickMode === 'proposal'){
+      return arr.filter(x => String(x.status || '').toLowerCase() === 'proposal_sent');
+    }
+    if (quickMode === 'due_today'){
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      return arr.filter(x => {
+        const na = parseDateTime(x.next_action_at || '');
+        if (!na) return false;
+        const nad = new Date(na.getFullYear(), na.getMonth(), na.getDate());
+        return nad.getTime() === today.getTime();
+      });
+    }
+    if (quickMode === 'overdue'){
+      const now = new Date();
+      return arr.filter(x => {
+        const na = parseDateTime(x.next_action_at || '');
+        return !!na && na.getTime() < now.getTime();
+      });
+    }
+    if (quickMode === 'expiring'){
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const expEnd = new Date(today);
+      expEnd.setDate(today.getDate() + 3);
+      return arr.filter(x => {
+        const qd = parseDateOnly(x.quote_valid_until || '');
+        return !!qd && qd.getTime() >= today.getTime() && qd.getTime() <= expEnd.getTime();
+      });
+    }
+    return arr;
+  }
+
+  function renderDash(leads){
+    const stats = getLocalStatusStats(leads);
+    const total = leads.length;
+    const d = getDerivedStats(leads);
+
+    statTotal.textContent = String(total);
+    statNew.textContent = String(stats.new);
+    statContacted.textContent = String(stats.contacted);
+    statQualified.textContent = String(stats.qualified);
+    statProposalSent.textContent = String(stats.proposal_sent);
+    statWon.textContent = String(stats.won);
+    statLost.textContent = String(stats.lost);
+    statDueToday.textContent = String(d.dueToday);
+    statOverdue.textContent = String(d.overdue);
+    statQuoteExpiring.textContent = String(d.expiring);
+
+    rateContacted.textContent = pct(stats.contacted, stats.new || total);
+    rateQualified.textContent = pct(stats.qualified, stats.contacted);
+    rateProposal.textContent = pct(stats.proposal_sent, stats.qualified);
+    rateWon.textContent = pct(stats.won, stats.proposal_sent);
+
+    renderOwnerBoard(leads);
+    renderChannelBoard(leads);
+  }
+
+  function setQuickActive(btn){
+    [btnQuickAll, btnQuickToday, btnQuickOverdue, btnQuickExpiring, btnQuickProposal].forEach(b => b && b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+  }
+
+  function renderNoResult(msg){
+    rowsEl.innerHTML = `<tr><td colspan="10" class="muted">${esc(msg || '当前筛选无结果')}</td></tr>`;
   }
 
   async function copyText(text){
@@ -297,7 +462,7 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
     const qv = String(lead.quote_valid_until || '');
     const qa = String(lead.quote_amount || '');
     return `
-<tr data-lead-id="${esc(lead.lead_id)}">
+<tr data-lead-id="${esc(lead.lead_id)}" data-status="${esc(lead.status || 'new')}" data-owner="${esc(lead.owner || '')}" data-channel="${esc(lead.source_channel || '')}" data-next-action="${esc(lead.next_action_at || '')}" data-quote-valid="${esc(lead.quote_valid_until || '')}">
   <td>${esc(lead.created_at || "")}</td>
   <td><div>${esc(lead.lead_id || "")}</div><div class="muted">${esc(lead.status || "new")}</div>${testBadge}</td>
   <td><div>${esc(lead.name || "")}</div><div class="muted">${esc(lead.email || "")}</div></td>
@@ -392,29 +557,43 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
     return data;
   }
 
-  function setStats(stats, total){
-    statTotal.textContent = String(total ?? 0);
-    statNew.textContent = String(stats?.new ?? 0);
-    statContacted.textContent = String(stats?.contacted ?? 0);
-    statQualified.textContent = String(stats?.qualified ?? 0);
-    statProposalSent.textContent = String(stats?.proposal_sent ?? 0);
-    statWon.textContent = String(stats?.won ?? 0);
-    statLost.textContent = String(stats?.lost ?? 0);
-  }
-
   function renderOwnerBoard(leads){
     const m = new Map();
     (Array.isArray(leads) ? leads : []).forEach((lead) => {
       const owner = String(lead.owner || "").trim() || "未分配";
-      m.set(owner, (m.get(owner) || 0) + 1);
+      if (!m.has(owner)) m.set(owner, {total:0, proposal:0, won:0});
+      const cell = m.get(owner);
+      cell.total += 1;
+      const st = String(lead.status || '').toLowerCase();
+      if (st === 'proposal_sent') cell.proposal += 1;
+      if (st === 'won') cell.won += 1;
     });
-    const arr = Array.from(m.entries()).sort((a,b) => b[1] - a[1]).slice(0, 8);
+    const arr = Array.from(m.entries()).sort((a,b) => b[1].total - a[1].total).slice(0, 8);
     if (!arr.length){
       ownerBoard.innerHTML = '<div class="owner-card"><div class="k">负责人看板</div><div class="v">暂无数据</div></div>';
       return;
     }
-    ownerBoard.innerHTML = arr.map(([owner, cnt]) =>
-      `<div class="owner-card"><div class="k">${esc(owner)}</div><div class="v">${cnt}</div></div>`
+    ownerBoard.innerHTML = arr.map(([owner, c]) =>
+      `<div class="owner-card"><div class="k">${esc(owner)}</div><div class="v">${c.total}</div><div class="muted">报价 ${c.proposal} · 成交 ${c.won}</div></div>`
+    ).join('');
+  }
+
+  function renderChannelBoard(leads){
+    const m = new Map();
+    (Array.isArray(leads) ? leads : []).forEach((lead) => {
+      const ch = String(lead.source_channel || "").trim() || "unknown";
+      if (!m.has(ch)) m.set(ch, {total:0, won:0});
+      const cell = m.get(ch);
+      cell.total += 1;
+      if (String(lead.status || '').toLowerCase() === 'won') cell.won += 1;
+    });
+    const arr = Array.from(m.entries()).sort((a,b) => b[1].total - a[1].total).slice(0, 8);
+    if (!arr.length){
+      channelBoard.innerHTML = '<div class="owner-card"><div class="k">渠道看板</div><div class="v">暂无数据</div></div>';
+      return;
+    }
+    channelBoard.innerHTML = arr.map(([ch, c]) =>
+      `<div class="owner-card"><div class="k">${esc(ch)}</div><div class="v">${c.total}</div><div class="muted">成交 ${c.won}</div></div>`
     ).join('');
   }
 
@@ -430,6 +609,18 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
     return p.toString();
   }
 
+  function renderLeadsByQuick(){
+    const filtered = applyQuickFilter(latestLeads);
+    if (!latestLeads.length){
+      rowsEl.innerHTML = renderEmptyStateRow();
+    } else if (!filtered.length){
+      renderNoResult('当前快捷筛选无结果');
+    } else {
+      rowsEl.innerHTML = filtered.map(rowHtml).join("");
+    }
+    renderDash(filtered);
+  }
+
   async function loadLeads(){
     btnRefresh.disabled = true;
     try{
@@ -439,16 +630,12 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
       if (!res.ok || !data?.ok){
         throw new Error(data?.error || `HTTP ${res.status}`);
       }
-      const leads = Array.isArray(data.leads) ? data.leads : [];
-      if (!leads.length){
-        rowsEl.innerHTML = renderEmptyStateRow();
-      } else {
-        rowsEl.innerHTML = leads.map(rowHtml).join("");
-      }
-      setStats(data.stats || {}, data.total || leads.length);
-      renderOwnerBoard(leads);
+      latestLeads = Array.isArray(data.leads) ? data.leads : [];
+      renderLeadsByQuick();
     }catch(err){
-      console.error("loadLeads failed:", err); rowsEl.innerHTML = `<tr><td colspan="10"><div class="muted">加载失败：${esc(err.message || err)}（可点“刷新”重试）</div></td></tr>`;
+      console.error("loadLeads failed:", err);
+      rowsEl.innerHTML = `<tr><td colspan="10"><div class="muted">加载失败：${esc(err.message || err)}（可点“刷新”重试）</div></td></tr>`;
+      renderDash([]);
     }finally{
       btnRefresh.disabled = false;
     }
@@ -739,6 +926,9 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
 
   btnExport.addEventListener("click", () => {
     const qs = buildQuery();
+    if (quickMode && quickMode !== 'all') {
+      alert('提示：导出按上方基础筛选（状态/负责人/关键词），不含快捷筛选。');
+    }
     window.open(safeApiUrl(EXPORT_ENDPOINT, qs), "_blank");
   });
 
@@ -759,6 +949,12 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
       btnClearTest.textContent = prev;
     }
   });
+
+  btnQuickAll.addEventListener('click', () => { quickMode = 'all'; setQuickActive(btnQuickAll); renderLeadsByQuick(); });
+  btnQuickToday.addEventListener('click', () => { quickMode = 'due_today'; setQuickActive(btnQuickToday); renderLeadsByQuick(); });
+  btnQuickOverdue.addEventListener('click', () => { quickMode = 'overdue'; setQuickActive(btnQuickOverdue); renderLeadsByQuick(); });
+  btnQuickExpiring.addEventListener('click', () => { quickMode = 'expiring'; setQuickActive(btnQuickExpiring); renderLeadsByQuick(); });
+  btnQuickProposal.addEventListener('click', () => { quickMode = 'proposal'; setQuickActive(btnQuickProposal); renderLeadsByQuick(); });
 
   loadLeads();
 })();
