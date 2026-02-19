@@ -31,6 +31,9 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
 .muted{color:#6b7280}
 ul{margin:8px 0 0 18px;padding:0}
 li{margin:6px 0}
+.hints{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.hint{border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#f8fafc;font-size:13px}
+@media(max-width:980px){.hints{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -44,6 +47,8 @@ li{margin:6px 0}
       <a href="/cn/admin/leads/team-brief/">团队简报线索</a>
       <span>·</span>
       <a href="/cn/admin/leads/team-brief/today/">今日清单</a>
+      <span>·</span>
+      <a href="/cn/admin/leads/team-brief/daily-brief/">每日摘要</a>
       <span>·</span>
       <a href="/cn/admin/funnel/">漏斗</a>
       <span>·</span>
@@ -63,6 +68,14 @@ li{margin:6px 0}
       <div class="card"><div class="k">成交率（成交/报价）</div><div class="v">{{WON_RATE_7D}}</div></div>
       <div class="card"><div class="k">复购触达记录</div><div class="v">{{UPSELL_SENT_7D}}</div></div>
       <div class="card"><div class="k">说明</div><div class="v" style="font-size:14px">仅统计近7天事件</div></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="muted" style="margin-bottom:8px">本周最佳提示（按成交/报价）</div>
+    <div class="hints">
+      <div class="hint">{{BEST_CHANNEL_HINT}}</div>
+      <div class="hint">{{BEST_OWNER_HINT}}</div>
     </div>
   </section>
 
@@ -87,6 +100,16 @@ li{margin:6px 0}
       </table>
     </section>
   </div>
+
+  <section class="section">
+    <div class="muted" style="margin-bottom:8px">归因联动看板（负责人 × 渠道 × 原因 × 结果）</div>
+    <table>
+      <thead>
+        <tr><th>负责人</th><th>渠道</th><th>原因</th><th>结果</th><th>次数</th><th>占比</th></tr>
+      </thead>
+      <tbody>{{ATTRIBUTION_ROWS}}</tbody>
+    </table>
+  </section>
 
   <div class="grid">
     <section class="section">
