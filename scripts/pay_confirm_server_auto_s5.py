@@ -155,6 +155,10 @@ def _normalize_lead_row(row: Dict) -> Dict:
     if qp not in _ALLOWED_QUOTE_PLAN:
         qp = "basic"
     out["quote_plan"] = qp
+    pt = _normalize_text(out.get("proposal_template"), 20).lower() or qp
+    if pt not in _ALLOWED_QUOTE_PLAN:
+        pt = qp
+    out["proposal_template"] = pt
     out["quote_valid_until"] = _normalize_text(out.get("quote_valid_until"), 20)
     out["last_proposal_at"] = _normalize_text(out.get("last_proposal_at"), 40)
 
@@ -286,9 +290,16 @@ def _update_lead(config, payload: Dict) -> Tuple[Dict, str]:
     close_reason_code_in = _normalize_text((payload or {}).get("close_reason_code"), 40).lower()
     close_reason_note_in = _normalize_text((payload or {}).get("close_reason_note"), 500)
 
+    proposal_template_in = _normalize_text((payload or {}).get("proposal_template"), 20).lower()
+    if proposal_template_in and proposal_template_in not in _ALLOWED_QUOTE_PLAN:
+        return {}, "invalid_proposal_template"
+    proposal_template_applied = bool((payload or {}).get("proposal_template_applied"))
+
     quote_fields, quote_err = _normalize_quote_fields(payload or {})
     if quote_err:
         return {}, quote_err
+    if proposal_template_in:
+        quote_fields["quote_plan"] = proposal_template_in
 
     path = _leads_path(config)
     with _LEAD_LOCK:
@@ -311,6 +322,7 @@ def _update_lead(config, payload: Dict) -> Tuple[Dict, str]:
                 "quote_currency": cur.get("quote_currency"),
                 "quote_amount": cur.get("quote_amount"),
                 "quote_plan": cur.get("quote_plan"),
+                "proposal_template": cur.get("proposal_template") or cur.get("quote_plan"),
                 "quote_valid_until": cur.get("quote_valid_until"),
             }
 
@@ -337,6 +349,7 @@ def _update_lead(config, payload: Dict) -> Tuple[Dict, str]:
             cur["quote_currency"] = quote_fields.get("quote_currency", cur.get("quote_currency") or "USD")
             cur["quote_amount"] = quote_fields.get("quote_amount", cur.get("quote_amount") or "")
             cur["quote_plan"] = quote_fields.get("quote_plan", cur.get("quote_plan") or "basic")
+            cur["proposal_template"] = cur.get("quote_plan")
             cur["quote_valid_until"] = quote_fields.get("quote_valid_until", cur.get("quote_valid_until") or "")
 
             if reason_code:
@@ -389,6 +402,7 @@ def _update_lead(config, payload: Dict) -> Tuple[Dict, str]:
                 "quote_currency": cur.get("quote_currency"),
                 "quote_amount": cur.get("quote_amount"),
                 "quote_plan": cur.get("quote_plan"),
+                "proposal_template": cur.get("proposal_template") or cur.get("quote_plan"),
                 "quote_valid_until": cur.get("quote_valid_until"),
             }:
                 _append_lead_event(
@@ -399,6 +413,21 @@ def _update_lead(config, payload: Dict) -> Tuple[Dict, str]:
                         "quote_currency": cur.get("quote_currency"),
                         "quote_amount": cur.get("quote_amount"),
                         "quote_plan": cur.get("quote_plan"),
+                        "proposal_template": cur.get("proposal_template") or cur.get("quote_plan"),
+                        "quote_valid_until": cur.get("quote_valid_until"),
+                        "operator": operator,
+                    },
+                )
+
+            if proposal_template_applied or before_quote.get("proposal_template") != (cur.get("proposal_template") or cur.get("quote_plan")):
+                _append_lead_event(
+                    config,
+                    {
+                        "lead_id": lead_id,
+                        "event_type": "proposal_template_applied",
+                        "proposal_template": cur.get("proposal_template") or cur.get("quote_plan"),
+                        "quote_currency": cur.get("quote_currency"),
+                        "quote_amount": cur.get("quote_amount"),
                         "quote_valid_until": cur.get("quote_valid_until"),
                         "operator": operator,
                     },
@@ -426,6 +455,7 @@ def _update_lead(config, payload: Dict) -> Tuple[Dict, str]:
                         "quote_currency": cur.get("quote_currency"),
                         "quote_amount": cur.get("quote_amount"),
                         "quote_plan": cur.get("quote_plan"),
+                        "proposal_template": cur.get("proposal_template") or cur.get("quote_plan"),
                         "quote_valid_until": cur.get("quote_valid_until"),
                         "operator": operator,
                     },
@@ -478,6 +508,7 @@ def _insert_test_lead(config, operator: str = "admin") -> Dict:
         "quote_currency": "USD",
         "quote_amount": "",
         "quote_plan": "basic",
+        "proposal_template": "basic",
         "quote_valid_until": "",
         "last_proposal_at": "",
         "close_reason_code": "",
@@ -558,6 +589,7 @@ def _to_csv(rows: List[Dict]) -> str:
         "quote_currency",
         "quote_amount",
         "quote_plan",
+        "proposal_template",
         "quote_valid_until",
         "last_proposal_at",
         "close_reason_code",
