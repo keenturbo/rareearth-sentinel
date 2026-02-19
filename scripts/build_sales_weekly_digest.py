@@ -81,6 +81,17 @@ def _pct(n, d):
     return f"{(n * 100.0 / d):.1f}%"
 
 
+def _safe_rate(n, d):
+    try:
+        n = float(n)
+        d = float(d)
+    except Exception:
+        return 0.0
+    if d <= 0:
+        return 0.0
+    return n / d
+
+
 def _render_group_rows(items):
     if not items:
         return "<tr><td colspan='6' class='muted'>暂无数据</td></tr>"
@@ -119,6 +130,40 @@ def _render_reason_rows(counter):
     return "".join(out)
 
 
+def _render_attribution_rows(counter):
+    if not counter:
+        return "<tr><td colspan='6' class='muted'>暂无归因联动数据</td></tr>"
+    total = sum(counter.values()) or 1
+    out = []
+    items = sorted(counter.items(), key=lambda kv: kv[1], reverse=True)[:20]
+    for (owner, channel, reason, status), cnt in items:
+        status_label = "成交" if status == "won" else ("丢失" if status == "lost" else status)
+        out.append(
+            "<tr>"
+            f"<td>{html.escape(owner)}</td>"
+            f"<td>{html.escape(channel)}</td>"
+            f"<td>{html.escape(reason)}</td>"
+            f"<td>{html.escape(status_label)}</td>"
+            f"<td>{int(cnt)}</td>"
+            f"<td>{_pct(cnt, total)}</td>"
+            "</tr>"
+        )
+    return "".join(out)
+
+
+def _pick_best_hint(items, label):
+    valid = []
+    for key, stats in items:
+        proposal = int(stats.get("proposal", 0))
+        won = int(stats.get("won", 0))
+        if proposal > 0:
+            valid.append((key, stats, _safe_rate(won, proposal)))
+    if not valid:
+        return f"{label}样本不足（暂无报价样本）"
+    key, stats, rate = sorted(valid, key=lambda x: (x[2], int(x[1].get("won", 0)), int(x[1].get("proposal", 0))), reverse=True)[0]
+    return f"{label}最佳：{key}（成交/报价 {_pct(stats.get('won', 0), stats.get('proposal', 0))}，报价样本 {int(stats.get('proposal', 0))}）"
+
+
 def _render_actions(actions):
     if not actions:
         return "<li>本周数据不足，先持续积累线索与报价样本。</li>"
@@ -138,12 +183,14 @@ def build_page(config: Config):
     week_start_utc = now_utc - timedelta(days=7)
 
     leads_7d = [x for x in leads if _in_last_days(x.get("created_at"), now_utc, 7)]
+    lead_map = {str((x or {}).get("lead_id") or "").strip(): x for x in leads}
 
     proposal_ids = set()
     won_ids = set()
     lost_ids = set()
     upsell_sent = 0
     reason_counter = Counter()
+    attribution_counter = Counter()
 
     for ev in events:
         if not _in_last_days(ev.get("created_at"), now_utc, 7):
@@ -167,6 +214,14 @@ def build_page(config: Config):
                 won_ids.add(lead_id)
             elif st == "lost" and lead_id:
                 lost_ids.add(lead_id)
+
+            lead = lead_map.get(lead_id) or {}
+            owner = str((lead or {}).get("owner") or "").strip() or "unassigned"
+            channel = str((lead or {}).get("source_channel") or "").strip() or "unknown"
+            reason = _REASON_LABEL.get(code, code or "unknown")
+            if st in {"won", "lost"}:
+                attribution_counter[(owner, channel, reason, st)] += 1
+
         if et == "note_append":
             note = str(ev.get("note") or "")
             if "[upsell_sent]" in note:
@@ -201,6 +256,9 @@ def build_page(config: Config):
     channel_items = sorted(channel_stats.items(), key=lambda kv: (kv[1]["total"], kv[1]["won"]), reverse=True)
     owner_items = sorted(owner_stats.items(), key=lambda kv: (kv[1]["total"], kv[1]["won"]), reverse=True)
 
+    best_channel_hint = _pick_best_hint(channel_items, "渠道")
+    best_owner_hint = _pick_best_hint(owner_items, "负责人")
+
     actions = []
     proposal_rate = (proposal_7d / new_7d) if new_7d else 0.0
     win_rate = (won_7d / proposal_7d) if proposal_7d else 0.0
@@ -210,6 +268,8 @@ def build_page(config: Config):
         actions.append("已报价到成交转化偏低，建议强化试读样本+时效承诺，缩短决策周期。")
     if upsell_sent == 0 and won_7d > 0:
         actions.append("本周已有成交但未记录复购触达，建议对 won 客户发送 Task Sprint 复购推荐。")
+    actions.append(best_channel_hint)
+    actions.append(best_owner_hint)
 
     week_range = f"{week_start_utc.astimezone(timezone.utc).date()} ~ {now_utc.astimezone(timezone.utc).date()}"
 
@@ -229,6 +289,9 @@ def build_page(config: Config):
         .replace("{{CHANNEL_ROWS}}", _render_group_rows(channel_items))
         .replace("{{OWNER_ROWS}}", _render_group_rows(owner_items))
         .replace("{{REASON_ROWS}}", _render_reason_rows(reason_counter))
+        .replace("{{ATTRIBUTION_ROWS}}", _render_attribution_rows(attribution_counter))
+        .replace("{{BEST_CHANNEL_HINT}}", html.escape(best_channel_hint))
+        .replace("{{BEST_OWNER_HINT}}", html.escape(best_owner_hint))
         .replace("{{ACTION_ITEMS}}", _render_actions(actions))
     )
 
