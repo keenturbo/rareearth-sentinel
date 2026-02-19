@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>管理员 · 团队简报每日摘要</title>
+<style>
+:root{--ink:#0b1220;--muted:#536170;--bg:#f7f9fc;--card:#fff;--accent:#1d4ed8;--warn:#d97706;--danger:#dc2626}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans",sans-serif;background:linear-gradient(180deg,#f7f9fc,#e9eef5);color:var(--ink)}
+.container{max-width:1180px;margin:0 auto;padding:22px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+header h1{margin:0;font-size:20px}
+header .sub{font-size:12px;color:var(--muted)}
+.header-links{display:flex;gap:8px;flex-wrap:wrap}
+.header-links a{text-decoration:none;color:var(--muted)}
+.header-links a:hover{color:var(--accent)}
+.section{background:#fff;border-radius:12px;padding:14px;box-shadow:0 6px 14px rgba(0,0,0,.05);margin-bottom:12px}
+.cards{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:10px;margin-bottom:10px}
+.card{border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#fff}
+.card .k{font-size:12px;color:var(--muted)}
+.card .v{font-size:20px;font-weight:700}
+.card.warn .v{color:var(--warn)}
+.card.danger .v{color:var(--danger)}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.toolbar button{height:34px;border:1px solid #dbe3ec;border-radius:8px;background:#fff;padding:0 12px;cursor:pointer}
+.toolbar .primary{background:#1d4ed8;border-color:#1d4ed8;color:#fff}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media(max-width:980px){.cards{grid-template-columns:repeat(2,minmax(120px,1fr))}.grid{grid-template-columns:1fr}}
+.block{border:1px solid #e5e7eb;border-radius:10px;background:#fafcff;overflow:hidden}
+.block h3{margin:0;padding:10px 12px;font-size:14px;border-bottom:1px solid #e5e7eb;background:#f8fafc}
+.block .actions{padding:8px 12px;border-bottom:1px solid #e5e7eb;display:flex;gap:8px;flex-wrap:wrap}
+.block .actions button{height:28px;border:1px solid #dbe3ec;border-radius:999px;background:#fff;padding:0 12px;cursor:pointer}
+pre{margin:0;padding:12px;white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.5;max-height:280px;overflow:auto}
+.muted{color:#6b7280}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>管理员 · 团队简报每日摘要</h1>
+      <div class="sub">更新 {{LAST_UPDATE}}</div>
+    </div>
+    <div class="header-links">
+      <a href="/cn/admin/leads/team-brief/">团队简报线索</a>
+      <span>·</span>
+      <a href="/cn/admin/leads/team-brief/today/">今日清单</a>
+      <span>·</span>
+      <a href="/cn/admin/leads/team-brief/weekly/">周报</a>
+      <span>·</span>
+      <a href="/cn/admin/funnel/">漏斗</a>
+      <span>·</span>
+      <a href="/cn/">返回中文首页</a>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="cards">
+      <div class="card"><div class="k">高优先</div><div class="v">{{COUNT_HIGH}}</div></div>
+      <div class="card"><div class="k">今日待跟进</div><div class="v">{{COUNT_TODAY}}</div></div>
+      <div class="card danger"><div class="k">已逾期</div><div class="v">{{COUNT_OVERDUE}}</div></div>
+      <div class="card warn"><div class="k">3天内报价到期</div><div class="v">{{COUNT_EXPIRING}}</div></div>
+    </div>
+
+    <div class="toolbar">
+      <button id="btnCopyMaster" class="primary">复制每日摘要</button>
+      <button id="btnExportMaster">导出每日摘要CSV</button>
+      <span id="msg" class="muted"></span>
+    </div>
+
+    <div class="block">
+      <h3>每日摘要（可直接粘贴到微信群/飞书）</h3>
+      <pre id="masterText">{{MASTER_TEXT}}</pre>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="grid">
+      <div class="block">
+        <h3>高优先</h3>
+        <div class="actions"><button data-copy="high">复制</button><button data-export="high">导出CSV</button></div>
+        <pre id="textHigh">{{HIGH_TEXT}}</pre>
+      </div>
+      <div class="block">
+        <h3>今日待跟进</h3>
+        <div class="actions"><button data-copy="today">复制</button><button data-export="today">导出CSV</button></div>
+        <pre id="textToday">{{TODAY_TEXT}}</pre>
+      </div>
+      <div class="block">
+        <h3>已逾期</h3>
+        <div class="actions"><button data-copy="overdue">复制</button><button data-export="overdue">导出CSV</button></div>
+        <pre id="textOverdue">{{OVERDUE_TEXT}}</pre>
+      </div>
+      <div class="block">
+        <h3>报价将到期（3天内）</h3>
+        <div class="actions"><button data-copy="expiring">复制</button><button data-export="expiring">导出CSV</button></div>
+        <pre id="textExpiring">{{EXPIRING_TEXT}}</pre>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const DATA = {{CSV_PAYLOAD_JSON}};
+  const msg = document.getElementById('msg');
+
+  const textMap = {
+    master: document.getElementById('masterText'),
+    high: document.getElementById('textHigh'),
+    today: document.getElementById('textToday'),
+    overdue: document.getElementById('textOverdue'),
+    expiring: document.getElementById('textExpiring'),
+  };
+
+  function csvEscape(v){
+    const s = String(v ?? '');
+    if (s.includes('"') || s.includes(',') || s.includes('\n')) return '"' + s.replaceAll('"','""') + '"';
+    return s;
+  }
+
+  function exportCsv(filename, rows){
+    const cols = ['lead_id','status','owner','name','email','company','source_channel','next_action_at','quote_valid_until'];
+    const lines = [cols.join(',')];
+    (rows || []).forEach(r => lines.push(cols.map(k => csvEscape(r[k] || '')).join(',')));
+    const blob = new Blob(['\uFEFF' + lines.join('\n')], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function copyText(text){
+    const value = String(text || '');
+    if (!value) return false;
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return !!ok;
+  }
+
+  function todayStr(){
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const day = String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day}`;
+  }
+
+  document.getElementById('btnCopyMaster')?.addEventListener('click', async () => {
+    const ok = await copyText(textMap.master?.textContent || '').catch(() => false);
+    msg.textContent = ok ? '已复制每日摘要' : '复制失败';
+  });
+
+  document.getElementById('btnExportMaster')?.addEventListener('click', () => {
+    exportCsv(`team-brief-daily-master-${todayStr()}.csv`, DATA.master || []);
+    msg.textContent = '已导出每日摘要CSV';
+  });
+
+  document.addEventListener('click', async (e) => {
+    const c = e.target.closest('[data-copy]');
+    if (c){
+      const key = c.getAttribute('data-copy') || '';
+      const ok = await copyText(textMap[key]?.textContent || '').catch(() => false);
+      msg.textContent = ok ? '已复制' : '复制失败';
+      return;
+    }
+    const ex = e.target.closest('[data-export]');
+    if (ex){
+      const key = ex.getAttribute('data-export') || '';
+      exportCsv(`team-brief-daily-${key}-${todayStr()}.csv`, DATA[key] || []);
+      msg.textContent = '已导出CSV';
+    }
+  });
+})();
+</script>
+</body>
+</html>
