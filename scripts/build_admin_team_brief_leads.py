@@ -349,6 +349,239 @@ def _render_channel_board(channel_rows):
     return "".join(out)
 
 
+def _inject_upsell_script(html_doc: str) -> str:
+    marker = "</body>"
+    if marker not in html_doc:
+        return html_doc
+
+    patch = r'''
+<script>
+(() => {
+  const rowsEl = document.getElementById('leadsRows');
+  if (!rowsEl) return;
+
+  function esc(v){
+    return String(v ?? '')
+      .replaceAll('&','&amp;')
+      .replaceAll('<','&lt;')
+      .replaceAll('>','&gt;')
+      .replaceAll('"','&quot;');
+  }
+
+  async function copyText(text){
+    const value = String(text || '');
+    if (!value) return false;
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return !!ok;
+  }
+
+  function getLeadFromRow(tr){
+    const status = tr.querySelector('.status-select')?.value || tr.getAttribute('data-status') || 'new';
+    return {
+      lead_id: tr.getAttribute('data-lead-id') || '',
+      status: String(status || '').toLowerCase(),
+      owner: tr.querySelector('.owner-input')?.value || '',
+      next_action_at: tr.querySelector('.next-action-input')?.value || '',
+      quote_currency: tr.querySelector('.quote-currency')?.value || 'USD',
+      quote_amount: tr.querySelector('.quote-amount')?.value || '',
+      quote_plan: tr.querySelector('.quote-plan')?.value || 'basic',
+      quote_valid_until: tr.querySelector('.quote-valid-until')?.value || '',
+      company: tr.children[3]?.querySelector('div')?.textContent?.trim() || '',
+      name: tr.children[2]?.querySelector('div')?.textContent?.trim() || '',
+    };
+  }
+
+  function upsellTextCN(lead){
+    const plan = 'Task Sprint（14天）';
+    const amount = lead.quote_amount ? `${lead.quote_currency || 'USD'} ${lead.quote_amount}` : '按方案报价';
+    const valid = lead.quote_valid_until || '以沟通确认为准';
+    return [
+      '【续购建议】',
+      `对象：${lead.company || '-'} / ${lead.name || '-'}`,
+      `推荐方案：${plan}`,
+      `参考报价：${amount}`,
+      `有效期：${valid}`,
+      '交付内容：14天关键矿产信号跟踪（含阈值、风险提示与动作建议）',
+      '如确认继续跟踪，请回复“继续跟踪”。'
+    ].join('\n');
+  }
+
+  function upsellTextEN(lead){
+    const amount = lead.quote_amount ? `${lead.quote_currency || 'USD'} ${lead.quote_amount}` : 'TBD';
+    const valid = lead.quote_valid_until || 'TBD';
+    return [
+      'Upsell Recommendation',
+      `Account: ${lead.company || '-'} / ${lead.name || '-'}`,
+      'Suggested plan: Task Sprint (14 days)',
+      `Reference price: ${amount}`,
+      `Valid until: ${valid}`,
+      'Delivery: 14-day critical minerals signal tracking with thresholds, risk notes, and action points.',
+      'Please reply "Continue" if you want to proceed.'
+    ].join('\n');
+  }
+
+  function ensureUpsellCard(tr){
+    const status = String(tr.querySelector('.status-select')?.value || tr.getAttribute('data-status') || '').toLowerCase();
+    if (status !== 'won') return;
+    const td = tr.children[8];
+    if (!td) return;
+    if (td.querySelector('.upsell-card')) return;
+
+    const box = document.createElement('div');
+    box.className = 'quote-box upsell-card';
+    box.style.marginTop = '8px';
+    box.innerHTML = `
+      <div class="muted" style="margin-bottom:6px">复购推荐卡（won 后）</div>
+      <div class="action-row" style="margin-bottom:6px">
+        <button class="gen-upsell-btn">生成复购推荐</button>
+        <button class="copy-upsell-cn-btn">复制中文复购</button>
+        <button class="copy-upsell-en-btn">Copy EN Upsell</button>
+        <button class="mark-upsell-sent-btn" style="background:#0f766e;border-color:#0f766e;color:#fff">标记已发送复购</button>
+      </div>
+      <div class="upsell-preview muted"></div>
+    `;
+
+    const noteEl = td.querySelector('.note-input');
+    if (noteEl) {
+      td.insertBefore(box, noteEl);
+    } else {
+      td.appendChild(box);
+    }
+  }
+
+  function decorateWonRows(){
+    rowsEl.querySelectorAll('tr[data-lead-id]').forEach(ensureUpsellCard);
+  }
+
+  async function postUpsellSent(tr, sku='task_sprint'){
+    const lead = getLeadFromRow(tr);
+    const payload = {
+      lead_id: lead.lead_id,
+      status: 'won',
+      owner: lead.owner,
+      next_action_at: lead.next_action_at,
+      quote_currency: lead.quote_currency,
+      quote_amount: lead.quote_amount,
+      quote_plan: lead.quote_plan,
+      quote_valid_until: lead.quote_valid_until,
+      note: `[upsell_sent] sku=${sku}`,
+      operator: 'admin'
+    };
+    const res = await fetch('/api/admin/leads/team-brief/update', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      credentials: 'same-origin',
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.ok){
+      throw new Error(data?.error || `HTTP ${res.status}`);
+    }
+    return true;
+  }
+
+  document.addEventListener('click', async (e) => {
+    const tr = e.target.closest('tr[data-lead-id]');
+    if (!tr) return;
+
+    const genBtn = e.target.closest('.gen-upsell-btn');
+    if (genBtn){
+      const lead = getLeadFromRow(tr);
+      const cn = upsellTextCN(lead);
+      const en = upsellTextEN(lead);
+      tr.dataset.upsellCn = cn;
+      tr.dataset.upsellEn = en;
+      const p = tr.querySelector('.upsell-preview');
+      if (p) p.textContent = cn;
+      return;
+    }
+
+    const copyCnBtn = e.target.closest('.copy-upsell-cn-btn');
+    if (copyCnBtn){
+      let text = tr.dataset.upsellCn || '';
+      if (!text){
+        text = upsellTextCN(getLeadFromRow(tr));
+        tr.dataset.upsellCn = text;
+      }
+      const prev = copyCnBtn.textContent;
+      try{
+        const ok = await copyText(text);
+        copyCnBtn.textContent = ok ? '已复制' : '复制失败';
+      }catch(_){
+        copyCnBtn.textContent = '复制失败';
+      }finally{
+        setTimeout(() => copyCnBtn.textContent = prev, 1200);
+      }
+      return;
+    }
+
+    const copyEnBtn = e.target.closest('.copy-upsell-en-btn');
+    if (copyEnBtn){
+      let text = tr.dataset.upsellEn || '';
+      if (!text){
+        text = upsellTextEN(getLeadFromRow(tr));
+        tr.dataset.upsellEn = text;
+      }
+      const prev = copyEnBtn.textContent;
+      try{
+        const ok = await copyText(text);
+        copyEnBtn.textContent = ok ? 'Copied' : 'Failed';
+      }catch(_){
+        copyEnBtn.textContent = 'Failed';
+      }finally{
+        setTimeout(() => copyEnBtn.textContent = prev, 1200);
+      }
+      return;
+    }
+
+    const markBtn = e.target.closest('.mark-upsell-sent-btn');
+    if (markBtn){
+      const prev = markBtn.textContent;
+      markBtn.disabled = true;
+      markBtn.textContent = '提交中...';
+      try{
+        await postUpsellSent(tr, 'task_sprint');
+        const p = tr.querySelector('.upsell-preview');
+        if (p) p.textContent = '已记录复购发送事件（upsell_sent）。';
+        markBtn.textContent = '已记录';
+        const refreshBtn = document.getElementById('btnRefresh');
+        if (refreshBtn) refreshBtn.click();
+      }catch(err){
+        markBtn.textContent = '失败';
+        const p = tr.querySelector('.upsell-preview');
+        if (p) p.textContent = `记录失败：${err.message || err}`;
+      }finally{
+        setTimeout(() => {
+          markBtn.disabled = false;
+          markBtn.textContent = prev;
+        }, 1200);
+      }
+      return;
+    }
+  }, true);
+
+  const mo = new MutationObserver(() => decorateWonRows());
+  mo.observe(rowsEl, {childList:true, subtree:false});
+  decorateWonRows();
+})();
+</script>
+'''
+
+    return html_doc.replace(marker, patch + "\n" + marker)
+
+
 def build_page(config):
     leads_path = os.path.join(config.data_dir, "pay", "team_brief_leads.jsonl")
     template_path = os.path.join(ROOT, "templates", "admin_team_brief_leads.html")
@@ -390,6 +623,8 @@ def build_page(config):
         .replace("{{LEADS_INSERT_TEST_ENDPOINT}}", _INSERT_TEST_ENDPOINT)
         .replace("{{LEADS_CLEAR_TEST_ENDPOINT}}", _CLEAR_TEST_ENDPOINT)
     )
+
+    html_out = _inject_upsell_script(html_out)
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
