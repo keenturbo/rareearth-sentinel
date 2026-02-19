@@ -37,7 +37,9 @@ _EVENTS_ENDPOINT = "/api/admin/leads/team-brief/events"
 _INSERT_TEST_ENDPOINT = "/api/admin/leads/team-brief/insert-test"
 _CLEAR_TEST_ENDPOINT = "/api/admin/leads/team-brief/clear-test"
 
-_ALLOWED_STATUSES = {"new", "contacted", "qualified", "won", "lost"}
+_ALLOWED_STATUSES = {"new", "contacted", "qualified", "proposal_sent", "won", "lost"}
+_ALLOWED_QUOTE_CURRENCY = {"USD", "CNY"}
+_ALLOWED_QUOTE_PLAN = {"basic", "pro", "custom"}
 _LEAD_LOCK = threading.Lock()
 
 _ORIG_DO_GET = pcs.PayConfirmHandler.do_GET
@@ -126,6 +128,19 @@ def _normalize_lead_row(row: Dict) -> Dict:
     out["next_action_at"] = _normalize_text(out.get("next_action_at"), 40)
     out["updated_at"] = _normalize_text(out.get("updated_at"), 40)
 
+    qc = _normalize_text(out.get("quote_currency"), 8).upper() or "USD"
+    if qc not in _ALLOWED_QUOTE_CURRENCY:
+        qc = "USD"
+    out["quote_currency"] = qc
+    qa = _normalize_text(out.get("quote_amount"), 40)
+    out["quote_amount"] = qa
+    qp = _normalize_text(out.get("quote_plan"), 20).lower() or "basic"
+    if qp not in _ALLOWED_QUOTE_PLAN:
+        qp = "basic"
+    out["quote_plan"] = qp
+    out["quote_valid_until"] = _normalize_text(out.get("quote_valid_until"), 20)
+    out["last_proposal_at"] = _normalize_text(out.get("last_proposal_at"), 40)
+
     try:
         out["notes_count"] = int(out.get("notes_count") or 0)
     except (TypeError, ValueError):
@@ -196,6 +211,41 @@ def _append_lead_event(config, payload: Dict):
     base._ORIGINAL_APPEND_JSONL(_lead_events_path(config), evt)
 
 
+def _normalize_quote_fields(payload: Dict) -> Tuple[Dict, str]:
+    quote_currency = _normalize_text((payload or {}).get("quote_currency"), 8).upper() or "USD"
+    if quote_currency not in _ALLOWED_QUOTE_CURRENCY:
+        return {}, "invalid_quote_currency"
+
+    quote_plan = _normalize_text((payload or {}).get("quote_plan"), 20).lower() or "basic"
+    if quote_plan not in _ALLOWED_QUOTE_PLAN:
+        return {}, "invalid_quote_plan"
+
+    quote_amount_raw = _normalize_text((payload or {}).get("quote_amount"), 40)
+    quote_amount = ""
+    if quote_amount_raw:
+        try:
+            quote_amount_val = float(quote_amount_raw)
+            if quote_amount_val < 0:
+                return {}, "invalid_quote_amount"
+            quote_amount = f"{quote_amount_val:.2f}".rstrip("0").rstrip(".")
+        except (TypeError, ValueError):
+            return {}, "invalid_quote_amount"
+
+    quote_valid_until = _normalize_text((payload or {}).get("quote_valid_until"), 20)
+    if quote_valid_until:
+        try:
+            datetime.strptime(quote_valid_until, "%Y-%m-%d")
+        except ValueError:
+            return {}, "invalid_quote_valid_until"
+
+    return {
+        "quote_currency": quote_currency,
+        "quote_amount": quote_amount,
+        "quote_plan": quote_plan,
+        "quote_valid_until": quote_valid_until,
+    }, ""
+
+
 def _update_lead(config, payload: Dict) -> Tuple[Dict, str]:
     lead_id = _normalize_text((payload or {}).get("lead_id"), 80)
     if not lead_id:
@@ -209,6 +259,10 @@ def _update_lead(config, payload: Dict) -> Tuple[Dict, str]:
     next_action_at = _normalize_text((payload or {}).get("next_action_at"), 40)
     note = _normalize_text((payload or {}).get("note"), 1200)
     operator = _normalize_text((payload or {}).get("operator"), 40) or "admin"
+
+    quote_fields, quote_err = _normalize_quote_fields(payload or {})
+    if quote_err:
+        return {}, quote_err
 
     path = _leads_path(config)
     with _LEAD_LOCK:
@@ -225,12 +279,26 @@ def _update_lead(config, payload: Dict) -> Tuple[Dict, str]:
             before_status = cur.get("status")
             before_owner = cur.get("owner")
             before_next = cur.get("next_action_at")
+            before_quote = {
+                "quote_currency": cur.get("quote_currency"),
+                "quote_amount": cur.get("quote_amount"),
+                "quote_plan": cur.get("quote_plan"),
+                "quote_valid_until": cur.get("quote_valid_until"),
+            }
 
             if new_status:
                 cur["status"] = new_status
             cur["owner"] = owner
             cur["next_action_at"] = next_action_at
             cur["updated_at"] = _utc_now_iso()
+
+            cur["quote_currency"] = quote_fields.get("quote_currency", cur.get("quote_currency") or "USD")
+            cur["quote_amount"] = quote_fields.get("quote_amount", cur.get("quote_amount") or "")
+            cur["quote_plan"] = quote_fields.get("quote_plan", cur.get("quote_plan") or "basic")
+            cur["quote_valid_until"] = quote_fields.get("quote_valid_until", cur.get("quote_valid_until") or "")
+
+            if new_status == "proposal_sent":
+                cur["last_proposal_at"] = _utc_now_iso()
 
             if note:
                 cur["notes_count"] = int(cur.get("notes_count") or 0) + 1
@@ -269,6 +337,40 @@ def _update_lead(config, payload: Dict) -> Tuple[Dict, str]:
                         "operator": operator,
                     },
                 )
+
+            if before_quote != {
+                "quote_currency": cur.get("quote_currency"),
+                "quote_amount": cur.get("quote_amount"),
+                "quote_plan": cur.get("quote_plan"),
+                "quote_valid_until": cur.get("quote_valid_until"),
+            }:
+                _append_lead_event(
+                    config,
+                    {
+                        "lead_id": lead_id,
+                        "event_type": "proposal_created",
+                        "quote_currency": cur.get("quote_currency"),
+                        "quote_amount": cur.get("quote_amount"),
+                        "quote_plan": cur.get("quote_plan"),
+                        "quote_valid_until": cur.get("quote_valid_until"),
+                        "operator": operator,
+                    },
+                )
+
+            if new_status == "proposal_sent":
+                _append_lead_event(
+                    config,
+                    {
+                        "lead_id": lead_id,
+                        "event_type": "proposal_sent",
+                        "quote_currency": cur.get("quote_currency"),
+                        "quote_amount": cur.get("quote_amount"),
+                        "quote_plan": cur.get("quote_plan"),
+                        "quote_valid_until": cur.get("quote_valid_until"),
+                        "operator": operator,
+                    },
+                )
+
             if note:
                 _append_lead_event(
                     config,
@@ -313,6 +415,11 @@ def _insert_test_lead(config, operator: str = "admin") -> Dict:
         "updated_at": _utc_now_iso(),
         "notes_count": 0,
         "test": True,
+        "quote_currency": "USD",
+        "quote_amount": "",
+        "quote_plan": "basic",
+        "quote_valid_until": "",
+        "last_proposal_at": "",
     }
     with _LEAD_LOCK:
         rows = _read_jsonl_rows(_leads_path(config))
@@ -386,6 +493,11 @@ def _to_csv(rows: List[Dict]) -> str:
         "utm_source",
         "utm_campaign",
         "utm_content",
+        "quote_currency",
+        "quote_amount",
+        "quote_plan",
+        "quote_valid_until",
+        "last_proposal_at",
         "message",
         "test",
     ]
