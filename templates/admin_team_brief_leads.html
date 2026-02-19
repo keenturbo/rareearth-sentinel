@@ -17,7 +17,7 @@ header .sub{font-size:12px;color:var(--muted)}
 .header-links a:hover{color:var(--accent)}
 .section{background:#fff;border-radius:12px;padding:16px;box-shadow:0 6px 14px rgba(0,0,0,0.05)}
 .path{font-size:12px;color:var(--muted);margin-bottom:10px;word-break:break-all}
-.stats{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:10px;margin-bottom:12px}
+.stats{display:grid;grid-template-columns:repeat(7,minmax(110px,1fr));gap:10px;margin-bottom:12px}
 .stat{background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px}
 .stat .k{font-size:12px;color:var(--muted)}
 .stat .v{font-size:18px;font-weight:700}
@@ -36,12 +36,16 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
 .muted{color:#6b7280}
 .message-cell{max-width:320px;word-break:break-word}
 .timeline-cell{min-width:100px}
-.status-select,.owner-input,.next-action-input,.note-input{width:100%;margin-bottom:6px;border:1px solid #dbe3ec;border-radius:6px;padding:6px;font:inherit;background:#fff}
-.action-row{display:flex;align-items:center;gap:8px}
-.save-btn,.timeline-btn{height:30px;padding:0 10px;border:1px solid #1d4ed8;background:#1d4ed8;color:#fff;border-radius:6px;cursor:pointer}
-.save-btn:hover,.timeline-btn:hover{opacity:.92}
+.status-select,.owner-input,.next-action-input,.note-input,.quote-amount,.quote-currency,.quote-plan,.quote-valid-until{width:100%;margin-bottom:6px;border:1px solid #dbe3ec;border-radius:6px;padding:6px;font:inherit;background:#fff}
+.action-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.save-btn,.timeline-btn,.gen-quote-btn,.copy-quote-cn-btn,.copy-quote-en-btn,.send-proposal-btn{height:30px;padding:0 10px;border:1px solid #1d4ed8;background:#1d4ed8;color:#fff;border-radius:6px;cursor:pointer}
+.copy-quote-cn-btn,.copy-quote-en-btn{background:#fff;color:#1d4ed8}
+.send-proposal-btn{background:#7c3aed;border-color:#7c3aed}
+.save-btn:hover,.timeline-btn:hover,.gen-quote-btn:hover,.copy-quote-cn-btn:hover,.copy-quote-en-btn:hover,.send-proposal-btn:hover{opacity:.92}
 .save-msg.ok{color:var(--ok)}
 .save-msg.err{color:#b91c1c}
+.quote-box{border:1px dashed #dbe3ec;border-radius:8px;padding:6px;margin-bottom:8px;background:#fcfdff}
+.quote-preview{font-size:11px;color:#475569;max-height:64px;overflow:auto;white-space:pre-wrap;border:1px solid #e5e7eb;border-radius:6px;padding:6px;background:#fff}
 
 .modal{position:fixed;inset:0;background:rgba(2,6,23,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:999}
 .modal.show{display:flex}
@@ -98,6 +102,7 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
       <div class="stat"><div class="k">新线索</div><div class="v" id="statNew">{{NEW_COUNT}}</div></div>
       <div class="stat"><div class="k">已联系</div><div class="v" id="statContacted">{{CONTACTED_COUNT}}</div></div>
       <div class="stat"><div class="k">已评估</div><div class="v" id="statQualified">{{QUALIFIED_COUNT}}</div></div>
+      <div class="stat"><div class="k">已发送报价</div><div class="v" id="statProposalSent">{{PROPOSAL_SENT_COUNT}}</div></div>
       <div class="stat"><div class="k">已成交</div><div class="v" id="statWon">{{WON_COUNT}}</div></div>
       <div class="stat"><div class="k">已丢失</div><div class="v" id="statLost">{{LOST_COUNT}}</div></div>
     </div>
@@ -110,6 +115,7 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
         <option value="new">新线索</option>
         <option value="contacted">已联系</option>
         <option value="qualified">已评估</option>
+        <option value="proposal_sent">已发送报价</option>
         <option value="won">已成交</option>
         <option value="lost">已丢失</option>
       </select>
@@ -132,7 +138,7 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
             <th>来源/UTM</th>
             <th>需求说明</th>
             <th>状态/负责人/下次跟进</th>
-            <th>备注与操作</th>
+            <th>报价/备注与操作</th>
             <th>时间线</th>
           </tr>
         </thead>
@@ -173,6 +179,7 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
   const statNew = document.getElementById("statNew");
   const statContacted = document.getElementById("statContacted");
   const statQualified = document.getElementById("statQualified");
+  const statProposalSent = document.getElementById("statProposalSent");
   const statWon = document.getElementById("statWon");
   const statLost = document.getElementById("statLost");
   const ownerBoard = document.getElementById("ownerBoard");
@@ -239,15 +246,34 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
       ["new", "新线索"],
       ["contacted", "已联系"],
       ["qualified", "已评估"],
+      ["proposal_sent", "已发送报价"],
       ["won", "已成交"],
       ["lost", "已丢失"],
     ];
     return opts.map(([v,t]) => `<option value="${v}"${v===current?" selected":""}>${t}</option>`).join("");
   }
 
+  function quoteTextCN(lead){
+    const amount = lead.quote_amount ? `${lead.quote_currency || 'USD'} ${lead.quote_amount}` : '待确认';
+    const valid = lead.quote_valid_until || '待确认';
+    const plan = lead.quote_plan || 'basic';
+    return `【Team Brief 报价摘要】\n对象：${lead.company || '-'} / ${lead.name || '-'}\n方案：${plan}\n报价：${amount}\n有效期：${valid}\n交付：月度关键矿产风险简报（含行动建议与证据锚点）\n如确认，请回复“同意报价”。`;
+  }
+
+  function quoteTextEN(lead){
+    const amount = lead.quote_amount ? `${lead.quote_currency || 'USD'} ${lead.quote_amount}` : 'TBD';
+    const valid = lead.quote_valid_until || 'TBD';
+    const plan = lead.quote_plan || 'basic';
+    return `Team Brief Quote\nAccount: ${lead.company || '-'} / ${lead.name || '-'}\nPlan: ${plan}\nPrice: ${amount}\nValid until: ${valid}\nDelivery: Monthly critical-minerals brief with action points and evidence anchors.\nPlease reply "Accepted" to proceed.`;
+  }
+
   function rowHtml(lead){
     const utm = [lead.utm_source, lead.utm_campaign, lead.utm_content].filter(Boolean).join(" / ");
     const testBadge = lead.test ? "<div class='muted' style='color:#d97706'>test</div>" : "";
+    const qc = String(lead.quote_currency || 'USD');
+    const qp = String(lead.quote_plan || 'basic');
+    const qv = String(lead.quote_valid_until || '');
+    const qa = String(lead.quote_amount || '');
     return `
 <tr data-lead-id="${esc(lead.lead_id)}">
   <td>${esc(lead.created_at || "")}</td>
@@ -263,6 +289,29 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
     <input class="next-action-input" type="datetime-local" value="${esc(fmtLocal(lead.next_action_at || ""))}" />
   </td>
   <td>
+    <div class="quote-box">
+      <div class="action-row" style="margin-bottom:6px">
+        <select class="quote-currency" style="max-width:90px">
+          <option value="USD"${qc==='USD'?' selected':''}>USD</option>
+          <option value="CNY"${qc==='CNY'?' selected':''}>CNY</option>
+        </select>
+        <input class="quote-amount" type="number" step="0.01" min="0" value="${esc(qa)}" placeholder="报价金额" style="max-width:120px" />
+        <select class="quote-plan" style="max-width:110px">
+          <option value="basic"${qp==='basic'?' selected':''}>basic</option>
+          <option value="pro"${qp==='pro'?' selected':''}>pro</option>
+          <option value="custom"${qp==='custom'?' selected':''}>custom</option>
+        </select>
+        <input class="quote-valid-until" type="date" value="${esc(qv)}" style="max-width:150px" />
+      </div>
+      <div class="action-row" style="margin-bottom:6px">
+        <button class="gen-quote-btn">生成报价</button>
+        <button class="copy-quote-cn-btn">复制中文报价</button>
+        <button class="copy-quote-en-btn">Copy EN Quote</button>
+        <button class="send-proposal-btn">标记已发送报价</button>
+      </div>
+      <div class="quote-preview"></div>
+    </div>
+
     <textarea class="note-input" rows="2" placeholder="跟进备注（可选）"></textarea>
     <div class="action-row">
       <button class="save-btn">保存</button>
@@ -326,6 +375,7 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
     statNew.textContent = String(stats?.new ?? 0);
     statContacted.textContent = String(stats?.contacted ?? 0);
     statQualified.textContent = String(stats?.qualified ?? 0);
+    statProposalSent.textContent = String(stats?.proposal_sent ?? 0);
     statWon.textContent = String(stats?.won ?? 0);
     statLost.textContent = String(stats?.lost ?? 0);
   }
@@ -420,6 +470,13 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
         if (fromTo) detailParts.push(`状态: ${fromTo}`);
         if (owner) detailParts.push(`负责人: ${owner}`);
         if (nextAction) detailParts.push(`下次跟进: ${nextAction}`);
+        const qcc = esc(ev.quote_currency || '');
+        const qaa = esc(ev.quote_amount || '');
+        const qpp = esc(ev.quote_plan || '');
+        const qvv = esc(ev.quote_valid_until || '');
+        if (qaa || qpp || qvv){
+          detailParts.push(`报价: ${qcc} ${qaa} (${qpp}) 有效期:${qvv}`.trim());
+        }
         if (note) detailParts.push(`备注: ${note}`);
         const detail = detailParts.join(' | ') || '—';
         return `<div class="timeline-item"><div class="t">${t} · ${type}</div><div class="e">${detail}</div></div>`;
@@ -459,6 +516,55 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
       });
     }
     return lines.join("\n");
+  }
+
+  function collectLeadFromRow(tr){
+    return {
+      lead_id: tr.getAttribute('data-lead-id') || '',
+      status: tr.querySelector('.status-select')?.value || 'new',
+      owner: tr.querySelector('.owner-input')?.value || '',
+      next_action_at: toIso(tr.querySelector('.next-action-input')?.value || ''),
+      note: tr.querySelector('.note-input')?.value || '',
+      quote_currency: tr.querySelector('.quote-currency')?.value || 'USD',
+      quote_amount: tr.querySelector('.quote-amount')?.value || '',
+      quote_plan: tr.querySelector('.quote-plan')?.value || 'basic',
+      quote_valid_until: tr.querySelector('.quote-valid-until')?.value || '',
+      operator: 'admin',
+    };
+  }
+
+  function updateQuotePreview(tr, text){
+    const el = tr.querySelector('.quote-preview');
+    if (el) el.textContent = text || '';
+  }
+
+  async function doSave(tr, override = {}){
+    const payload = Object.assign(collectLeadFromRow(tr), override || {});
+    const saveBtn = tr.querySelector('.save-btn');
+    const msg = tr.querySelector('.save-msg');
+    if (saveBtn) saveBtn.disabled = true;
+    if (msg){ msg.textContent = '保存中...'; msg.className = 'save-msg muted'; }
+    try{
+      const res = await fetch(UPDATE_ENDPOINT, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok){
+        throw new Error(data?.error || `HTTP ${res.status}`);
+      }
+      if (msg){ msg.textContent = '已保存'; msg.className = 'save-msg ok'; }
+      const noteEl = tr.querySelector('.note-input');
+      if (noteEl) noteEl.value = '';
+      loadLeads();
+      return true;
+    }catch(err){
+      if (msg){ msg.textContent = `失败：${err.message || err}`; msg.className = 'save-msg err'; }
+      return false;
+    }finally{
+      if (saveBtn) saveBtn.disabled = false;
+    }
   }
 
   rowsEl.addEventListener("click", async (e) => {
@@ -506,56 +612,83 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
       }
     }
 
-    const saveBtn = e.target.closest(".save-btn");
-    if (saveBtn) {
-      const tr = saveBtn.closest("tr[data-lead-id]");
-      if (!tr) return;
+    const tr = e.target.closest("tr[data-lead-id]");
+    if (!tr) return;
 
-      const leadId = tr.getAttribute("data-lead-id") || "";
-      const status = tr.querySelector(".status-select")?.value || "new";
-      const owner = tr.querySelector(".owner-input")?.value || "";
-      const nextLocal = tr.querySelector(".next-action-input")?.value || "";
-      const note = tr.querySelector(".note-input")?.value || "";
-      const msg = tr.querySelector(".save-msg");
+    const saveBtn = e.target.closest('.save-btn');
+    if (saveBtn){
+      await doSave(tr);
+      return;
+    }
 
-      const payload = {
-        lead_id: leadId,
-        status,
-        owner,
-        next_action_at: toIso(nextLocal),
-        note,
-        operator: "admin",
-      };
+    const genBtn = e.target.closest('.gen-quote-btn');
+    if (genBtn){
+      const lead = collectLeadFromRow(tr);
+      const cn = quoteTextCN(lead);
+      const en = quoteTextEN(lead);
+      tr.dataset.quoteCn = cn;
+      tr.dataset.quoteEn = en;
+      updateQuotePreview(tr, cn);
+      return;
+    }
 
-      saveBtn.disabled = true;
-      if (msg){ msg.textContent = "保存中..."; msg.className = "save-msg muted"; }
-
+    const copyCnBtn = e.target.closest('.copy-quote-cn-btn');
+    if (copyCnBtn){
+      let text = tr.dataset.quoteCn || '';
+      if (!text){
+        const lead = collectLeadFromRow(tr);
+        text = quoteTextCN(lead);
+        tr.dataset.quoteCn = text;
+      }
+      const prev = copyCnBtn.textContent;
       try{
-        const res = await fetch(UPDATE_ENDPOINT, {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json();
-        if (!res.ok || !data?.ok){
-          throw new Error(data?.error || `HTTP ${res.status}`);
-        }
-        if (msg){ msg.textContent = "已保存"; msg.className = "save-msg ok"; }
-        const noteEl = tr.querySelector(".note-input");
-        if (noteEl) noteEl.value = "";
-        loadLeads();
-      }catch(err){
-        if (msg){ msg.textContent = `失败：${err.message || err}`; msg.className = "save-msg err"; }
+        const ok = await copyText(text);
+        copyCnBtn.textContent = ok ? '已复制' : '复制失败';
+      }catch(_){
+        copyCnBtn.textContent = '复制失败';
       }finally{
-        saveBtn.disabled = false;
+        setTimeout(()=>{ copyCnBtn.textContent = prev; }, 1200);
+      }
+      return;
+    }
+
+    const copyEnBtn = e.target.closest('.copy-quote-en-btn');
+    if (copyEnBtn){
+      let text = tr.dataset.quoteEn || '';
+      if (!text){
+        const lead = collectLeadFromRow(tr);
+        text = quoteTextEN(lead);
+        tr.dataset.quoteEn = text;
+      }
+      const prev = copyEnBtn.textContent;
+      try{
+        const ok = await copyText(text);
+        copyEnBtn.textContent = ok ? 'Copied' : 'Failed';
+      }catch(_){
+        copyEnBtn.textContent = 'Failed';
+      }finally{
+        setTimeout(()=>{ copyEnBtn.textContent = prev; }, 1200);
+      }
+      return;
+    }
+
+    const sendBtn = e.target.closest('.send-proposal-btn');
+    if (sendBtn){
+      const amount = String(tr.querySelector('.quote-amount')?.value || '').trim();
+      if (!amount){
+        alert('请先填写报价金额，再标记已发送报价。');
+        return;
+      }
+      const ok = await doSave(tr, {status: 'proposal_sent'});
+      if (ok){
+        const msg = tr.querySelector('.save-msg');
+        if (msg){ msg.textContent = '已标记为已发送报价'; msg.className = 'save-msg ok'; }
       }
       return;
     }
 
     const tlBtn = e.target.closest('.timeline-btn');
     if (tlBtn){
-      const tr = tlBtn.closest('tr[data-lead-id]');
-      if (!tr) return;
       const leadId = tr.getAttribute('data-lead-id') || '';
       loadTimeline(leadId);
     }
