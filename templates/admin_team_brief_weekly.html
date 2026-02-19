@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>管理员 · 团队简报周报</title>
+<style>
+:root{--ink:#0b1220;--muted:#536170;--bg:#f7f9fc;--card:#fff;--accent:#1d4ed8;--ok:#16a34a;--warn:#d97706;--danger:#dc2626}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans",sans-serif;background:linear-gradient(180deg,#f7f9fc,#e9eef5);color:var(--ink)}
+.container{max-width:1200px;margin:0 auto;padding:22px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+header h1{margin:0;font-size:20px}
+header .sub{font-size:12px;color:var(--muted)}
+.header-links{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;text-align:right}
+.header-links a{text-decoration:none;color:var(--muted)}
+.header-links a:hover{color:var(--accent)}
+.section{background:#fff;border-radius:12px;padding:16px;box-shadow:0 6px 14px rgba(0,0,0,.05);margin-bottom:14px}
+.cards{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:10px}
+.card{border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#f8fafc}
+.card .k{font-size:12px;color:var(--muted)}
+.card .v{font-size:22px;font-weight:700}
+.card.warn .v{color:var(--warn)}
+.card.ok .v{color:var(--ok)}
+.card.danger .v{color:var(--danger)}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+@media(max-width:980px){.cards{grid-template-columns:repeat(2,minmax(120px,1fr))}.grid{grid-template-columns:1fr}}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{padding:8px;border-top:1px solid #eef2f7;text-align:left;vertical-align:top}
+th{background:#f8fafc;color:#334155;white-space:nowrap}
+.muted{color:#6b7280}
+ul{margin:8px 0 0 18px;padding:0}
+li{margin:6px 0}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>管理员 · 团队简报周报 Digest</h1>
+      <div class="sub">统计窗口 {{WEEK_RANGE}} · 更新 {{LAST_UPDATE}}</div>
+    </div>
+    <div class="sub header-links">
+      <a href="/cn/admin/leads/team-brief/">团队简报线索</a>
+      <span>·</span>
+      <a href="/cn/admin/leads/team-brief/today/">今日清单</a>
+      <span>·</span>
+      <a href="/cn/admin/funnel/">漏斗</a>
+      <span>·</span>
+      <a href="/cn/admin/orders/">订单</a>
+      <span>·</span>
+      <a href="/cn/">返回中文首页</a>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="cards">
+      <div class="card"><div class="k">本周新增线索</div><div class="v">{{NEW_7D}}</div></div>
+      <div class="card warn"><div class="k">本周已发送报价</div><div class="v">{{PROPOSAL_7D}}</div></div>
+      <div class="card ok"><div class="k">本周成交</div><div class="v">{{WON_7D}}</div></div>
+      <div class="card danger"><div class="k">本周丢失</div><div class="v">{{LOST_7D}}</div></div>
+      <div class="card"><div class="k">报价率（报价/新增）</div><div class="v">{{PROPOSAL_RATE_7D}}</div></div>
+      <div class="card"><div class="k">成交率（成交/报价）</div><div class="v">{{WON_RATE_7D}}</div></div>
+      <div class="card"><div class="k">复购触达记录</div><div class="v">{{UPSELL_SENT_7D}}</div></div>
+      <div class="card"><div class="k">说明</div><div class="v" style="font-size:14px">仅统计近7天事件</div></div>
+    </div>
+  </section>
+
+  <div class="grid">
+    <section class="section">
+      <div class="muted" style="margin-bottom:8px">渠道转化（近7天新增线索）</div>
+      <table>
+        <thead>
+          <tr><th>Channel</th><th>线索</th><th>报价</th><th>成交</th><th>丢失</th><th>成交/报价</th></tr>
+        </thead>
+        <tbody>{{CHANNEL_ROWS}}</tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <div class="muted" style="margin-bottom:8px">负责人转化（近7天新增线索）</div>
+      <table>
+        <thead>
+          <tr><th>Owner</th><th>线索</th><th>报价</th><th>成交</th><th>丢失</th><th>成交/报价</th></tr>
+        </thead>
+        <tbody>{{OWNER_ROWS}}</tbody>
+      </table>
+    </section>
+  </div>
+
+  <div class="grid">
+    <section class="section">
+      <div class="muted" style="margin-bottom:8px">Won/Lost 原因分布（近7天）</div>
+      <table>
+        <thead>
+          <tr><th>原因</th><th>次数</th><th>占比</th></tr>
+        </thead>
+        <tbody>{{REASON_ROWS}}</tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <div class="muted" style="margin-bottom:8px">下周优先动作建议（自动）</div>
+      <ul>
+        {{ACTION_ITEMS}}
+      </ul>
+    </section>
+  </div>
+</div>
+</body>
+</html>
