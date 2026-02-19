@@ -31,6 +31,20 @@ _STATUS_LABEL = {
     "lost": "已丢失",
 }
 
+_CLOSE_REASON_LABEL = {
+    "price_fit": "价格匹配",
+    "timely_response": "响应及时",
+    "high_relevance": "需求高度匹配",
+    "trust_from_sample": "试读建立信任",
+    "other_won": "其他成交原因",
+    "price_too_high": "价格过高",
+    "no_budget": "暂无预算",
+    "no_need_now": "当前无需求",
+    "slow_followup": "跟进过慢",
+    "competitor_chosen": "选择竞品",
+    "unknown": "原因未知",
+}
+
 
 def _read_jsonl(path):
     rows = []
@@ -57,6 +71,36 @@ def _status_options(current):
     for s in _STATUS_ORDER:
         selected = " selected" if s == current else ""
         out.append(f'<option value="{s}"{selected}>{_STATUS_LABEL[s]}</option>')
+    return "".join(out)
+
+
+def _reason_options(current_status, current_code):
+    status = str(current_status or "").strip().lower()
+    cur = str(current_code or "").strip().lower()
+
+    won = [
+        ("", "成交原因（必选）"),
+        ("price_fit", "价格匹配"),
+        ("timely_response", "响应及时"),
+        ("high_relevance", "需求高度匹配"),
+        ("trust_from_sample", "试读建立信任"),
+        ("other_won", "其他成交原因"),
+    ]
+    lost = [
+        ("", "丢失原因（必选）"),
+        ("price_too_high", "价格过高"),
+        ("no_budget", "暂无预算"),
+        ("no_need_now", "当前无需求"),
+        ("slow_followup", "跟进过慢"),
+        ("competitor_chosen", "选择竞品"),
+        ("unknown", "原因未知"),
+    ]
+
+    pool = won if status == "won" else lost if status == "lost" else [("", "成交/丢失原因")]
+    out = []
+    for v, t in pool:
+        sel = " selected" if v == cur else ""
+        out.append(f'<option value="{html.escape(v)}"{sel}>{html.escape(t)}</option>')
     return "".join(out)
 
 
@@ -141,6 +185,9 @@ def _render_items(rows):
         quote_plan = html.escape(str(r.get("quote_plan") or "basic"))
         quote_valid_until_raw = str(r.get("quote_valid_until") or "")
         quote_valid_until = html.escape(quote_valid_until_raw)
+        close_reason_code = str(r.get("close_reason_code") or "").strip().lower()
+        close_reason_note = html.escape(str(r.get("close_reason_note") or ""))
+        close_reason_text = html.escape(_CLOSE_REASON_LABEL.get(close_reason_code, close_reason_code)) if close_reason_code else ""
         is_test = _is_test_row(r)
         test_badge = "<div class='muted' style='color:#d97706'>test</div>" if is_test else ""
 
@@ -158,6 +205,8 @@ def _render_items(rows):
             f"<input class='owner-input' type='text' value='{owner}' placeholder='负责人' />"
             f"<input class='next-action-input' type='datetime-local' value='{next_action}' />"
             f"<div class='muted' style='margin-top:4px'>报价: {quote_currency} {quote_amount} / {quote_plan} / {quote_valid_until}</div>"
+            f"<div class='muted' style='margin-top:4px'>归因: {close_reason_text or '-'}</div>"
+            (f"<div class='muted' style='margin-top:2px'>{close_reason_note}</div>" if close_reason_note else "")
             "</td>"
             "<td>"
             "<div class='quote-box'>"
