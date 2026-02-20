@@ -28,6 +28,13 @@ _REASON_LABEL = {
     "unknown": "原因未知",
 }
 
+_TEMPLATE_LABEL = {
+    "basic": "Basic",
+    "pro": "Pro",
+    "custom": "Custom",
+    "unknown": "Unknown",
+}
+
 
 def _read_jsonl(path):
     rows = []
@@ -92,6 +99,17 @@ def _safe_rate(n, d):
     return n / d
 
 
+def _norm_template(value):
+    t = str(value or "").strip().lower()
+    if t in {"basic", "pro", "custom"}:
+        return t
+    return "unknown"
+
+
+def _template_label(value):
+    return _TEMPLATE_LABEL.get(_norm_template(value), "Unknown")
+
+
 def _render_group_rows(items):
     if not items:
         return "<tr><td colspan='6' class='muted'>暂无数据</td></tr>"
@@ -104,6 +122,28 @@ def _render_group_rows(items):
         out.append(
             "<tr>"
             f"<td>{html.escape(key)}</td>"
+            f"<td>{total}</td>"
+            f"<td>{proposal}</td>"
+            f"<td>{won}</td>"
+            f"<td>{lost}</td>"
+            f"<td>{_pct(won, proposal)}</td>"
+            "</tr>"
+        )
+    return "".join(out)
+
+
+def _render_template_rows(items):
+    if not items:
+        return "<tr><td colspan='6' class='muted'>暂无模板样本</td></tr>"
+    out = []
+    for key, stats in items[:8]:
+        total = int(stats.get("total", 0))
+        proposal = int(stats.get("proposal", 0))
+        won = int(stats.get("won", 0))
+        lost = int(stats.get("lost", 0))
+        out.append(
+            "<tr>"
+            f"<td>{html.escape(_template_label(key))}</td>"
             f"<td>{total}</td>"
             f"<td>{proposal}</td>"
             f"<td>{won}</td>"
@@ -164,6 +204,34 @@ def _pick_best_hint(items, label):
     return f"{label}最佳：{key}（成交/报价 {_pct(stats.get('won', 0), stats.get('proposal', 0))}，报价样本 {int(stats.get('proposal', 0))}）"
 
 
+def _pick_best_template_hint(template_items):
+    valid = []
+    for key, stats in template_items:
+        proposal = int(stats.get("proposal", 0))
+        won = int(stats.get("won", 0))
+        if proposal > 0:
+            valid.append((key, stats, _safe_rate(won, proposal)))
+    if not valid:
+        return "模板样本不足（暂无报价样本）"
+    key, stats, _ = sorted(valid, key=lambda x: (x[2], int(x[1].get("won", 0)), int(x[1].get("proposal", 0))), reverse=True)[0]
+    return f"模板最佳：{_template_label(key)}（成交/报价 {_pct(stats.get('won', 0), stats.get('proposal', 0))}，报价样本 {int(stats.get('proposal', 0))}）"
+
+
+def _template_tip(template_items):
+    candidates = []
+    for key, stats in template_items:
+        proposal = int(stats.get("proposal", 0))
+        won = int(stats.get("won", 0))
+        if proposal >= 2:
+            candidates.append((key, proposal, _safe_rate(won, proposal)))
+    if not candidates:
+        return "模板建议：样本仍少，先保持当前模板并继续积累报价样本。"
+    key, proposal, rate = sorted(candidates, key=lambda x: x[2])[0]
+    if rate < 0.15:
+        return f"模板建议：{_template_label(key)} 转化偏低（{_pct(rate*100,100)}，样本{proposal}），建议调整默认报价语气与交付范围描述。"
+    return "模板建议：保持高胜率模板为默认，低样本模板继续A/B观察。"
+
+
 def _render_actions(actions):
     if not actions:
         return "<li>本周数据不足，先持续积累线索与报价样本。</li>"
@@ -184,6 +252,15 @@ def build_page(config: Config):
 
     leads_7d = [x for x in leads if _in_last_days(x.get("created_at"), now_utc, 7)]
     lead_map = {str((x or {}).get("lead_id") or "").strip(): x for x in leads}
+
+    template_by_lead = {}
+    for ev in events:
+        lead_id = str(ev.get("lead_id") or "").strip()
+        if not lead_id:
+            continue
+        tmpl = _norm_template(ev.get("proposal_template"))
+        if tmpl != "unknown":
+            template_by_lead[lead_id] = tmpl
 
     proposal_ids = set()
     won_ids = set()
@@ -234,30 +311,39 @@ def build_page(config: Config):
 
     channel_stats = defaultdict(lambda: {"total": 0, "proposal": 0, "won": 0, "lost": 0})
     owner_stats = defaultdict(lambda: {"total": 0, "proposal": 0, "won": 0, "lost": 0})
+    template_stats = defaultdict(lambda: {"total": 0, "proposal": 0, "won": 0, "lost": 0})
 
     for lead in leads_7d:
         lead_id = str(lead.get("lead_id") or "").strip()
         channel = str(lead.get("source_channel") or "").strip() or "unknown"
         owner = str(lead.get("owner") or "").strip() or "unassigned"
+        template_key = _norm_template(lead.get("proposal_template") or template_by_lead.get(lead_id))
 
         channel_stats[channel]["total"] += 1
         owner_stats[owner]["total"] += 1
+        template_stats[template_key]["total"] += 1
 
         if lead_id in proposal_ids:
             channel_stats[channel]["proposal"] += 1
             owner_stats[owner]["proposal"] += 1
+            template_stats[template_key]["proposal"] += 1
         if lead_id in won_ids:
             channel_stats[channel]["won"] += 1
             owner_stats[owner]["won"] += 1
+            template_stats[template_key]["won"] += 1
         if lead_id in lost_ids:
             channel_stats[channel]["lost"] += 1
             owner_stats[owner]["lost"] += 1
+            template_stats[template_key]["lost"] += 1
 
     channel_items = sorted(channel_stats.items(), key=lambda kv: (kv[1]["total"], kv[1]["won"]), reverse=True)
     owner_items = sorted(owner_stats.items(), key=lambda kv: (kv[1]["total"], kv[1]["won"]), reverse=True)
+    template_items = sorted(template_stats.items(), key=lambda kv: (kv[1]["total"], kv[1]["won"]), reverse=True)
 
     best_channel_hint = _pick_best_hint(channel_items, "渠道")
     best_owner_hint = _pick_best_hint(owner_items, "负责人")
+    best_template_hint = _pick_best_template_hint(template_items)
+    template_tip = _template_tip(template_items)
 
     actions = []
     proposal_rate = (proposal_7d / new_7d) if new_7d else 0.0
@@ -270,6 +356,8 @@ def build_page(config: Config):
         actions.append("本周已有成交但未记录复购触达，建议对 won 客户发送 Task Sprint 复购推荐。")
     actions.append(best_channel_hint)
     actions.append(best_owner_hint)
+    actions.append(best_template_hint)
+    actions.append(template_tip)
 
     week_range = f"{week_start_utc.astimezone(timezone.utc).date()} ~ {now_utc.astimezone(timezone.utc).date()}"
 
@@ -288,10 +376,13 @@ def build_page(config: Config):
         .replace("{{WON_RATE_7D}}", _pct(won_7d, proposal_7d))
         .replace("{{CHANNEL_ROWS}}", _render_group_rows(channel_items))
         .replace("{{OWNER_ROWS}}", _render_group_rows(owner_items))
+        .replace("{{TEMPLATE_ROWS}}", _render_template_rows(template_items))
         .replace("{{REASON_ROWS}}", _render_reason_rows(reason_counter))
         .replace("{{ATTRIBUTION_ROWS}}", _render_attribution_rows(attribution_counter))
         .replace("{{BEST_CHANNEL_HINT}}", html.escape(best_channel_hint))
         .replace("{{BEST_OWNER_HINT}}", html.escape(best_owner_hint))
+        .replace("{{BEST_TEMPLATE_HINT}}", html.escape(best_template_hint))
+        .replace("{{TEMPLATE_TIP}}", html.escape(template_tip))
         .replace("{{ACTION_ITEMS}}", _render_actions(actions))
     )
 
