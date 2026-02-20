@@ -16,12 +16,13 @@ header .sub{font-size:12px;color:var(--muted)}
 .header-links a{text-decoration:none;color:var(--muted)}
 .header-links a:hover{color:var(--accent)}
 .section{background:#fff;border-radius:12px;padding:14px;box-shadow:0 6px 14px rgba(0,0,0,.05)}
-.cards{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:10px;margin-bottom:12px}
+.cards{display:grid;grid-template-columns:repeat(5,minmax(160px,1fr));gap:10px;margin-bottom:12px}
 .card{border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#fff}
 .card .k{font-size:12px;color:var(--muted)}
 .card .v{font-size:20px;font-weight:700}
 .card.warn .v{color:var(--warn)}
 .card.danger .v{color:var(--danger)}
+.card.ok .v{color:var(--ok)}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
 .toolbar button{height:32px;border:1px solid #dbe3ec;border-radius:8px;background:#fff;padding:0 10px;cursor:pointer}
 .toolbar .primary{background:#1d4ed8;border-color:#1d4ed8;color:#fff}
@@ -64,6 +65,7 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
       <div class="card"><div class="k">今日待跟进</div><div class="v" id="cntToday">0</div></div>
       <div class="card danger"><div class="k">已逾期</div><div class="v" id="cntOverdue">0</div></div>
       <div class="card warn"><div class="k">报价3天内到期</div><div class="v" id="cntExpiring">0</div></div>
+      <div class="card ok"><div class="k">复购到期提醒（won+7d）</div><div class="v" id="cntUpsell">0</div></div>
     </div>
 
     <div class="toolbar">
@@ -109,6 +111,15 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
         </div>
         <div class="table-wrap"><table><thead><tr><th>线索ID</th><th>公司</th><th>负责人</th><th>状态</th><th>下次跟进</th><th>到期</th><th>操作</th></tr></thead><tbody id="rowsExpiring"><tr><td colspan="7" class="muted">加载中...</td></tr></tbody></table></div>
       </div>
+
+      <div class="block" id="blockUpsell">
+        <h3>复购到期提醒（won + 7天）</h3>
+        <div class="actions">
+          <button data-copy="upsell">复制</button>
+          <button data-export="upsell">导出CSV</button>
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>线索ID</th><th>公司</th><th>负责人</th><th>状态</th><th>下次跟进</th><th>到期</th><th>操作</th></tr></thead><tbody id="rowsUpsell"><tr><td colspan="7" class="muted">加载中...</td></tr></tbody></table></div>
+      </div>
     </div>
   </section>
 </div>
@@ -123,18 +134,20 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
   const rowsToday = document.getElementById('rowsToday');
   const rowsOverdue = document.getElementById('rowsOverdue');
   const rowsExpiring = document.getElementById('rowsExpiring');
+  const rowsUpsell = document.getElementById('rowsUpsell');
   const msg = document.getElementById('msg');
 
   const cntHigh = document.getElementById('cntHigh');
   const cntToday = document.getElementById('cntToday');
   const cntOverdue = document.getElementById('cntOverdue');
   const cntExpiring = document.getElementById('cntExpiring');
+  const cntUpsell = document.getElementById('cntUpsell');
 
   const btnRefresh = document.getElementById('btnRefresh');
   const btnCopyMaster = document.getElementById('btnCopyMaster');
   const btnExportMaster = document.getElementById('btnExportMaster');
 
-  let latest = {high_priority:[], today:[], overdue:[], expiring:[]};
+  let latest = {high_priority:[], today:[], overdue:[], expiring:[], upsell_due:[]};
 
   function esc(v){
     return String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
@@ -159,6 +172,13 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
     return Number.isNaN(d.getTime()) ? null : d;
   }
 
+  function parseDate(v){
+    const s = String(v||'').slice(0,10);
+    if (!s) return null;
+    const d = new Date(s + 'T00:00:00');
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
   function fmt(v){
     return String(v||'').replace('T',' ').replace('Z','').slice(0,16);
   }
@@ -169,7 +189,7 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
     const owner = esc(x.owner || '未分配');
     const status = esc(x.status || 'new');
     const nextAction = esc(fmt(x.next_action_at || ''));
-    const qvu = esc(x.quote_valid_until || '-');
+    const qvu = esc(x._display_due || x.quote_valid_until || '-');
     return `<tr data-lead-id="${leadId}">
       <td>${leadId}</td>
       <td>${company}</td>
@@ -194,7 +214,9 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const expEnd = new Date(today); expEnd.setDate(today.getDate()+3);
-    const active = (Array.isArray(leads)?leads:[]).filter(x => !['won','lost'].includes(String(x.status||'').toLowerCase()));
+
+    const all = (Array.isArray(leads)?leads:[]);
+    const active = all.filter(x => !['won','lost'].includes(String(x.status||'').toLowerCase()));
 
     const high = active.filter(x => String(x.status||'').toLowerCase()==='qualified');
     const dueToday = active.filter(x => {
@@ -208,13 +230,39 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
       return !!d && d.getTime() < now.getTime();
     });
     const expiring = active.filter(x => {
-      const s = String(x.quote_valid_until||'').slice(0,10);
-      if (!s) return false;
-      const d = new Date(s + 'T00:00:00');
-      if (Number.isNaN(d.getTime())) return false;
+      const d = parseDate(x.quote_valid_until);
+      if (!d) return false;
       return d.getTime() >= today.getTime() && d.getTime() <= expEnd.getTime();
     });
-    return {high_priority: high, today: dueToday, overdue, expiring};
+
+    const upsellDue = all.filter(x => {
+      if (String(x.status||'').toLowerCase() !== 'won') return false;
+      const upsellStatus = String(x.upsell_status||'').toLowerCase();
+      if (upsellStatus === 'done') return false;
+      let due = parseDate(x.upsell_due_at);
+      if (!due){
+        const base = parseDt(x.won_at || x.updated_at || x.created_at);
+        if (!base) return false;
+        due = new Date(base);
+        due.setHours(0,0,0,0);
+        due.setDate(due.getDate()+7);
+      }
+      return due.getTime() <= today.getTime();
+    }).map(x => {
+      let due = parseDate(x.upsell_due_at);
+      if (!due){
+        const base = parseDt(x.won_at || x.updated_at || x.created_at);
+        if (base){
+          due = new Date(base);
+          due.setHours(0,0,0,0);
+          due.setDate(due.getDate()+7);
+        }
+      }
+      const dueStr = due ? due.toISOString().slice(0,10) : (String(x.upsell_due_at||'').slice(0,10) || '-');
+      return Object.assign({}, x, {_display_due: dueStr});
+    });
+
+    return {high_priority: high, today: dueToday, overdue, expiring, upsell_due: upsellDue};
   }
 
   function setCounts(data){
@@ -222,6 +270,7 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
     cntToday.textContent = String((data.today||[]).length);
     cntOverdue.textContent = String((data.overdue||[]).length);
     cntExpiring.textContent = String((data.expiring||[]).length);
+    cntUpsell.textContent = String((data.upsell_due||[]).length);
   }
 
   function toSummary(title, rows){
@@ -232,7 +281,7 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
       return lines.join('\n');
     }
     arr.forEach((x,i)=>{
-      lines.push(`${i+1}. ${x.lead_id||'-'} | ${x.company||'-'} | 负责人:${x.owner||'未分配'} | 状态:${x.status||'-'} | 下次:${fmt(x.next_action_at||'')||'-'} | 到期:${x.quote_valid_until||'-'}`);
+      lines.push(`${i+1}. ${x.lead_id||'-'} | ${x.company||'-'} | 负责人:${x.owner||'未分配'} | 状态:${x.status||'-'} | 下次:${fmt(x.next_action_at||'')||'-'} | 到期:${x._display_due || x.quote_valid_until || '-'}`);
     });
     return lines.join('\n');
   }
@@ -278,7 +327,7 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
   }
 
   async function markHandled(leadId){
-    const lead = [...latest.high_priority, ...latest.today, ...latest.overdue, ...latest.expiring].find(x => String(x.lead_id||'')===String(leadId||''));
+    const lead = [...latest.high_priority, ...latest.today, ...latest.overdue, ...latest.expiring, ...latest.upsell_due].find(x => String(x.lead_id||'')===String(leadId||''));
     if (!lead) throw new Error('lead_not_found');
 
     const payload = {
@@ -289,6 +338,7 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
       quote_currency: lead.quote_currency || 'USD',
       quote_amount: lead.quote_amount || '',
       quote_plan: lead.quote_plan || 'basic',
+      proposal_template: lead.proposal_template || lead.quote_plan || 'basic',
       quote_valid_until: lead.quote_valid_until || '',
       note: `[handled_today ${new Date().toISOString().slice(0,10)}]`,
       operator: 'admin'
@@ -317,7 +367,8 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
             high_priority: Array.isArray(j0.high_priority) ? j0.high_priority : [],
             today: Array.isArray(j0.today) ? j0.today : [],
             overdue: Array.isArray(j0.overdue) ? j0.overdue : [],
-            expiring: Array.isArray(j0.expiring) ? j0.expiring : []
+            expiring: Array.isArray(j0.expiring) ? j0.expiring : [],
+            upsell_due: Array.isArray(j0.upsell_due) ? j0.upsell_due : []
           };
         }
       }
@@ -335,11 +386,13 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
       renderSection(rowsToday, latest.today);
       renderSection(rowsOverdue, latest.overdue);
       renderSection(rowsExpiring, latest.expiring);
+      renderSection(rowsUpsell, latest.upsell_due);
       msg.textContent = '已更新';
     }catch(err){
       msg.textContent = `加载失败：${err.message || err}`;
-      rowsHigh.innerHTML = rowsToday.innerHTML = rowsOverdue.innerHTML = rowsExpiring.innerHTML = '<tr><td colspan="7" class="muted">加载失败</td></tr>';
-      setCounts({high_priority:[],today:[],overdue:[],expiring:[]});
+      const fail = '<tr><td colspan="7" class="muted">加载失败</td></tr>';
+      rowsHigh.innerHTML = rowsToday.innerHTML = rowsOverdue.innerHTML = rowsExpiring.innerHTML = rowsUpsell.innerHTML = fail;
+      setCounts({high_priority:[],today:[],overdue:[],expiring:[],upsell_due:[]});
     }finally{
       btnRefresh.disabled = false;
     }
@@ -367,7 +420,7 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
     if (btnCopy){
       const key = btnCopy.getAttribute('data-copy');
       const rows = latest[key] || [];
-      const titleMap = {high:'高优先', today:'今日待跟进', overdue:'已逾期', expiring:'报价将到期'};
+      const titleMap = {high:'高优先', today:'今日待跟进', overdue:'已逾期', expiring:'报价将到期', upsell:'复购到期提醒'};
       const ok = await copyText(toSummary(titleMap[key] || '清单', rows)).catch(()=>false);
       alert(ok ? '已复制' : '复制失败');
       return;
@@ -393,7 +446,9 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
       '',
       toSummary('已逾期', latest.overdue),
       '',
-      toSummary('报价将到期', latest.expiring)
+      toSummary('报价将到期', latest.expiring),
+      '',
+      toSummary('复购到期提醒', latest.upsell_due)
     ].join('\n');
     const ok = await copyText(text).catch(()=>false);
     alert(ok ? '已复制今日总清单' : '复制失败');
@@ -404,7 +459,8 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
       ...(latest.high_priority || []),
       ...(latest.today || []),
       ...(latest.overdue || []),
-      ...(latest.expiring || [])
+      ...(latest.expiring || []),
+      ...(latest.upsell_due || [])
     ];
     const uniq = [];
     const seen = new Set();
