@@ -17,6 +17,7 @@ header .sub{font-size:12px;color:var(--muted)}
 .header-links a:hover{color:var(--accent)}
 .section{background:#fff;border-radius:12px;padding:14px;box-shadow:0 6px 14px rgba(0,0,0,.05)}
 .cards{display:grid;grid-template-columns:repeat(5,minmax(160px,1fr));gap:10px;margin-bottom:12px}
+.cards.tpl-cards{grid-template-columns:repeat(4,minmax(140px,1fr));margin-top:-2px}
 .card{border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#fff}
 .card .k{font-size:12px;color:var(--muted)}
 .card .v{font-size:20px;font-weight:700}
@@ -38,7 +39,7 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
 .muted{color:#6b7280}
 .mark-btn{height:28px;border:1px solid #1d4ed8;background:#1d4ed8;color:#fff;border-radius:6px;padding:0 10px;cursor:pointer}
 .mark-btn.done{background:#16a34a;border-color:#16a34a}
-@media (max-width:980px){.cards{grid-template-columns:repeat(2,minmax(140px,1fr))}}
+@media (max-width:980px){.cards{grid-template-columns:repeat(2,minmax(140px,1fr))}.cards.tpl-cards{grid-template-columns:repeat(2,minmax(140px,1fr));}}
 </style>
 </head>
 <body>
@@ -65,7 +66,14 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
       <div class="card"><div class="k">今日待跟进</div><div class="v" id="cntToday">0</div></div>
       <div class="card danger"><div class="k">已逾期</div><div class="v" id="cntOverdue">0</div></div>
       <div class="card warn"><div class="k">报价3天内到期</div><div class="v" id="cntExpiring">0</div></div>
-      <div class="card ok"><div class="k">复购到期提醒（won+7d）</div><div class="v" id="cntUpsell">0</div></div>
+      <div class="card ok"><div class="k">复购跟进到期（成交后第7天）</div><div class="v" id="cntUpsell">0</div></div>
+    </div>
+
+    <div class="cards tpl-cards">
+      <div class="card"><div class="k">模板分布 · Basic</div><div class="v" id="cntTplBasic">0</div></div>
+      <div class="card"><div class="k">模板分布 · Pro</div><div class="v" id="cntTplPro">0</div></div>
+      <div class="card"><div class="k">模板分布 · Custom</div><div class="v" id="cntTplCustom">0</div></div>
+      <div class="card"><div class="k">模板分布 · Unknown</div><div class="v" id="cntTplUnknown">0</div></div>
     </div>
 
     <div class="toolbar">
@@ -113,7 +121,7 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
       </div>
 
       <div class="block" id="blockUpsell">
-        <h3>复购到期提醒（won + 7天）</h3>
+        <h3>复购跟进到期（成交后 +7天）</h3>
         <div class="actions">
           <button data-copy="upsell">复制</button>
           <button data-export="upsell">导出CSV</button>
@@ -148,6 +156,10 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
   const cntOverdue = document.getElementById('cntOverdue');
   const cntExpiring = document.getElementById('cntExpiring');
   const cntUpsell = document.getElementById('cntUpsell');
+  const cntTplBasic = document.getElementById('cntTplBasic');
+  const cntTplPro = document.getElementById('cntTplPro');
+  const cntTplCustom = document.getElementById('cntTplCustom');
+  const cntTplUnknown = document.getElementById('cntTplUnknown');
 
   const btnRefresh = document.getElementById('btnRefresh');
   const btnCopyMaster = document.getElementById('btnCopyMaster');
@@ -187,6 +199,43 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
 
   function fmt(v){
     return String(v||'').replace('T',' ').replace('Z','').slice(0,16);
+  }
+
+  function normTemplate(v){
+    const t = String(v || '').trim().toLowerCase();
+    if (t === 'basic' || t === 'pro' || t === 'custom') return t;
+    return 'unknown';
+  }
+
+  function mergedUniqueRows(data){
+    const rows = [
+      ...(data.high_priority || []),
+      ...(data.today || []),
+      ...(data.overdue || []),
+      ...(data.expiring || []),
+      ...(data.upsell_due || [])
+    ];
+    const out = [];
+    const seen = new Set();
+    for (const x of rows){
+      const id = String(x.lead_id || '');
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      out.push(x);
+    }
+    return out;
+  }
+
+  function setTemplateCounts(data){
+    const c = {basic:0, pro:0, custom:0, unknown:0};
+    for (const x of mergedUniqueRows(data)){
+      const t = normTemplate(x.proposal_template || x.quote_plan || '');
+      c[t] += 1;
+    }
+    cntTplBasic.textContent = String(c.basic);
+    cntTplPro.textContent = String(c.pro);
+    cntTplCustom.textContent = String(c.custom);
+    cntTplUnknown.textContent = String(c.unknown);
   }
 
   function tableRow(x){
@@ -277,6 +326,7 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
     cntOverdue.textContent = String((data.overdue||[]).length);
     cntExpiring.textContent = String((data.expiring||[]).length);
     cntUpsell.textContent = String((data.upsell_due||[]).length);
+    setTemplateCounts(data);
   }
 
   function toSummary(title, rows){
@@ -287,7 +337,7 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
       return lines.join('\n');
     }
     arr.forEach((x,i)=>{
-      lines.push(`${i+1}. ${x.lead_id||'-'} | ${x.company||'-'} | 负责人:${x.owner||'未分配'} | 状态:${x.status||'-'} | 下次:${fmt(x.next_action_at||'')||'-'} | 到期:${x._display_due || x.quote_valid_until || '-'}`);
+      lines.push(`${i+1}. ${x.lead_id||'-'} | ${x.company||'-'} | 负责人:${x.owner||'未分配'} | 状态:${x.status||'-'} | 模板:${normTemplate(x.proposal_template || x.quote_plan || '')} | 下次:${fmt(x.next_action_at||'')||'-'} | 到期:${x._display_due || x.quote_valid_until || '-'}`);
     });
     return lines.join('\n');
   }
@@ -318,7 +368,7 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
   }
 
   function exportCsv(filename, rows){
-    const cols = ['lead_id','company','owner','status','next_action_at','quote_valid_until','source_channel'];
+    const cols = ['lead_id','company','owner','status','proposal_template','next_action_at','quote_valid_until','source_channel'];
     const lines = [cols.join(',')];
     (rows||[]).forEach(x => lines.push(cols.map(k => csvEscape(x[k]||'')).join(',')));
     const blob = new Blob(['\uFEFF' + lines.join('\n')], {type:'text/csv;charset=utf-8;'});
@@ -426,7 +476,7 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
     if (btnCopy){
       const key = btnCopy.getAttribute('data-copy');
       const rows = latest[key] || [];
-      const titleMap = {high:'高优先', today:'今日待跟进', overdue:'已逾期', expiring:'报价将到期', upsell:'复购到期提醒'};
+      const titleMap = {high:'高优先', today:'今日待跟进', overdue:'已逾期', expiring:'报价将到期', upsell:'复购跟进到期'};
       const ok = await copyText(toSummary(titleMap[key] || '清单', rows)).catch(()=>false);
       alert(ok ? '已复制' : '复制失败');
       return;
@@ -454,7 +504,7 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
       '',
       toSummary('报价将到期', latest.expiring),
       '',
-      toSummary('复购到期提醒', latest.upsell_due)
+      toSummary('复购跟进到期', latest.upsell_due)
     ].join('\n');
     const ok = await copyText(text).catch(()=>false);
     alert(ok ? '已复制今日总清单' : '复制失败');
