@@ -126,9 +126,15 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
 
 <script>
 (() => {
-  const TODAY_LIST_ENDPOINT = String("{{TODAY_LIST_ENDPOINT}}" || '/api/admin/leads/team-brief/today-list').trim();
-  const LIST_ENDPOINT = String("{{LEADS_LIST_ENDPOINT}}" || '/api/admin/leads/team-brief/list').trim();
-  const UPDATE_ENDPOINT = String("{{LEADS_UPDATE_ENDPOINT}}" || '/api/admin/leads/team-brief/update').trim();
+  const TODAY_LIST_ENDPOINT = normEndpoint("{{TODAY_LIST_ENDPOINT}}", "/api/admin/leads/team-brief/today-list");
+  const LIST_ENDPOINT = normEndpoint("{{LEADS_LIST_ENDPOINT}}", "/api/admin/leads/team-brief/list");
+  const UPDATE_ENDPOINT = normEndpoint("{{LEADS_UPDATE_ENDPOINT}}", "/api/admin/leads/team-brief/update");
+
+  function normEndpoint(raw, fallback){
+    const t = String(raw || '').trim();
+    if (!t || t.includes('{{') || t.includes('}}')) return fallback;
+    return t.startsWith('/') ? t : ('/' + t);
+  }
 
   const rowsHigh = document.getElementById('rowsHigh');
   const rowsToday = document.getElementById('rowsToday');
