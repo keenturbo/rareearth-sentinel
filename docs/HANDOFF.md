@@ -277,83 +277,68 @@ grep -R -n -E "tier.*(99|999)" /root/rareearth-sentinel/src /root/rareearth-sent
 
 ---
 
-### 19.2 本阶段关键提交（节选）
-> 仅列核心节点，完整历史请用 `git log --oneline --since="2026-02-10"`。
-
-- `245b0adf...` admin social 自动结构化文案首版
-- `b0ae3d15...` 引流文案模板增强
-- `7ffcccdc...` / `265bd09d...` / `9a0e9446...` persona 扩展到 social/extractor/premium
-- `bf2965b...` build_admin_orders 接入 AI 文案生成器
-- `e72194e...` 服务器热修回推（main.py 接线修正）
-- `624928ed...` / `ab43f9c1...` / `783937dc...` v2.8.4 social 稳定化
-- `a248b27d...` v2.8.7 后端 fallback 根修
-- `727a5e5a...` v2.8.8 反方风险编号清洗
-- `03083537...` v2.8.9 首页新鲜度守卫增强
-- `085893ae...` v2.8.10 证据锚点编号句拦截
-
----
-
-### 19.3 当前网站状态评估（2026-02-15）
+### 19.2 当前网站状态评估（2026-02-15）
 
 #### 1) 产品可用性
 - CN 首页、EN 首页、Admin、支付、Top3 推送链路均可运行。
 - 社媒页与首页专题达到“可发布/可读”水平，但仍需观测自动运行后的稳定一致性。
 
-#### 2) 内容质量（从“已赋予 persona 的 Gemini 角色”视角）
-- 优势：
-  - 专业框架完整（事实→路径→动作→风险→证据）。
-  - 风险提示与合规意识明显增强。
-  - 过时绝对句与编号证据句已纳入守卫。
-- 风险点：
-  - 自动运行时仍可能受超时影响触发 fallback；需继续监控。
-  - 个别日样本在“影响路径/证据锚点”仍可能出现语义靠近，需要持续回归测试。
-
-#### 3) 稳定性
+#### 2) 稳定性
 - 主要风险仍在外部超时（抓取/Gemini timeout）与缓存命中策略。
 - 已有 fallback，但建议以“次日 06:00 自动运行结果”为最终验收口径。
 
 ---
 
-### 19.4 明日 06:00 自动运行后的必做核验（新增）
+## 20) 2026-02-21 当前状态压缩索引（S8~S11）
 
-1) 检查首页是否再出现“证据锚点编号句”
+### 20.1 先读哪份文档（压缩上下文推荐）
+- `docs/S9_DAY5_CLOSEOUT.md`：S9 收官/冻结基线
+- `docs/HANDOFF.md`（本文件）第20节：S10/S11 当前进度与运行入口
+
+### 20.2 已完成里程碑（摘要）
+- S10-P0：`today-list` 后端API与页面优先接入（S10 wrapper）
+- S10-P1：周报模板转化看板 + today 模板分布卡
+- S10-P2：daily digest 产物（json/txt）+ today页复制/下载入口
+- S10-P3：daily digest 质量守门（quality_flags/quality_notes）
+- S11-P0 第一批：运营总览页 `ops` 已上线（脚本+模板）
+
+### 20.3 当前关键页面
+- 线索主页：`/cn/admin/leads/team-brief/`
+- 今日执行：`/cn/admin/leads/team-brief/today/`
+- 每日摘要：`/cn/admin/leads/team-brief/daily-brief/`
+- 周报摘要：`/cn/admin/leads/team-brief/weekly/`
+- 运营总览：`/cn/admin/leads/team-brief/ops/`
+
+### 20.4 当前关键脚本
+- `scripts/build_admin_team_brief_leads.py`
+- `scripts/build_team_brief_today.py`
+- `scripts/build_team_brief_daily_brief.py`
+- `scripts/build_sales_weekly_digest.py`
+- `scripts/build_team_brief_ops.py`
+
+### 20.5 每日最小运行命令（运营）
 ```bash
-grep -n "证据锚点：1\\." /root/rareearth-sentinel/static/cn/index.html | head -n 20
+PYTHONPATH=/root/rareearth-sentinel python3 /root/rareearth-sentinel/scripts/build_team_brief_daily_brief.py
+```
+```bash
+PYTHONPATH=/root/rareearth-sentinel python3 /root/rareearth-sentinel/scripts/build_team_brief_today.py
+```
+```bash
+PYTHONPATH=/root/rareearth-sentinel python3 /root/rareearth-sentinel/scripts/build_team_brief_ops.py
 ```
 
-2) 检查首页是否回流过时绝对表述
+### 20.6 每周复盘命令
 ```bash
-grep -n "中国暂停对美稀土出口\|中国正式暂停对美稀土出口\|对美稀土出口已暂停" /root/rareearth-sentinel/static/cn/index.html | head -n 20
+PYTHONPATH=/root/rareearth-sentinel python3 /root/rareearth-sentinel/scripts/build_sales_weekly_digest.py
 ```
 
-3) 检查社媒页是否回归旧模板/坏句
-```bash
-grep -n "TL;DR\|要点 •\|证据锚点：减持\|影响路径：1\\." /root/rareearth-sentinel/static/cn/admin/social/index.html | head -n 20
-```
+### 20.7 本阶段冻结项（除P0 bug外不改）
+- `templates/admin_team_brief_today.html` 主结构
+- `scripts/build_team_brief_daily_brief.py` 输出字段结构
+- `scripts/build_sales_weekly_digest.py` 核心统计口径
+- 周包自动交付主链路（pay-confirm auto + fulfill）
 
-4) 检查 AI 缓存状态
-```bash
-python3 - <<'PY'
-import os,json
-p='/root/rareearth-sentinel/data/status/social_copy_generated.json'
-print('exists:', os.path.exists(p))
-if os.path.exists(p):
-    d=json.load(open(p,'r',encoding='utf-8'))
-    print('generated_at:', d.get('generated_at'))
-    print('fallback_used:', d.get('fallback_used'))
-    print('validator_reason:', d.get('validator_reason'))
-    print('cn_topic_len:', len((d.get('cn_topic') or '').strip()))
-PY
-```
-
-5) 检查 06:00 主流程日志中的 timeout 密度
-```bash
-journalctl -u rareearth-sentinel.service --since "today 05:50:00" --until "today 09:30:00" --no-pager | grep -Ei "timeout|timed out|ReadTimeout" | tail -n 100
-```
-
----
-
-### 19.5 仍未关闭的高优先事项
-- **PayPal Webhook ID 仍需确认 WH-REST 形态**（若未修，将影响自动验签/解锁可靠性）。
-- **抓取与模型超时治理**（外部超时仍是内容稳定性的第一风险源）。
-- **技术债**：Python 3.10 与 `google.generativeai` 弃用告警，建议规划迁移窗口。
+### 20.8 未关闭风险（继续观察）
+- Gemini/Jina timeout 导致回退率波动
+- PayPal webhook 验签一致性（WH-REST）
+- Python3.10 + `google.generativeai` 弃用告警（技术债）
