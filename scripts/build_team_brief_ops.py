@@ -3,7 +3,6 @@ import html
 import json
 import os
 import sys
-from datetime import datetime
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT not in sys.path:
@@ -95,12 +94,66 @@ def _build_exec_text(counts: dict, quality_flags: dict):
     return "\n".join(lines)
 
 
+def _compute_ops_signals(leads_rows, counts: dict, quality_flags: dict):
+    qualified = 0
+    proposal_sent = 0
+    for r in leads_rows or []:
+        st = str((r or {}).get("status") or "").strip().lower()
+        if st == "qualified":
+            qualified += 1
+        elif st == "proposal_sent":
+            proposal_sent += 1
+
+    overdue = int(counts.get("overdue") or 0)
+    quality_pass = bool((quality_flags or {}).get("pass", True))
+
+    alerts = []
+    if not quality_pass:
+        alerts.append(("warn", "摘要质量降级：建议优先核对今日清单明细后再执行。"))
+    if overdue > 0:
+        alerts.append(("danger", f"存在逾期线索 {overdue} 条：请优先处理，避免成交窗口流失。"))
+    if qualified > 0 and proposal_sent == 0:
+        alerts.append(("warn", "当前 qualified 线索尚未发送报价：建议今日先完成报价推进。"))
+    elif qualified > 0 and proposal_sent < qualified:
+        gap = qualified - proposal_sent
+        alerts.append(("info", f"仍有 {gap} 条 qualified 线索未报价：建议补齐报价动作。"))
+
+    if not alerts:
+        alerts.append(("ok", "今日无异常提醒，可按执行清单推进。"))
+
+    coverage = "-"
+    if qualified > 0:
+        coverage = f"{int(round((proposal_sent / qualified) * 100))}%"
+
+    return {
+        "qualified": qualified,
+        "proposal_sent": proposal_sent,
+        "coverage": coverage,
+        "alerts": alerts,
+    }
+
+
+def _render_alert_rows(alerts):
+    out = []
+    for level, text in alerts or []:
+        cls = "info"
+        if level == "danger":
+            cls = "danger"
+        elif level == "warn":
+            cls = "warn"
+        elif level == "ok":
+            cls = "ok"
+        out.append(f'<div class="alert {cls}">{html.escape(str(text or ""))}</div>')
+    return "".join(out)
+
+
 def build_page(config: Config):
     tpl_path = os.path.join(ROOT, "templates", "admin_team_brief_ops.html")
     out_path = os.path.join(config.static_dir, "cn", "admin", "leads", "team-brief", "ops", "index.html")
 
     digest_path = os.path.join(config.data_dir, "status", "team_brief_daily_digest.json")
     snapshots_path = os.path.join(config.data_dir, "analytics", "sales_daily_snapshots.jsonl")
+    leads_path = os.path.join(config.data_dir, "pay", "team_brief_leads.jsonl")
 
     digest = _load_json(digest_path)
     counts = digest.get("counts") or {}
@@ -109,6 +162,8 @@ def build_page(config: Config):
     master_text = str(digest.get("master_text") or "").strip()
 
     snapshots = _read_jsonl(snapshots_path)
+    leads_rows = _read_jsonl(leads_path)
+    signals = _compute_ops_signals(leads_rows, counts, quality_flags)
 
     if not master_text:
         master_text = "【团队简报每日执行摘要】\n今日无待办"
@@ -127,6 +182,10 @@ def build_page(config: Config):
         .replace("{{COUNT_OVERDUE}}", str(int(counts.get("overdue") or 0)))
         .replace("{{COUNT_EXPIRING}}", str(int(counts.get("expiring") or 0)))
         .replace("{{COUNT_UPSELL}}", str(int(counts.get("upsell_due") or 0)))
+        .replace("{{COUNT_QUALIFIED}}", str(int(signals.get("qualified") or 0)))
+        .replace("{{COUNT_PROPOSAL_SENT}}", str(int(signals.get("proposal_sent") or 0)))
+        .replace("{{QUOTE_COVERAGE}}", html.escape(str(signals.get("coverage") or "-")))
+        .replace("{{ALERT_ROWS}}", _render_alert_rows(signals.get("alerts") or []))
         .replace("{{QUALITY_PASS}}", "通过" if quality_flags.get("pass") else "降级")
         .replace("{{QUALITY_NOTES}}", html.escape("；".join([str(x) for x in quality_notes]) if quality_notes else "-"))
         .replace("{{MASTER_TEXT}}", html.escape(master_text))

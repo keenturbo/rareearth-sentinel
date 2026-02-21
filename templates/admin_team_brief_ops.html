@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>管理员 · 团队简报运营总览</title>
 <style>
-:root{--ink:#0b1220;--muted:#536170;--bg:#f7f9fc;--card:#fff;--accent:#1d4ed8;--ok:#16a34a;--warn:#d97706;--danger:#dc2626}
+:root{--ink:#0b1220;--muted:#536170;--bg:#f7f9fc;--card:#fff;--accent:#1d4ed8;--ok:#16a34a;--warn:#d97706;--danger:#dc2626;--info:#0369a1}
 *{box-sizing:border-box}
 body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans",sans-serif;background:linear-gradient(180deg,#f7f9fc,#e9eef5);color:var(--ink)}
 .container{max-width:1180px;margin:0 auto;padding:22px}
@@ -16,6 +16,12 @@ header .sub{font-size:12px;color:var(--muted)}
 .header-links a{text-decoration:none;color:var(--muted)}
 .header-links a:hover{color:var(--accent)}
 .section{background:#fff;border-radius:12px;padding:14px;box-shadow:0 6px 14px rgba(0,0,0,.05);margin-bottom:12px}
+.alert-box{display:grid;gap:8px;margin:0 0 10px 0}
+.alert{border-radius:8px;padding:8px 10px;font-size:12px;line-height:1.5;border:1px solid #e5e7eb;background:#f8fafc;color:#334155}
+.alert.ok{background:#ecfdf5;border-color:#86efac;color:#166534}
+.alert.info{background:#eff6ff;border-color:#93c5fd;color:#1d4ed8}
+.alert.warn{background:#fff7ed;border-color:#fdba74;color:#9a3412}
+.alert.danger{background:#fef2f2;border-color:#fca5a5;color:#991b1b}
 .cards{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:10px;margin-bottom:10px}
 .card{border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#fff}
 .card .k{font-size:12px;color:var(--muted)}
@@ -23,6 +29,7 @@ header .sub{font-size:12px;color:var(--muted)}
 .card.warn .v{color:var(--warn)}
 .card.danger .v{color:var(--danger)}
 .card.ok .v{color:var(--ok)}
+.card.info .v{color:var(--info)}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
 .toolbar button{height:34px;border:1px solid #dbe3ec;border-radius:8px;background:#fff;padding:0 12px;cursor:pointer}
 .toolbar .primary{background:#1d4ed8;border-color:#1d4ed8;color:#fff}
@@ -66,6 +73,10 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
   </header>
 
   <section class="section">
+    <div class="alert-box">
+      {{ALERT_ROWS}}
+    </div>
+
     <div class="cards">
       <div class="card"><div class="k">总待办</div><div class="v">{{COUNT_MASTER}}</div></div>
       <div class="card"><div class="k">高优先</div><div class="v">{{COUNT_HIGH}}</div></div>
@@ -73,6 +84,9 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
       <div class="card danger"><div class="k">已逾期</div><div class="v">{{COUNT_OVERDUE}}</div></div>
       <div class="card warn"><div class="k">3天内到期</div><div class="v">{{COUNT_EXPIRING}}</div></div>
       <div class="card ok"><div class="k">复购到期</div><div class="v">{{COUNT_UPSELL}}</div></div>
+      <div class="card info"><div class="k">Qualified</div><div class="v">{{COUNT_QUALIFIED}}</div></div>
+      <div class="card info"><div class="k">已发报价</div><div class="v">{{COUNT_PROPOSAL_SENT}}</div></div>
+      <div class="card"><div class="k">报价覆盖率</div><div class="v">{{QUOTE_COVERAGE}}</div></div>
       <div class="card"><div class="k">质量状态</div><div class="v">{{QUALITY_PASS}}</div></div>
       <div class="card"><div class="k">质量备注</div><div class="v" style="font-size:13px">{{QUALITY_NOTES}}</div></div>
     </div>
