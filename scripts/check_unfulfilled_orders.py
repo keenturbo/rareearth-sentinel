@@ -144,6 +144,7 @@ def build_unfulfilled(config: Config, threshold_minutes: int = 30):
 
     now = now_cst()
     legacy_cutoff = _parse_legacy_cutoff(os.getenv("UNFULFILLED_LEGACY_UNTYPED_BEFORE", "2026-02-01"))
+    untyped_recent_hours = float(os.getenv("UNFULFILLED_UNTYPED_RECENT_HOURS", "48") or "48")
 
     items = []
     actionable_items = []
@@ -153,6 +154,7 @@ def build_unfulfilled(config: Config, threshold_minutes: int = 30):
         "test_order": 0,
         "pack_part_order": 0,
         "legacy_untyped": 0,
+        "legacy_untyped_missing_created_at": 0,
     }
 
     for oid, row in by_order.items():
@@ -187,9 +189,21 @@ def build_unfulfilled(config: Config, threshold_minutes: int = 30):
             noise_reasons.append("pack_part_order")
             noise["pack_part_order"] += 1
 
-        if (not product_type) and legacy_cutoff and created_dt and created_dt < legacy_cutoff:
-            noise_reasons.append("legacy_untyped")
-            noise["legacy_untyped"] += 1
+        # Day1.4: untyped legacy noise filtering with recent exception.
+        if not product_type:
+            if not created_dt:
+                noise_reasons.append("legacy_untyped_missing_created_at")
+                noise["legacy_untyped_missing_created_at"] += 1
+            else:
+                created_age_hours = max(0.0, (now - created_dt).total_seconds() / 3600.0)
+                # Keep only very recent untyped orders actionable (default <= 48h),
+                # and ignore older historical untyped records.
+                if created_age_hours > untyped_recent_hours:
+                    noise_reasons.append("legacy_untyped")
+                    noise["legacy_untyped"] += 1
+                elif legacy_cutoff and created_dt < legacy_cutoff:
+                    noise_reasons.append("legacy_untyped")
+                    noise["legacy_untyped"] += 1
 
         item = {
             "order_id": oid,
@@ -214,6 +228,7 @@ def build_unfulfilled(config: Config, threshold_minutes: int = 30):
         "generated_at": isoformat(now),
         "threshold_minutes": int(threshold_minutes),
         "legacy_untyped_before": isoformat(legacy_cutoff) if legacy_cutoff else "",
+        "untyped_recent_hours": untyped_recent_hours,
         "count": len(items),
         "actionable_count": len(actionable_items),
         "noise_breakdown": {
