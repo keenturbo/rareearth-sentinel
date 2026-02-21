@@ -182,40 +182,67 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
     digestMeta.textContent = t ? `每日摘要：${t}` : '每日摘要：暂无';
   }
 
+  function fmtLocal(v){
+    const t = String(v || '').trim();
+    if (!t) return '';
+    const m = t.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})/);
+    return m ? m[1] : '';
+  }
+
+  function toDateValue(v){
+    const t = String(v || '').trim();
+    if (!t) return '';
+    const m = t.match(/^(\d{4}-\d{2}-\d{2})/);
+    return m ? m[1] : '';
+  }
+
+  function toDatetimeLocal(v){
+    const t = String(v || '').trim();
+    if (!t) return '';
+    const m = t.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})/);
+    return m ? m[1] : '';
+  }
+
   function esc(v){
-    return String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
+    return String(v ?? '')
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;')
+      .replace(/'/g,'&#39;');
+  }
+
+  function normalizePath(raw, fallback){
+    let t = String(raw || '').trim();
+    if (!t || t.includes('{{') || t.includes('}}')) t = fallback;
+    if (t.startsWith('http://') || t.startsWith('https://')){
+      const i = t.indexOf('/', t.indexOf('//') + 2);
+      t = i > 0 ? t.slice(i) : '/';
+    }
+    if (!t.startsWith('/')) t = '/' + t.replace(/^\/+/, '');
+    if (t.includes('{') || t.includes('}') || t.includes(' ')) t = fallback;
+    return t;
   }
 
   function safeUrl(ep, query=''){
-    const raw = String(ep ?? '').trim();
-    let rel = raw;
-    if (!rel || rel.includes('{{') || rel.includes('}}')) rel = '/api/admin/leads/team-brief/list';
+    let rel = String(ep ?? '').trim();
+    if (!rel || rel.includes('{{') || rel.includes('}}')) rel = '/api/admin/leads/team-brief/today-list';
     if (/^https?:\/\//i.test(rel)){
-      try{
-        const pu = new URL(rel);
-        rel = pu.pathname + (pu.search || '');
-      }catch(_){ }
+      const m = rel.match(/^https?:\/\/[^/]+(\/.*)?$/i);
+      rel = m && m[1] ? m[1] : '/';
     }
-    if (!rel.startsWith('/')) rel = '/' + rel;
-    try{
-      const base = (window.location && window.location.origin) ? window.location.origin : window.location.href;
-      const u = new URL(rel, base);
-      if (query){
-        const q = String(query);
-        u.search = q.startsWith('?') ? q : ('?' + q);
-      }
-      return u.toString();
-    }catch(_){
-      const q = query ? (String(query).startsWith('?') ? String(query) : ('?' + String(query))) : '';
-      return rel + q;
-    }
+    if (!rel.startsWith('/')) rel = '/' + rel.replace(/^\/+/, '');
+    const q = String(query ?? '').trim();
+    if (!q) return rel;
+    return rel + (q.startsWith('?') ? q : ('?' + q));
   }
 
   async function safeFetch(ep, options={}){
     const opts = Object.assign({}, options || {});
-    const query = opts.query || '';
+    const q = String(opts.query || '').trim();
     delete opts.query;
-    return fetch(safeUrl(ep, query), Object.assign({credentials:'same-origin'}, opts));
+    const url = safeUrl(ep, q);
+    return fetch(url, Object.assign({ credentials: 'same-origin', cache: 'no-store' }, opts));
   }
 
   function parseDt(v){
@@ -509,7 +536,7 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
       renderSection(rowsUpsell, latest.upsell_due);
       msg.textContent = '已更新';
     }catch(err){
-      msg.textContent = `加载失败：${err.message || err}`;
+      console.error('loadToday failed:', err); msg.textContent = `加载失败：${(err && err.name ? err.name + ': ' : '') + (err && err.message ? err.message : err)}`;
       const fail = '<tr><td colspan="7" class="muted">加载失败</td></tr>';
       rowsHigh.innerHTML = rowsToday.innerHTML = rowsOverdue.innerHTML = rowsExpiring.innerHTML = rowsUpsell.innerHTML = fail;
       setCounts({high_priority:[],today:[],overdue:[],expiring:[],upsell_due:[]});
