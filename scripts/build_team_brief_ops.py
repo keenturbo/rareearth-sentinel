@@ -50,6 +50,7 @@ def _render_snapshot_rows(rows):
     out = []
     for r in rows_sorted:
         q = r.get("quality_flags") or {}
+        badge = '<span class="badge ok">通过</span>' if q.get('pass') else '<span class="badge warn">降级</span>'
         out.append(
             "<tr>"
             f"<td>{html.escape(str(r.get('date') or '-'))}</td>"
@@ -58,7 +59,7 @@ def _render_snapshot_rows(rows):
             f"<td>{int(r.get('overdue') or 0)}</td>"
             f"<td>{int(r.get('expiring') or 0)}</td>"
             f"<td>{int(r.get('upsell_due') or 0)}</td>"
-            f"<td>{'通过' if q.get('pass') else '降级'}</td>"
+            f"<td>{badge}</td>"
             "</tr>"
         )
     return "".join(out)

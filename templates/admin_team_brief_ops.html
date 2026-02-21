@@ -32,6 +32,12 @@ header .sub{font-size:12px;color:var(--muted)}
 .block h3{margin:0;padding:10px 12px;font-size:14px;border-bottom:1px solid #e5e7eb;background:#f8fafc}
 pre{margin:0;padding:12px;white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.5;max-height:320px;overflow:auto}
 .muted{color:#6b7280}
+.msg-ok{color:var(--ok)}
+.msg-err{color:var(--danger)}
+.msg-info{color:var(--accent)}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}
+.badge.ok{background:#dcfce7;color:#166534}
+.badge.warn{background:#fef3c7;color:#92400e}
 table{width:100%;border-collapse:collapse;font-size:12px}
 th,td{padding:8px;border-top:1px solid #eef2f7;text-align:left;vertical-align:top}
 th{background:#f8fafc;color:#334155;white-space:nowrap}
@@ -118,6 +124,18 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
   const execText = document.getElementById('execText')?.textContent || '';
   const masterText = document.getElementById('masterText')?.textContent || '';
   const jsonText = document.getElementById('digestJson')?.textContent || '';
+  let _msgTimer = null;
+
+  function flashMsg(text, type='info'){
+    if (!msg) return;
+    msg.textContent = text;
+    msg.className = `muted ${type === 'ok' ? 'msg-ok' : type === 'err' ? 'msg-err' : 'msg-info'}`;
+    if (_msgTimer) clearTimeout(_msgTimer);
+    _msgTimer = setTimeout(() => {
+      msg.textContent = '';
+      msg.className = 'muted';
+    }, 1800);
+  }
 
   async function copyText(text){
     const value = String(text || '');
@@ -140,17 +158,17 @@ th{background:#f8fafc;color:#334155;white-space:nowrap}
 
   document.getElementById('btnCopyExec')?.addEventListener('click', async () => {
     const ok = await copyText(execText).catch(()=>false);
-    msg.textContent = ok ? '已复制执行指令' : '复制失败';
+    flashMsg(ok ? '已复制执行指令' : '复制失败', ok ? 'ok' : 'err');
   });
 
   document.getElementById('btnCopyDigest')?.addEventListener('click', async () => {
     const ok = await copyText(masterText).catch(()=>false);
-    msg.textContent = ok ? '已复制每日摘要' : '复制失败';
+    flashMsg(ok ? '已复制每日摘要' : '复制失败', ok ? 'ok' : 'err');
   });
 
   document.getElementById('btnCopyJson')?.addEventListener('click', async () => {
     const ok = await copyText(jsonText).catch(()=>false);
-    msg.textContent = ok ? '已复制摘要JSON' : '复制失败';
+    flashMsg(ok ? '已复制摘要JSON' : '复制失败', ok ? 'ok' : 'err');
   });
 })();
 </script>
