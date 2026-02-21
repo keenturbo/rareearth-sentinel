@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>管理员 · 团队简报运营总览</title>
+<style>
+:root{--ink:#0b1220;--muted:#536170;--bg:#f7f9fc;--card:#fff;--accent:#1d4ed8;--ok:#16a34a;--warn:#d97706;--danger:#dc2626}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans",sans-serif;background:linear-gradient(180deg,#f7f9fc,#e9eef5);color:var(--ink)}
+.container{max-width:1180px;margin:0 auto;padding:22px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+header h1{margin:0;font-size:20px}
+header .sub{font-size:12px;color:var(--muted)}
+.header-links{display:flex;gap:8px;flex-wrap:wrap}
+.header-links a{text-decoration:none;color:var(--muted)}
+.header-links a:hover{color:var(--accent)}
+.section{background:#fff;border-radius:12px;padding:14px;box-shadow:0 6px 14px rgba(0,0,0,.05);margin-bottom:12px}
+.cards{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:10px;margin-bottom:10px}
+.card{border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#fff}
+.card .k{font-size:12px;color:var(--muted)}
+.card .v{font-size:20px;font-weight:700}
+.card.warn .v{color:var(--warn)}
+.card.danger .v{color:var(--danger)}
+.card.ok .v{color:var(--ok)}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.toolbar button{height:34px;border:1px solid #dbe3ec;border-radius:8px;background:#fff;padding:0 12px;cursor:pointer}
+.toolbar .primary{background:#1d4ed8;border-color:#1d4ed8;color:#fff}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media(max-width:980px){.cards{grid-template-columns:repeat(2,minmax(120px,1fr))}.grid{grid-template-columns:1fr}}
+.block{border:1px solid #e5e7eb;border-radius:10px;background:#fafcff;overflow:hidden}
+.block h3{margin:0;padding:10px 12px;font-size:14px;border-bottom:1px solid #e5e7eb;background:#f8fafc}
+pre{margin:0;padding:12px;white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.5;max-height:320px;overflow:auto}
+.muted{color:#6b7280}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{padding:8px;border-top:1px solid #eef2f7;text-align:left;vertical-align:top}
+th{background:#f8fafc;color:#334155;white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>管理员 · 团队简报运营总览</h1>
+      <div class="sub">更新 {{LAST_UPDATE}} · 摘要生成 {{DIGEST_GENERATED_AT}}</div>
+    </div>
+    <div class="header-links">
+      <a href="/cn/admin/leads/team-brief/">团队简报线索</a>
+      <span>·</span>
+      <a href="/cn/admin/leads/team-brief/today/">今日清单</a>
+      <span>·</span>
+      <a href="/cn/admin/leads/team-brief/daily-brief/">每日摘要</a>
+      <span>·</span>
+      <a href="/cn/admin/leads/team-brief/weekly/">周报</a>
+      <span>·</span>
+      <a href="/cn/admin/funnel/">漏斗</a>
+      <span>·</span>
+      <a href="/cn/">返回中文首页</a>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="cards">
+      <div class="card"><div class="k">总待办</div><div class="v">{{COUNT_MASTER}}</div></div>
+      <div class="card"><div class="k">高优先</div><div class="v">{{COUNT_HIGH}}</div></div>
+      <div class="card"><div class="k">今日待跟进</div><div class="v">{{COUNT_TODAY}}</div></div>
+      <div class="card danger"><div class="k">已逾期</div><div class="v">{{COUNT_OVERDUE}}</div></div>
+      <div class="card warn"><div class="k">3天内到期</div><div class="v">{{COUNT_EXPIRING}}</div></div>
+      <div class="card ok"><div class="k">复购到期</div><div class="v">{{COUNT_UPSELL}}</div></div>
+      <div class="card"><div class="k">质量状态</div><div class="v">{{QUALITY_PASS}}</div></div>
+      <div class="card"><div class="k">质量备注</div><div class="v" style="font-size:13px">{{QUALITY_NOTES}}</div></div>
+    </div>
+
+    <div class="toolbar">
+      <button id="btnCopyExec" class="primary">复制今日执行指令</button>
+      <button id="btnCopyDigest">复制每日摘要</button>
+      <button id="btnCopyJson">复制摘要JSON</button>
+      <span id="msg" class="muted"></span>
+    </div>
+
+    <div class="grid">
+      <div class="block">
+        <h3>今日执行指令</h3>
+        <pre id="execText">{{EXEC_TEXT}}</pre>
+      </div>
+      <div class="block">
+        <h3>每日摘要（master）</h3>
+        <pre id="masterText">{{MASTER_TEXT}}</pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="block">
+      <h3>近7天日快照</h3>
+      <table>
+        <thead>
+          <tr><th>日期</th><th>总待办</th><th>今日</th><th>逾期</th><th>到期</th><th>复购到期</th><th>质量</th></tr>
+        </thead>
+        <tbody>
+          {{SNAPSHOT_ROWS}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="block">
+      <h3>摘要JSON（调试）</h3>
+      <pre id="digestJson">{{DIGEST_JSON_TEXT}}</pre>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const msg = document.getElementById('msg');
+  const execText = document.getElementById('execText')?.textContent || '';
+  const masterText = document.getElementById('masterText')?.textContent || '';
+  const jsonText = document.getElementById('digestJson')?.textContent || '';
+
+  async function copyText(text){
+    const value = String(text || '');
+    if (!value) return false;
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return !!ok;
+  }
+
+  document.getElementById('btnCopyExec')?.addEventListener('click', async () => {
+    const ok = await copyText(execText).catch(()=>false);
+    msg.textContent = ok ? '已复制执行指令' : '复制失败';
+  });
+
+  document.getElementById('btnCopyDigest')?.addEventListener('click', async () => {
+    const ok = await copyText(masterText).catch(()=>false);
+    msg.textContent = ok ? '已复制每日摘要' : '复制失败';
+  });
+
+  document.getElementById('btnCopyJson')?.addEventListener('click', async () => {
+    const ok = await copyText(jsonText).catch(()=>false);
+    msg.textContent = ok ? '已复制摘要JSON' : '复制失败';
+  });
+})();
+</script>
+</body>
+</html>

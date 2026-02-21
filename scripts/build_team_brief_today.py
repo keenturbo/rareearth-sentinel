@@ -29,6 +29,10 @@ def _ensure_team_brief_nav_links(html_doc: str) -> str:
         extras.append(
             '\n      <span>·</span>\n      <a href="/cn/admin/leads/team-brief/weekly/">周报</a>'
         )
+    if '/cn/admin/leads/team-brief/ops/' not in html_doc:
+        extras.append(
+            '\n      <span>·</span>\n      <a href="/cn/admin/leads/team-brief/ops/">运营总览</a>'
+        )
 
     if not extras:
         return html_doc
