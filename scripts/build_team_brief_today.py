@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import sys
+import json
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT not in sys.path:
@@ -36,6 +37,20 @@ def _ensure_team_brief_nav_links(html_doc: str) -> str:
     return html_doc.replace(target, replacement, 1)
 
 
+def _load_daily_digest(config: Config):
+    path = os.path.join(config.data_dir, "status", "team_brief_daily_digest.json")
+    if not os.path.exists(path):
+        return "", ""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            obj = json.load(f)
+        generated_at = str(obj.get("generated_at") or "").strip()
+        master_text = str(obj.get("master_text") or "").strip()
+        return generated_at, master_text
+    except Exception:
+        return "", ""
+
+
 def build_page(config: Config):
     template_path = os.path.join(ROOT, "templates", "admin_team_brief_today.html")
     output_path = os.path.join(config.static_dir, "cn", "admin", "leads", "team-brief", "today", "index.html")
@@ -46,11 +61,15 @@ def build_page(config: Config):
     with open(template_path, "r", encoding="utf-8") as f:
         tpl = f.read()
 
+    digest_last_update, digest_master_text = _load_daily_digest(config)
+
     html_out = (
         tpl.replace("{{LAST_UPDATE}}", isoformat(now_cst()))
         .replace("{{TODAY_LIST_ENDPOINT}}", _TODAY_LIST_ENDPOINT)
         .replace("{{LEADS_LIST_ENDPOINT}}", _LIST_ENDPOINT)
         .replace("{{LEADS_UPDATE_ENDPOINT}}", _UPDATE_ENDPOINT)
+        .replace("{{DAILY_DIGEST_LAST_UPDATE}}", digest_last_update or "暂无")
+        .replace("{{DAILY_DIGEST_MASTER_TEXT_JSON}}", json.dumps(digest_master_text, ensure_ascii=False))
     )
     html_out = _ensure_team_brief_nav_links(html_out)
 

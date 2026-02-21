@@ -80,6 +80,10 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
       <button id="btnRefresh" class="primary">刷新</button>
       <button id="btnCopyMaster">复制今日总清单</button>
       <button id="btnExportMaster">导出今日总清单CSV</button>
+      <button id="btnCopyDailyDigest">复制每日摘要</button>
+      <button id="btnDownloadDailyDigestTxt">下载摘要TXT</button>
+      <button id="btnDownloadDailyDigestJson">下载摘要JSON</button>
+      <span id="digestMeta" class="muted">每日摘要：{{DAILY_DIGEST_LAST_UPDATE}}</span>
       <span id="msg" class="muted"></span>
     </div>
 
@@ -137,6 +141,8 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
   const TODAY_LIST_ENDPOINT = normEndpoint("{{TODAY_LIST_ENDPOINT}}", "/api/admin/leads/team-brief/today-list");
   const LIST_ENDPOINT = normEndpoint("{{LEADS_LIST_ENDPOINT}}", "/api/admin/leads/team-brief/list");
   const UPDATE_ENDPOINT = normEndpoint("{{LEADS_UPDATE_ENDPOINT}}", "/api/admin/leads/team-brief/update");
+  const DAILY_DIGEST_LAST_UPDATE = "{{DAILY_DIGEST_LAST_UPDATE}}";
+  const DAILY_DIGEST_MASTER_TEXT = {{DAILY_DIGEST_MASTER_TEXT_JSON}};
 
   function normEndpoint(raw, fallback){
     const t = String(raw || '').trim();
@@ -164,8 +170,17 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
   const btnRefresh = document.getElementById('btnRefresh');
   const btnCopyMaster = document.getElementById('btnCopyMaster');
   const btnExportMaster = document.getElementById('btnExportMaster');
+  const btnCopyDailyDigest = document.getElementById('btnCopyDailyDigest');
+  const btnDownloadDailyDigestTxt = document.getElementById('btnDownloadDailyDigestTxt');
+  const btnDownloadDailyDigestJson = document.getElementById('btnDownloadDailyDigestJson');
+  const digestMeta = document.getElementById('digestMeta');
 
   let latest = {high_priority:[], today:[], overdue:[], expiring:[], upsell_due:[]};
+
+  if (digestMeta){
+    const t = String(DAILY_DIGEST_LAST_UPDATE || '').trim();
+    digestMeta.textContent = t ? `每日摘要：${t}` : '每日摘要：暂无';
+  }
 
   function esc(v){
     return String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
@@ -342,6 +357,25 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
     return lines.join('\n');
   }
 
+  function buildMasterTextFromLatest(){
+    return [
+      toSummary('高优先', latest.high_priority),
+      '',
+      toSummary('今日待跟进', latest.today),
+      '',
+      toSummary('已逾期', latest.overdue),
+      '',
+      toSummary('报价将到期（3天内）', latest.expiring),
+      '',
+      toSummary('复购跟进到期（成交后+7天）', latest.upsell_due)
+    ].join('\n');
+  }
+
+  function getDailyDigestText(){
+    const t = String(DAILY_DIGEST_MASTER_TEXT || '').trim();
+    return t || buildMasterTextFromLatest();
+  }
+
   async function copyText(text){
     const t = String(text||'');
     if (!t) return false;
@@ -372,6 +406,18 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
     const lines = [cols.join(',')];
     (rows||[]).forEach(x => lines.push(cols.map(k => csvEscape(x[k]||'')).join(',')));
     const blob = new Blob(['\uFEFF' + lines.join('\n')], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function downloadText(filename, text){
+    const blob = new Blob([text], {type:'text/plain;charset=utf-8'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -495,17 +541,7 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
   btnRefresh.addEventListener('click', loadToday);
 
   btnCopyMaster.addEventListener('click', async () => {
-    const text = [
-      toSummary('高优先', latest.high_priority),
-      '',
-      toSummary('今日待跟进', latest.today),
-      '',
-      toSummary('已逾期', latest.overdue),
-      '',
-      toSummary('报价将到期', latest.expiring),
-      '',
-      toSummary('复购跟进到期', latest.upsell_due)
-    ].join('\n');
+    const text = buildMasterTextFromLatest();
     const ok = await copyText(text).catch(()=>false);
     alert(ok ? '已复制今日总清单' : '复制失败');
   });
@@ -528,6 +564,40 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
     }
     exportCsv(`team-brief-master-${new Date().toISOString().slice(0,10)}.csv`, uniq);
   });
+
+  if (btnCopyDailyDigest){
+    btnCopyDailyDigest.addEventListener('click', async () => {
+      const ok = await copyText(getDailyDigestText()).catch(()=>false);
+      alert(ok ? '已复制每日摘要' : '复制失败');
+    });
+  }
+
+  if (btnDownloadDailyDigestTxt){
+    btnDownloadDailyDigestTxt.addEventListener('click', () => {
+      const day = new Date().toISOString().slice(0,10);
+      downloadText(`team-brief-daily-digest-${day}.txt`, getDailyDigestText());
+    });
+  }
+
+  if (btnDownloadDailyDigestJson){
+    btnDownloadDailyDigestJson.addEventListener('click', () => {
+      const day = new Date().toISOString().slice(0,10);
+      const payload = {
+        generated_at: DAILY_DIGEST_LAST_UPDATE || '',
+        date: day,
+        counts: {
+          high_priority: (latest.high_priority || []).length,
+          today: (latest.today || []).length,
+          overdue: (latest.overdue || []).length,
+          expiring: (latest.expiring || []).length,
+          upsell_due: (latest.upsell_due || []).length,
+          master: mergedUniqueRows(latest).length
+        },
+        master_text: getDailyDigestText()
+      };
+      downloadText(`team-brief-daily-digest-${day}.json`, JSON.stringify(payload, null, 2));
+    });
+  }
 
   loadToday();
 })();
