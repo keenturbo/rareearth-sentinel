@@ -2,6 +2,7 @@
 import glob
 import json
 import os
+import re
 import sys
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -22,6 +23,7 @@ PAID_STATUSES = {
 }
 
 DELIVERED_STATUSES = {"delivered", "completed", "complete"}
+PACK_PART_RE = re.compile(r"-p\d{2}$", re.IGNORECASE)
 
 
 def _read_jsonl(path: str):
@@ -94,6 +96,20 @@ def _pick_time(row: dict):
     return None
 
 
+def _is_test_order(order_id: str, row: dict) -> bool:
+    oid = str(order_id or "").strip().upper()
+    if oid.startswith("PP-TEST"):
+        return True
+    channel = str(row.get("channel") or row.get("source_channel") or "").strip().lower()
+    if channel in {"admin_test", "test", "qa_test"}:
+        return True
+    return False
+
+
+def _is_pack_part_order(order_id: str) -> bool:
+    return bool(PACK_PART_RE.search(str(order_id or "").strip()))
+
+
 def build_unfulfilled(config: Config, threshold_minutes: int = 30):
     orders_path = os.path.join(config.data_dir, "pay", "orders.jsonl")
     status_dir = os.path.join(config.static_dir, "pay", "status")
@@ -119,6 +135,12 @@ def build_unfulfilled(config: Config, threshold_minutes: int = 30):
 
     now = now_cst()
     items = []
+    actionable_items = []
+    noise = {
+        "missing_created_at": 0,
+        "test_order": 0,
+        "pack_part_order": 0,
+    }
 
     for oid, row in by_order.items():
         if not _is_paid(row):
@@ -135,27 +157,47 @@ def build_unfulfilled(config: Config, threshold_minutes: int = 30):
         if age_minutes >= 0 and age_minutes < threshold_minutes:
             continue
 
-        items.append(
-            {
-                "order_id": oid,
-                "status": str(row.get("status") or ""),
-                "product_type": str(row.get("product_type") or ""),
-                "sku_id": str(row.get("sku_id") or ""),
-                "channel": str(row.get("channel") or row.get("source_channel") or ""),
-                "fulfillment_status": str(row.get("fulfillment_status") or "pending"),
-                "created_at": str(row.get("created_at") or ""),
-                "updated_at": str(row.get("updated_at") or ""),
-                "age_minutes": age_minutes,
-            }
-        )
+        noise_reasons = []
+        if age_minutes < 0:
+            noise_reasons.append("missing_created_at")
+            noise["missing_created_at"] += 1
+        if _is_test_order(oid, row):
+            noise_reasons.append("test_order")
+            noise["test_order"] += 1
+        if _is_pack_part_order(oid):
+            noise_reasons.append("pack_part_order")
+            noise["pack_part_order"] += 1
+
+        item = {
+            "order_id": oid,
+            "status": str(row.get("status") or ""),
+            "product_type": str(row.get("product_type") or ""),
+            "sku_id": str(row.get("sku_id") or ""),
+            "channel": str(row.get("channel") or row.get("source_channel") or ""),
+            "fulfillment_status": str(row.get("fulfillment_status") or "pending"),
+            "created_at": str(row.get("created_at") or ""),
+            "updated_at": str(row.get("updated_at") or ""),
+            "age_minutes": age_minutes,
+            "noise_reasons": noise_reasons,
+        }
+        items.append(item)
+        if not noise_reasons:
+            actionable_items.append(item)
 
     items.sort(key=lambda x: int(x.get("age_minutes") or -1), reverse=True)
+    actionable_items.sort(key=lambda x: int(x.get("age_minutes") or -1), reverse=True)
 
     payload = {
         "generated_at": isoformat(now),
         "threshold_minutes": int(threshold_minutes),
         "count": len(items),
+        "actionable_count": len(actionable_items),
+        "noise_breakdown": {
+            **noise,
+            "non_actionable_total": len(items) - len(actionable_items),
+        },
         "items": items,
+        "actionable_items": actionable_items,
     }
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
@@ -169,4 +211,7 @@ if __name__ == "__main__":
     cfg = Config.from_env()
     threshold = int(os.getenv("UNFULFILLED_THRESHOLD_MINUTES", "30") or "30")
     out, payload = build_unfulfilled(cfg, threshold)
-    print(f"unfulfilled orders written: {out} (count={payload.get('count')})")
+    print(
+        "unfulfilled orders written: "
+        f"{out} (count={payload.get('count')}, actionable={payload.get('actionable_count')})"
+    )
