@@ -13,6 +13,9 @@ from src.config import Config
 from src.utils import isoformat, now_cst
 
 
+MAX_MASTER_TEXT_CHARS = 2200
+
+
 def _read_jsonl(path: str):
     rows = []
     if not os.path.exists(path):
@@ -154,6 +157,39 @@ def _classify(rows):
     }
 
 
+def _row_sig(x: dict) -> str:
+    lead_id = str(x.get("lead_id") or "").strip()
+    if lead_id:
+        return f"id:{lead_id}"
+    return "|".join(
+        [
+            str(x.get("email") or "").strip().lower(),
+            str(x.get("company") or "").strip().lower(),
+            str(x.get("next_action_at") or "").strip(),
+            str(x.get("status") or "").strip().lower(),
+        ]
+    )
+
+
+def _dedupe_sections(data: dict):
+    order = ["high_priority", "today", "overdue", "expiring", "upsell_due"]
+    seen = set()
+    out = {}
+    removed = 0
+    for key in order:
+        uniq = []
+        for x in (data.get(key) or []):
+            sig = _row_sig(x)
+            if sig and sig in seen:
+                removed += 1
+                continue
+            if sig:
+                seen.add(sig)
+            uniq.append(x)
+        out[key] = uniq
+    return out, removed
+
+
 def _summary_block(title, rows):
     lines = [f"【{title}】"]
     if not rows:
@@ -168,13 +204,23 @@ def _summary_block(title, rows):
 
 def _master_summary(data):
     today = datetime.now().strftime("%Y-%m-%d")
+    sections = [
+        ("高优先", data.get("high_priority") or []),
+        ("今日待跟进", data.get("today") or []),
+        ("已逾期", data.get("overdue") or []),
+        ("报价将到期（3天内）", data.get("expiring") or []),
+        ("复购跟进到期（成交后+7天）", data.get("upsell_due") or []),
+    ]
     parts = [f"【团队简报每日执行摘要】\n日期：{today}"]
-    parts.append(_summary_block("高优先", data.get("high_priority") or []))
-    parts.append(_summary_block("今日待跟进", data.get("today") or []))
-    parts.append(_summary_block("已逾期", data.get("overdue") or []))
-    parts.append(_summary_block("报价将到期（3天内）", data.get("expiring") or []))
-    parts.append(_summary_block("复购跟进到期（成交后+7天）", data.get("upsell_due") or []))
-    return "\n\n".join(parts)
+    shown = 0
+    for title, rows in sections:
+        if not rows:
+            continue
+        parts.append(_summary_block(title, rows))
+        shown += 1
+    if shown == 0:
+        parts.append("【今日执行清单】\n今日无待办")
+    return "\n\n".join(parts), shown
 
 
 def _to_rows_for_csv(rows):
@@ -241,9 +287,10 @@ def build_page(config: Config):
 
     leads_path = os.path.join(config.data_dir, "pay", "team_brief_leads.jsonl")
     rows = _read_jsonl(leads_path)
-    data = _classify(rows)
+    classified = _classify(rows)
+    data, dedupe_removed = _dedupe_sections(classified)
 
-    master_text = _master_summary(data)
+    master_text, shown_sections = _master_summary(data)
 
     payload = {
         "master": _to_rows_for_csv(
@@ -260,6 +307,27 @@ def build_page(config: Config):
         "upsell": _to_rows_for_csv(data.get("upsell_due") or []),
     }
 
+    quality_notes = []
+    no_duplicate_leads = dedupe_removed == 0
+    if not no_duplicate_leads:
+        quality_notes.append(f"removed_duplicate_leads={dedupe_removed}")
+
+    no_empty_sections = shown_sections > 0
+    if not no_empty_sections:
+        quality_notes.append("no_active_sections")
+
+    length_ok = len(master_text) <= MAX_MASTER_TEXT_CHARS
+    if not length_ok:
+        master_text = master_text[:MAX_MASTER_TEXT_CHARS].rstrip() + "\n\n（摘要已裁剪，详见CSV导出）"
+        quality_notes.append("master_text_truncated")
+
+    quality_flags = {
+        "no_empty_sections": no_empty_sections,
+        "no_duplicate_leads": no_duplicate_leads,
+        "length_ok": length_ok,
+        "pass": no_empty_sections and no_duplicate_leads and length_ok,
+    }
+
     generated_at = isoformat(now_cst())
     date_str = datetime.now().strftime("%Y-%m-%d")
     digest = {
@@ -273,13 +341,19 @@ def build_page(config: Config):
             "upsell_due": len(data.get("upsell_due") or []),
             "master": len(payload.get("master") or []),
         },
+        "quality_flags": quality_flags,
+        "quality_notes": quality_notes,
         "master_text": master_text,
         "sections": {
-            "high": _summary_block("高优先", data.get("high_priority") or []),
-            "today": _summary_block("今日待跟进", data.get("today") or []),
-            "overdue": _summary_block("已逾期", data.get("overdue") or []),
-            "expiring": _summary_block("报价将到期（3天内）", data.get("expiring") or []),
-            "upsell": _summary_block("复购跟进到期（成交后+7天）", data.get("upsell_due") or []),
+            k: v
+            for k, v in {
+                "high": _summary_block("高优先", data.get("high_priority") or []) if (data.get("high_priority") or []) else "",
+                "today": _summary_block("今日待跟进", data.get("today") or []) if (data.get("today") or []) else "",
+                "overdue": _summary_block("已逾期", data.get("overdue") or []) if (data.get("overdue") or []) else "",
+                "expiring": _summary_block("报价将到期（3天内）", data.get("expiring") or []) if (data.get("expiring") or []) else "",
+                "upsell": _summary_block("复购跟进到期（成交后+7天）", data.get("upsell_due") or []) if (data.get("upsell_due") or []) else "",
+            }.items()
+            if v
         },
         "lead_ids": {
             "high": [x.get("lead_id", "") for x in payload.get("high") or []],
@@ -307,6 +381,7 @@ def build_page(config: Config):
             "expiring": len(data.get("expiring") or []),
             "upsell_due": len(data.get("upsell_due") or []),
             "master": len(payload.get("master") or []),
+            "quality_flags": quality_flags,
         },
     )
 
