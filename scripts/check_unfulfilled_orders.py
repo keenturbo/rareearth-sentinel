@@ -70,6 +70,15 @@ def _parse_dt(value):
         return None
 
 
+def _parse_legacy_cutoff(value: str):
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if "T" not in text:
+        text = text + "T00:00:00"
+    return _parse_dt(text)
+
+
 def _is_paid(row: dict) -> bool:
     status = str(row.get("status") or "").strip().lower()
     if status in PAID_STATUSES:
@@ -134,12 +143,15 @@ def build_unfulfilled(config: Config, threshold_minutes: int = 30):
             by_order[oid] = merged
 
     now = now_cst()
+    legacy_cutoff = _parse_legacy_cutoff(os.getenv("UNFULFILLED_LEGACY_UNTYPED_BEFORE", "2026-02-01"))
+
     items = []
     actionable_items = []
     noise = {
         "missing_created_at": 0,
         "test_order": 0,
         "pack_part_order": 0,
+        "legacy_untyped": 0,
     }
 
     for oid, row in by_order.items():
@@ -168,6 +180,12 @@ def build_unfulfilled(config: Config, threshold_minutes: int = 30):
             noise_reasons.append("pack_part_order")
             noise["pack_part_order"] += 1
 
+        product_type = str(row.get("product_type") or "").strip().lower()
+        created_dt = _parse_dt(row.get("created_at"))
+        if (not product_type) and legacy_cutoff and created_dt and created_dt < legacy_cutoff:
+            noise_reasons.append("legacy_untyped")
+            noise["legacy_untyped"] += 1
+
         item = {
             "order_id": oid,
             "status": str(row.get("status") or ""),
@@ -190,6 +208,7 @@ def build_unfulfilled(config: Config, threshold_minutes: int = 30):
     payload = {
         "generated_at": isoformat(now),
         "threshold_minutes": int(threshold_minutes),
+        "legacy_untyped_before": isoformat(legacy_cutoff) if legacy_cutoff else "",
         "count": len(items),
         "actionable_count": len(actionable_items),
         "noise_breakdown": {
