@@ -149,6 +149,7 @@ def build_unfulfilled(config: Config, threshold_minutes: int = 30):
     actionable_items = []
     noise = {
         "missing_created_at": 0,
+        "missing_timestamp_legacy": 0,
         "test_order": 0,
         "pack_part_order": 0,
         "legacy_untyped": 0,
@@ -159,6 +160,9 @@ def build_unfulfilled(config: Config, threshold_minutes: int = 30):
             continue
         if _is_delivered(row):
             continue
+
+        product_type = str(row.get("product_type") or "").strip().lower()
+        created_dt = _parse_dt(row.get("created_at"))
 
         ts = _pick_time(row)
         if ts is None:
@@ -173,6 +177,9 @@ def build_unfulfilled(config: Config, threshold_minutes: int = 30):
         if age_minutes < 0:
             noise_reasons.append("missing_created_at")
             noise["missing_created_at"] += 1
+            if not product_type:
+                noise_reasons.append("missing_timestamp_legacy")
+                noise["missing_timestamp_legacy"] += 1
         if _is_test_order(oid, row):
             noise_reasons.append("test_order")
             noise["test_order"] += 1
@@ -180,8 +187,6 @@ def build_unfulfilled(config: Config, threshold_minutes: int = 30):
             noise_reasons.append("pack_part_order")
             noise["pack_part_order"] += 1
 
-        product_type = str(row.get("product_type") or "").strip().lower()
-        created_dt = _parse_dt(row.get("created_at"))
         if (not product_type) and legacy_cutoff and created_dt and created_dt < legacy_cutoff:
             noise_reasons.append("legacy_untyped")
             noise["legacy_untyped"] += 1
