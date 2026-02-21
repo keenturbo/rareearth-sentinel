@@ -156,6 +156,16 @@ def _render_alert_rows(alerts):
     return "".join(out)
 
 
+def _ensure_pay_health_link(html_doc: str) -> str:
+    target = '<a href="/cn/admin/leads/team-brief/">团队简报线索</a>'
+    if target not in html_doc:
+        return html_doc
+    if '/cn/admin/pay/health/' in html_doc:
+        return html_doc
+    extra = '\n      <span>·</span>\n      <a href="/cn/admin/pay/health/">支付健康</a>'
+    return html_doc.replace(target, target + extra, 1)
+
+
 def build_page(config: Config):
     tpl_path = os.path.join(ROOT, "templates", "admin_team_brief_ops.html")
     out_path = os.path.join(config.static_dir, "cn", "admin", "leads", "team-brief", "ops", "index.html")
@@ -204,6 +214,8 @@ def build_page(config: Config):
         .replace("{{SNAPSHOT_ROWS}}", _render_snapshot_rows(snapshots))
         .replace("{{DIGEST_JSON_TEXT}}", html.escape(json.dumps(digest, ensure_ascii=False, indent=2)))
     )
+
+    html_out = _ensure_pay_health_link(html_out)
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
