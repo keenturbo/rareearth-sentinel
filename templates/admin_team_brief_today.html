@@ -187,10 +187,28 @@ th{white-space:nowrap;background:#f8fafc;color:#334155}
   }
 
   function safeUrl(ep, query=''){
-    const rel = ep.startsWith('/') ? ep : ('/' + ep);
-    const u = new URL(rel, window.location.origin);
-    if (query) u.search = query;
-    return u.toString();
+    const raw = String(ep ?? '').trim();
+    let rel = raw;
+    if (!rel || rel.includes('{{') || rel.includes('}}')) rel = '/api/admin/leads/team-brief/list';
+    if (/^https?:\/\//i.test(rel)){
+      try{
+        const pu = new URL(rel);
+        rel = pu.pathname + (pu.search || '');
+      }catch(_){ }
+    }
+    if (!rel.startsWith('/')) rel = '/' + rel;
+    try{
+      const base = (window.location && window.location.origin) ? window.location.origin : window.location.href;
+      const u = new URL(rel, base);
+      if (query){
+        const q = String(query);
+        u.search = q.startsWith('?') ? q : ('?' + q);
+      }
+      return u.toString();
+    }catch(_){
+      const q = query ? (String(query).startsWith('?') ? String(query) : ('?' + String(query))) : '';
+      return rel + q;
+    }
   }
 
   async function safeFetch(ep, options={}){
