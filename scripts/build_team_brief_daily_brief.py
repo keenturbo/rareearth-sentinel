@@ -72,7 +72,22 @@ def _norm_row(row):
         "next_action_at": str((row or {}).get("next_action_at") or "").strip(),
         "quote_valid_until": str((row or {}).get("quote_valid_until") or "").strip(),
         "created_at": str((row or {}).get("created_at") or "").strip(),
+        "won_at": str((row or {}).get("won_at") or "").strip(),
+        "updated_at": str((row or {}).get("updated_at") or "").strip(),
+        "upsell_due_at": str((row or {}).get("upsell_due_at") or "").strip(),
+        "upsell_status": str((row or {}).get("upsell_status") or "").strip().lower(),
     }
+
+
+def _derive_upsell_due(x):
+    due = _parse_date(x.get("upsell_due_at"))
+    if due:
+        return due
+    base = _parse_datetime(x.get("won_at")) or _parse_datetime(x.get("updated_at")) or _parse_datetime(x.get("created_at"))
+    if not base:
+        return None
+    base_cmp = base.replace(tzinfo=None) if getattr(base, "tzinfo", None) else base
+    return (base_cmp + timedelta(days=7)).date()
 
 
 def _classify(rows):
@@ -82,9 +97,10 @@ def _classify(rows):
     today = now.date()
     exp_end = today + timedelta(days=3)
 
+    normalized = [_norm_row(r) for r in rows]
+
     active = []
-    for row in rows:
-        r = _norm_row(row)
+    for r in normalized:
         if r["status"] in {"won", "lost"}:
             continue
         active.append(r)
@@ -108,13 +124,25 @@ def _classify(rows):
         if qd and today <= qd <= exp_end:
             expiring.append(x)
 
+    upsell_due = []
+    for x in normalized:
+        if x.get("status") != "won":
+            continue
+        if x.get("upsell_status") == "done":
+            continue
+        due = _derive_upsell_due(x)
+        if due and due <= today:
+            xx = dict(x)
+            xx["_display_due"] = due.isoformat()
+            upsell_due.append(xx)
+
     def _sort_key(z):
         d = _parse_datetime(z.get("next_action_at"))
         if not d:
             return datetime(2999, 1, 1)
         return d.replace(tzinfo=None) if getattr(d, "tzinfo", None) else d
 
-    for arr in (high, due_today, overdue, expiring):
+    for arr in (high, due_today, overdue, expiring, upsell_due):
         arr.sort(key=_sort_key)
 
     return {
@@ -122,6 +150,7 @@ def _classify(rows):
         "today": due_today,
         "overdue": overdue,
         "expiring": expiring,
+        "upsell_due": upsell_due,
     }
 
 
@@ -132,7 +161,7 @@ def _summary_block(title, rows):
         return "\n".join(lines)
     for i, x in enumerate(rows, start=1):
         lines.append(
-            f"{i}. {x['lead_id'] or '-'} | {x['company']} | 负责人:{x['owner']} | 状态:{x['status']} | 下次:{x['next_action_at'] or '-'} | 到期:{x['quote_valid_until'] or '-'}"
+            f"{i}. {x['lead_id'] or '-'} | {x['company']} | 负责人:{x['owner']} | 状态:{x['status']} | 下次:{x['next_action_at'] or '-'} | 到期:{x.get('_display_due') or x['quote_valid_until'] or '-'}"
         )
     return "\n".join(lines)
 
@@ -144,6 +173,7 @@ def _master_summary(data):
     parts.append(_summary_block("今日待跟进", data.get("today") or []))
     parts.append(_summary_block("已逾期", data.get("overdue") or []))
     parts.append(_summary_block("报价将到期（3天内）", data.get("expiring") or []))
+    parts.append(_summary_block("复购跟进到期（成交后+7天）", data.get("upsell_due") or []))
     return "\n\n".join(parts)
 
 
@@ -160,10 +190,47 @@ def _to_rows_for_csv(rows):
                 "company": x.get("company", ""),
                 "source_channel": x.get("source_channel", ""),
                 "next_action_at": x.get("next_action_at", ""),
-                "quote_valid_until": x.get("quote_valid_until", ""),
+                "quote_valid_until": x.get("_display_due") or x.get("quote_valid_until", ""),
             }
         )
     return out
+
+
+def _write_text(path: str, content: str):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+
+def _write_json(path: str, obj):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, indent=2)
+
+
+def _upsert_daily_snapshot(path: str, row: dict):
+    rows = []
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                if isinstance(obj, dict):
+                    rows.append(obj)
+    day = str(row.get("date") or "")
+    rows = [x for x in rows if str(x.get("date") or "") != day]
+    rows.append(row)
+    rows.sort(key=lambda x: str(x.get("date") or ""))
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        for x in rows:
+            f.write(json.dumps(x, ensure_ascii=False) + "\n")
 
 
 def build_page(config: Config):
@@ -184,18 +251,70 @@ def build_page(config: Config):
             + (data.get("today") or [])
             + (data.get("overdue") or [])
             + (data.get("expiring") or [])
+            + (data.get("upsell_due") or [])
         ),
         "high": _to_rows_for_csv(data.get("high_priority") or []),
         "today": _to_rows_for_csv(data.get("today") or []),
         "overdue": _to_rows_for_csv(data.get("overdue") or []),
         "expiring": _to_rows_for_csv(data.get("expiring") or []),
+        "upsell": _to_rows_for_csv(data.get("upsell_due") or []),
     }
+
+    generated_at = isoformat(now_cst())
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    digest = {
+        "generated_at": generated_at,
+        "date": date_str,
+        "counts": {
+            "high_priority": len(data.get("high_priority") or []),
+            "today": len(data.get("today") or []),
+            "overdue": len(data.get("overdue") or []),
+            "expiring": len(data.get("expiring") or []),
+            "upsell_due": len(data.get("upsell_due") or []),
+            "master": len(payload.get("master") or []),
+        },
+        "master_text": master_text,
+        "sections": {
+            "high": _summary_block("高优先", data.get("high_priority") or []),
+            "today": _summary_block("今日待跟进", data.get("today") or []),
+            "overdue": _summary_block("已逾期", data.get("overdue") or []),
+            "expiring": _summary_block("报价将到期（3天内）", data.get("expiring") or []),
+            "upsell": _summary_block("复购跟进到期（成交后+7天）", data.get("upsell_due") or []),
+        },
+        "lead_ids": {
+            "high": [x.get("lead_id", "") for x in payload.get("high") or []],
+            "today": [x.get("lead_id", "") for x in payload.get("today") or []],
+            "overdue": [x.get("lead_id", "") for x in payload.get("overdue") or []],
+            "expiring": [x.get("lead_id", "") for x in payload.get("expiring") or []],
+            "upsell": [x.get("lead_id", "") for x in payload.get("upsell") or []],
+        },
+    }
+
+    digest_json = os.path.join(config.data_dir, "status", "team_brief_daily_digest.json")
+    digest_txt = os.path.join(config.data_dir, "status", "team_brief_daily_digest.txt")
+    _write_json(digest_json, digest)
+    _write_text(digest_txt, master_text)
+
+    snapshot_path = os.path.join(config.data_dir, "analytics", "sales_daily_snapshots.jsonl")
+    _upsert_daily_snapshot(
+        snapshot_path,
+        {
+            "date": date_str,
+            "generated_at": generated_at,
+            "high_priority": len(data.get("high_priority") or []),
+            "today": len(data.get("today") or []),
+            "overdue": len(data.get("overdue") or []),
+            "expiring": len(data.get("expiring") or []),
+            "upsell_due": len(data.get("upsell_due") or []),
+            "master": len(payload.get("master") or []),
+        },
+    )
 
     with open(template_path, "r", encoding="utf-8") as f:
         tpl = f.read()
 
     html_out = (
-        tpl.replace("{{LAST_UPDATE}}", isoformat(now_cst()))
+        tpl.replace("{{LAST_UPDATE}}", generated_at)
         .replace("{{COUNT_HIGH}}", str(len(data.get("high_priority") or [])))
         .replace("{{COUNT_TODAY}}", str(len(data.get("today") or [])))
         .replace("{{COUNT_OVERDUE}}", str(len(data.get("overdue") or [])))
