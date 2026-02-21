@@ -107,11 +107,14 @@ def _compute_ops_signals(leads_rows, counts: dict, quality_flags: dict, unfulfil
     overdue = int(counts.get("overdue") or 0)
     quality_pass = bool((quality_flags or {}).get("pass", True))
     unfulfilled_count = int((unfulfilled or {}).get("count") or 0)
+    actionable_unfulfilled_count = int((unfulfilled or {}).get("actionable_count") or 0)
     unfulfilled_threshold = int((unfulfilled or {}).get("threshold_minutes") or 30)
 
     alerts = []
-    if unfulfilled_count > 0:
-        alerts.append(("danger", f"存在已支付未交付订单 {unfulfilled_count} 单（>{unfulfilled_threshold}分钟），请优先处理。"))
+    if actionable_unfulfilled_count > 0:
+        alerts.append(("danger", f"存在已支付未交付订单 {actionable_unfulfilled_count} 单（>{unfulfilled_threshold}分钟，可执行告警），请优先处理。"))
+    elif unfulfilled_count > 0:
+        alerts.append(("info", f"存在历史未交付记录 {unfulfilled_count} 单（含测试/子单/缺时间），当前可执行告警为 0。"))
     if not quality_pass:
         alerts.append(("warn", "摘要质量降级：建议优先核对今日清单明细后再执行。"))
     if overdue > 0:
@@ -135,6 +138,7 @@ def _compute_ops_signals(leads_rows, counts: dict, quality_flags: dict, unfulfil
         "coverage": coverage,
         "alerts": alerts,
         "unfulfilled_count": unfulfilled_count,
+        "actionable_unfulfilled_count": actionable_unfulfilled_count,
     }
 
 
