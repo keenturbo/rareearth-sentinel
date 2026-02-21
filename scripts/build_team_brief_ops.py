@@ -94,7 +94,7 @@ def _build_exec_text(counts: dict, quality_flags: dict):
     return "\n".join(lines)
 
 
-def _compute_ops_signals(leads_rows, counts: dict, quality_flags: dict):
+def _compute_ops_signals(leads_rows, counts: dict, quality_flags: dict, unfulfilled: dict):
     qualified = 0
     proposal_sent = 0
     for r in leads_rows or []:
@@ -106,8 +106,12 @@ def _compute_ops_signals(leads_rows, counts: dict, quality_flags: dict):
 
     overdue = int(counts.get("overdue") or 0)
     quality_pass = bool((quality_flags or {}).get("pass", True))
+    unfulfilled_count = int((unfulfilled or {}).get("count") or 0)
+    unfulfilled_threshold = int((unfulfilled or {}).get("threshold_minutes") or 30)
 
     alerts = []
+    if unfulfilled_count > 0:
+        alerts.append(("danger", f"存在已支付未交付订单 {unfulfilled_count} 单（>{unfulfilled_threshold}分钟），请优先处理。"))
     if not quality_pass:
         alerts.append(("warn", "摘要质量降级：建议优先核对今日清单明细后再执行。"))
     if overdue > 0:
@@ -130,6 +134,7 @@ def _compute_ops_signals(leads_rows, counts: dict, quality_flags: dict):
         "proposal_sent": proposal_sent,
         "coverage": coverage,
         "alerts": alerts,
+        "unfulfilled_count": unfulfilled_count,
     }
 
 
@@ -154,6 +159,7 @@ def build_page(config: Config):
     digest_path = os.path.join(config.data_dir, "status", "team_brief_daily_digest.json")
     snapshots_path = os.path.join(config.data_dir, "analytics", "sales_daily_snapshots.jsonl")
     leads_path = os.path.join(config.data_dir, "pay", "team_brief_leads.jsonl")
+    unfulfilled_path = os.path.join(config.data_dir, "status", "unfulfilled_orders.json")
 
     digest = _load_json(digest_path)
     counts = digest.get("counts") or {}
@@ -163,7 +169,8 @@ def build_page(config: Config):
 
     snapshots = _read_jsonl(snapshots_path)
     leads_rows = _read_jsonl(leads_path)
-    signals = _compute_ops_signals(leads_rows, counts, quality_flags)
+    unfulfilled = _load_json(unfulfilled_path)
+    signals = _compute_ops_signals(leads_rows, counts, quality_flags, unfulfilled)
 
     if not master_text:
         master_text = "【团队简报每日执行摘要】\n今日无待办"
