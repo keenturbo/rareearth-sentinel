@@ -181,6 +181,7 @@ def build_admin_funnel_page(config):
 
     sku_items = _group_by(rows_30d, "sku_id")
     channel_items = _group_by(rows_30d, "channel")
+    owner_items = _group_by(rows_30d, "owner")
 
     with open(tpl_path, "r", encoding="utf-8") as f:
         tpl = f.read()
@@ -195,6 +196,7 @@ def build_admin_funnel_page(config):
         .replace("{{FUNNEL_ROWS_30D}}", _render_funnel_rows(cnt_30d))
         .replace("{{SKU_ROWS}}", _render_group_rows(sku_items))
         .replace("{{CHANNEL_ROWS}}", _render_group_rows(channel_items))
+        .replace("{{OWNER_ROWS}}", _render_group_rows(owner_items))
     )
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
