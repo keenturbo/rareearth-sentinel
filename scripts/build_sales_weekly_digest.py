@@ -110,6 +110,40 @@ def _template_label(value):
     return _TEMPLATE_LABEL.get(_norm_template(value), "Unknown")
 
 
+def _norm_template_version(value, template_key=""):
+    base = template_key if template_key in {"basic", "pro", "custom", "unknown"} else "unknown"
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return f"{base}_v1"
+
+    if raw in {"v1", "v2"}:
+        return f"{base}_{raw}"
+
+    allowed = {
+        "basic_v1", "basic_v2",
+        "pro_v1", "pro_v2",
+        "custom_v1", "custom_v2",
+        "unknown_v1", "unknown_v2",
+    }
+    if raw in allowed:
+        return raw
+
+    if "_" in raw:
+        b, v = raw.split("_", 1)
+        if b in {"basic", "pro", "custom", "unknown"} and v in {"v1", "v2"}:
+            return f"{b}_{v}"
+
+    return f"{base}_v1"
+
+
+def _template_version_label(value):
+    key = _norm_template_version(value, "unknown")
+    if "_" not in key:
+        return key
+    base, ver = key.split("_", 1)
+    return f"{_template_label(base)}-{ver.upper()}"
+
+
 def _render_group_rows(items):
     if not items:
         return "<tr><td colspan='6' class='muted'>暂无数据</td></tr>"
@@ -144,6 +178,28 @@ def _render_template_rows(items):
         out.append(
             "<tr>"
             f"<td>{html.escape(_template_label(key))}</td>"
+            f"<td>{total}</td>"
+            f"<td>{proposal}</td>"
+            f"<td>{won}</td>"
+            f"<td>{lost}</td>"
+            f"<td>{_pct(won, proposal)}</td>"
+            "</tr>"
+        )
+    return "".join(out)
+
+
+def _render_template_version_rows(items):
+    if not items:
+        return "<tr><td colspan='6' class='muted'>暂无模板版本样本</td></tr>"
+    out = []
+    for key, stats in items[:12]:
+        total = int(stats.get("total", 0))
+        proposal = int(stats.get("proposal", 0))
+        won = int(stats.get("won", 0))
+        lost = int(stats.get("lost", 0))
+        out.append(
+            "<tr>"
+            f"<td>{html.escape(_template_version_label(key))}</td>"
             f"<td>{total}</td>"
             f"<td>{proposal}</td>"
             f"<td>{won}</td>"
@@ -217,6 +273,19 @@ def _pick_best_template_hint(template_items):
     return f"模板最佳：{_template_label(key)}（成交/报价 {_pct(stats.get('won', 0), stats.get('proposal', 0))}，报价样本 {int(stats.get('proposal', 0))}）"
 
 
+def _pick_best_template_version_hint(items):
+    valid = []
+    for key, stats in items:
+        proposal = int(stats.get("proposal", 0))
+        won = int(stats.get("won", 0))
+        if proposal > 0:
+            valid.append((key, stats, _safe_rate(won, proposal)))
+    if not valid:
+        return "版本样本不足（暂无报价样本）"
+    key, stats, _ = sorted(valid, key=lambda x: (x[2], int(x[1].get("won", 0)), int(x[1].get("proposal", 0))), reverse=True)[0]
+    return f"版本最佳：{_template_version_label(key)}（成交/报价 {_pct(stats.get('won', 0), stats.get('proposal', 0))}，报价样本 {int(stats.get('proposal', 0))}）"
+
+
 def _template_tip(template_items):
     candidates = []
     for key, stats in template_items:
@@ -230,6 +299,22 @@ def _template_tip(template_items):
     if rate < 0.15:
         return f"模板建议：{_template_label(key)} 转化偏低（{_pct(rate*100,100)}，样本{proposal}），建议调整默认报价语气与交付范围描述。"
     return "模板建议：保持高胜率模板为默认，低样本模板继续A/B观察。"
+
+
+def _template_version_tip(items):
+    candidates = []
+    for key, stats in items:
+        proposal = int(stats.get("proposal", 0))
+        won = int(stats.get("won", 0))
+        if proposal >= 2:
+            candidates.append((key, proposal, _safe_rate(won, proposal)))
+    if not candidates:
+        return "版本建议：当前版本样本不足，先继续积累 v1/v2 报价样本。"
+    low_key, low_proposal, low_rate = sorted(candidates, key=lambda x: x[2])[0]
+    hi_key, hi_proposal, hi_rate = sorted(candidates, key=lambda x: x[2], reverse=True)[0]
+    if hi_key != low_key and (hi_rate - low_rate) >= 0.15 and low_proposal >= 2:
+        return f"版本建议：优先使用 { _template_version_label(hi_key) }，{ _template_version_label(low_key) } 转化偏低（样本{low_proposal}）。"
+    return "版本建议：当前版本差异不明显，继续按周观察并保持样本平衡。"
 
 
 def _render_actions(actions):
@@ -254,6 +339,7 @@ def build_page(config: Config):
     lead_map = {str((x or {}).get("lead_id") or "").strip(): x for x in leads}
 
     template_by_lead = {}
+    template_version_by_lead = {}
     for ev in events:
         lead_id = str(ev.get("lead_id") or "").strip()
         if not lead_id:
@@ -261,6 +347,8 @@ def build_page(config: Config):
         tmpl = _norm_template(ev.get("proposal_template"))
         if tmpl != "unknown":
             template_by_lead[lead_id] = tmpl
+        tmpl_ver = _norm_template_version(ev.get("proposal_template_version"), tmpl)
+        template_version_by_lead[lead_id] = tmpl_ver
 
     proposal_ids = set()
     won_ids = set()
@@ -312,38 +400,50 @@ def build_page(config: Config):
     channel_stats = defaultdict(lambda: {"total": 0, "proposal": 0, "won": 0, "lost": 0})
     owner_stats = defaultdict(lambda: {"total": 0, "proposal": 0, "won": 0, "lost": 0})
     template_stats = defaultdict(lambda: {"total": 0, "proposal": 0, "won": 0, "lost": 0})
+    template_version_stats = defaultdict(lambda: {"total": 0, "proposal": 0, "won": 0, "lost": 0})
 
     for lead in leads_7d:
         lead_id = str(lead.get("lead_id") or "").strip()
         channel = str(lead.get("source_channel") or "").strip() or "unknown"
         owner = str(lead.get("owner") or "").strip() or "unassigned"
         template_key = _norm_template(lead.get("proposal_template") or template_by_lead.get(lead_id))
+        template_version_key = _norm_template_version(
+            lead.get("proposal_template_version") or template_version_by_lead.get(lead_id),
+            template_key,
+        )
 
         channel_stats[channel]["total"] += 1
         owner_stats[owner]["total"] += 1
         template_stats[template_key]["total"] += 1
+        template_version_stats[template_version_key]["total"] += 1
 
         if lead_id in proposal_ids:
             channel_stats[channel]["proposal"] += 1
             owner_stats[owner]["proposal"] += 1
             template_stats[template_key]["proposal"] += 1
+            template_version_stats[template_version_key]["proposal"] += 1
         if lead_id in won_ids:
             channel_stats[channel]["won"] += 1
             owner_stats[owner]["won"] += 1
             template_stats[template_key]["won"] += 1
+            template_version_stats[template_version_key]["won"] += 1
         if lead_id in lost_ids:
             channel_stats[channel]["lost"] += 1
             owner_stats[owner]["lost"] += 1
             template_stats[template_key]["lost"] += 1
+            template_version_stats[template_version_key]["lost"] += 1
 
     channel_items = sorted(channel_stats.items(), key=lambda kv: (kv[1]["total"], kv[1]["won"]), reverse=True)
     owner_items = sorted(owner_stats.items(), key=lambda kv: (kv[1]["total"], kv[1]["won"]), reverse=True)
     template_items = sorted(template_stats.items(), key=lambda kv: (kv[1]["total"], kv[1]["won"]), reverse=True)
+    template_version_items = sorted(template_version_stats.items(), key=lambda kv: (kv[1]["total"], kv[1]["won"]), reverse=True)
 
     best_channel_hint = _pick_best_hint(channel_items, "渠道")
     best_owner_hint = _pick_best_hint(owner_items, "负责人")
     best_template_hint = _pick_best_template_hint(template_items)
     template_tip = _template_tip(template_items)
+    best_template_version_hint = _pick_best_template_version_hint(template_version_items)
+    template_version_tip = _template_version_tip(template_version_items)
 
     actions = []
     proposal_rate = (proposal_7d / new_7d) if new_7d else 0.0
@@ -358,6 +458,8 @@ def build_page(config: Config):
     actions.append(best_owner_hint)
     actions.append(best_template_hint)
     actions.append(template_tip)
+    actions.append(best_template_version_hint)
+    actions.append(template_version_tip)
 
     week_range = f"{week_start_utc.astimezone(timezone.utc).date()} ~ {now_utc.astimezone(timezone.utc).date()}"
 
@@ -377,12 +479,15 @@ def build_page(config: Config):
         .replace("{{CHANNEL_ROWS}}", _render_group_rows(channel_items))
         .replace("{{OWNER_ROWS}}", _render_group_rows(owner_items))
         .replace("{{TEMPLATE_ROWS}}", _render_template_rows(template_items))
+        .replace("{{TEMPLATE_VERSION_ROWS}}", _render_template_version_rows(template_version_items))
         .replace("{{REASON_ROWS}}", _render_reason_rows(reason_counter))
         .replace("{{ATTRIBUTION_ROWS}}", _render_attribution_rows(attribution_counter))
         .replace("{{BEST_CHANNEL_HINT}}", html.escape(best_channel_hint))
         .replace("{{BEST_OWNER_HINT}}", html.escape(best_owner_hint))
         .replace("{{BEST_TEMPLATE_HINT}}", html.escape(best_template_hint))
         .replace("{{TEMPLATE_TIP}}", html.escape(template_tip))
+        .replace("{{BEST_TEMPLATE_VERSION_HINT}}", html.escape(best_template_version_hint))
+        .replace("{{TEMPLATE_VERSION_TIP}}", html.escape(template_version_tip))
         .replace("{{ACTION_ITEMS}}", _render_actions(actions))
     )
 
