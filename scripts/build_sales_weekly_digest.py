@@ -323,6 +323,96 @@ def _render_actions(actions):
     return "".join(f"<li>{html.escape(x)}</li>" for x in actions)
 
 
+def _build_won_review_summary(cards, now_utc):
+    rows = [x for x in (cards or []) if _in_last_days(x.get("won_at") or x.get("generated_at"), now_utc, 7)]
+    rows.sort(
+        key=lambda x: (_parse_dt(x.get("won_at") or x.get("generated_at")) or datetime(1970, 1, 1, tzinfo=timezone.utc)),
+        reverse=True,
+    )
+    reason_counter = Counter()
+    template_ver_counter = Counter()
+    snippets = []
+    for r in rows:
+        reason = str(r.get("close_reason_code") or "unknown").strip().lower() or "unknown"
+        reason_counter[reason] += 1
+        tmpl = _norm_template(r.get("proposal_template"))
+        tmpl_ver = _norm_template_version(r.get("proposal_template_version"), tmpl)
+        template_ver_counter[tmpl_ver] += 1
+        company = str(r.get("company") or r.get("name") or r.get("lead_id") or "客户").strip()
+        why = str(r.get("why_won") or "").strip() or "成交原因未记录"
+        next_action = str(r.get("next_7d_action") or "").strip() or "D+7 触达复购并记录反馈"
+        snippets.append({
+            "company": company,
+            "why": why,
+            "next": next_action,
+            "won_at": str(r.get("won_at") or "").strip(),
+        })
+
+    top_reasons = []
+    for code, cnt in reason_counter.most_common(3):
+        top_reasons.append(f"{_REASON_LABEL.get(code, code)}（{cnt}）")
+    top_versions = []
+    for key, cnt in template_ver_counter.most_common(3):
+        top_versions.append(f"{_template_version_label(key)}（{cnt}）")
+
+    return {
+        "count": len(rows),
+        "top_reasons": top_reasons,
+        "top_versions": top_versions,
+        "snippets": snippets[:3],
+    }
+
+
+def _render_won_review_section(summary):
+    count = int((summary or {}).get("count", 0) or 0)
+    if count <= 0:
+        return (
+            '<section class="section">'
+            '<div class="muted" style="margin-bottom:8px">成交复盘摘要（近7天）</div>'
+            '<div class="muted">暂无成交复盘卡（won review cards）样本。</div>'
+            '</section>'
+        )
+
+    reason_text = "、".join((summary.get("top_reasons") or [])[:3]) or "暂无"
+    version_text = "、".join((summary.get("top_versions") or [])[:3]) or "暂无"
+    snippets = summary.get("snippets") or []
+    if snippets:
+        items_html = "".join(
+            "<li>"
+            f"<div><strong>{html.escape(x.get('company') or '客户')}</strong> · {html.escape(x.get('won_at') or '-')}</div>"
+            f"<div class='muted'>成单原因：{html.escape(x.get('why') or '')}</div>"
+            f"<div class='muted'>7天动作：{html.escape(x.get('next') or '')}</div>"
+            "</li>"
+            for x in snippets
+        )
+    else:
+        items_html = "<li>暂无复盘条目</li>"
+
+    return (
+        '<section class="section">'
+        '<div class="muted" style="margin-bottom:8px">成交复盘摘要（近7天）</div>'
+        '<div class="hints" style="margin-bottom:10px;">'
+        f'<div class="hint">复盘卡数量：{count} · 高频成交原因：{html.escape(reason_text)}</div>'
+        f'<div class="hint">高频模板版本：{html.escape(version_text)}</div>'
+        '</div>'
+        '<ul>'
+        f'{items_html}'
+        '</ul>'
+        '</section>'
+    )
+
+
+def _inject_won_review_section(html_out, summary):
+    block = _render_won_review_section(summary)
+    marker = '</div>\n</body>'
+    if marker in html_out:
+        return html_out.replace(marker, block + '\n</div>\n</body>', 1)
+    marker2 = '</body>'
+    if marker2 in html_out:
+        return html_out.replace(marker2, block + '\n</body>', 1)
+    return html_out + block
+
+
 def build_page(config: Config):
     leads_path = os.path.join(config.data_dir, "pay", "team_brief_leads.jsonl")
     events_path = os.path.join(config.data_dir, "pay", "team_brief_lead_events.jsonl")
@@ -331,6 +421,7 @@ def build_page(config: Config):
 
     leads = _read_jsonl(leads_path)
     events = _read_jsonl(events_path)
+    won_cards = _read_jsonl(os.path.join(config.data_dir, "status", "won_review_cards.jsonl"))
 
     now_utc = datetime.now(timezone.utc)
     week_start_utc = now_utc - timedelta(days=7)
@@ -462,6 +553,7 @@ def build_page(config: Config):
     actions.append(template_version_tip)
 
     week_range = f"{week_start_utc.astimezone(timezone.utc).date()} ~ {now_utc.astimezone(timezone.utc).date()}"
+    won_review_summary = _build_won_review_summary(won_cards, now_utc)
 
     with open(tpl_path, "r", encoding="utf-8") as f:
         tpl = f.read()
@@ -490,6 +582,7 @@ def build_page(config: Config):
         .replace("{{TEMPLATE_VERSION_TIP}}", html.escape(template_version_tip))
         .replace("{{ACTION_ITEMS}}", _render_actions(actions))
     )
+    html_out = _inject_won_review_section(html_out, won_review_summary)
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
