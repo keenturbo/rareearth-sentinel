@@ -1500,5 +1500,336 @@ def main():
     run_pipeline(config)
 
 
+# ---- S12 homepage quality patch (display-layer only) ----
+# 1) Daily report cache fallback capped at 12h (without touching Reporter source)
+# 2) Homepage Top3 display dedupe (without changing top3_list.json / Telegram)
+# 3) Homepage daily brief sample floor raised to 20 (display layer)
+
+from datetime import datetime, timezone  # noqa: E402
+
+
+def _parse_iso_dt_hotfix(value):
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _to_tz_hotfix(dt, tzinfo):
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    try:
+        return dt.astimezone(tzinfo)
+    except Exception:
+        return dt
+
+
+def _record_is_today_hotfix(record):
+    dt = _parse_iso_dt_hotfix(record.get("collected_at") or record.get("published_at"))
+    if not dt:
+        return False
+    now = now_cst()
+    dt_local = _to_tz_hotfix(dt, now.tzinfo)
+    return dt_local.date() == now.date()
+
+
+def _append_unique_hotfix(target, seen, value, limit=5):
+    text = str(value or "").strip()
+    if not text:
+        return
+    key = text.lower()
+    if key in seen:
+        return
+    seen.add(key)
+    target.append(text)
+    if len(target) > limit:
+        del target[limit:]
+
+
+def _render_brief_col_hotfix(items, label, empty_text):
+    if not items:
+        return (
+            f'<div class="brief-col"><div class="meta">{label}</div>'
+            f'<div class="meta">{empty_text}</div></div>'
+        )
+    lis = "".join(f"<li>{html_lib.escape(x)}</li>" for x in items[:5])
+    return (
+        f'<div class="brief-col"><div class="meta">{label}</div>'
+        f"<ul>{lis}</ul></div>"
+    )
+
+
+def _render_daily_brief_hotfix(records, lang="zh", min_sample=20):
+    if not records:
+        return (
+            '<div class="brief-empty">今日暂无摘要</div>'
+            if lang == "zh"
+            else '<div class="brief-empty">No brief for today.</div>'
+        )
+
+    today = [r for r in records if _record_is_today_hotfix(r)]
+
+    def _score(r):
+        try:
+            return float(r.get("risk_score", 0) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    today = sorted(today, key=_score, reverse=True)
+    sample = today[: max(1, min_sample)]
+    if not sample:
+        return (
+            '<div class="brief-empty">今日暂无摘要</div>'
+            if lang == "zh"
+            else '<div class="brief-empty">No brief for today.</div>'
+        )
+
+    if lang == "en":
+        impact_key = "impact_west"
+        impact_counts = {"Positive": 0, "Neutral": 0, "Negative": 0}
+        counts_line = "Samples {sample} · Positive {pos} · Neutral {neu} · Negative {neg}"
+        strategy_label = "Strategy Recommendations"
+        tactical_label = "Tactical Recommendations"
+        empty_tip = "No recommendations"
+        strategy_keys = ["recommendations_strategy_en", "recommendations_strategy"]
+        tactical_keys = ["recommendations_tactical_en", "recommendations_tactical"]
+    else:
+        impact_key = "china_impact"
+        impact_counts = {"利好": 0, "中性": 0, "利空": 0}
+        counts_line = "样本 {sample} · 利好 {pos} · 中性 {neu} · 利空 {neg}"
+        strategy_label = "战略建议"
+        tactical_label = "操作建议"
+        empty_tip = "暂无建议"
+        strategy_keys = ["recommendations_strategy", "recommendations_strategy_en"]
+        tactical_keys = ["recommendations_tactical", "recommendations_tactical_en"]
+
+    strategy = []
+    tactical = []
+    seen_strategy = set()
+    seen_tactical = set()
+
+    for r in sample:
+        impact = str(r.get(impact_key, "")).strip()
+        if impact in impact_counts:
+            impact_counts[impact] += 1
+
+        rec_s = []
+        rec_t = []
+        for key in strategy_keys:
+            value = r.get(key)
+            if isinstance(value, list) and value:
+                rec_s = value
+                break
+        for key in tactical_keys:
+            value = r.get(key)
+            if isinstance(value, list) and value:
+                rec_t = value
+                break
+
+        for item in rec_s:
+            _append_unique_hotfix(strategy, seen_strategy, item, limit=5)
+        for item in rec_t:
+            _append_unique_hotfix(tactical, seen_tactical, item, limit=5)
+
+    if lang == "en":
+        row = counts_line.format(
+            sample=len(sample),
+            pos=impact_counts["Positive"],
+            neu=impact_counts["Neutral"],
+            neg=impact_counts["Negative"],
+        )
+    else:
+        row = counts_line.format(
+            sample=len(sample),
+            pos=impact_counts["利好"],
+            neu=impact_counts["中性"],
+            neg=impact_counts["利空"],
+        )
+
+    strategy_html = _render_brief_col_hotfix(strategy, strategy_label, empty_tip)
+    tactical_html = _render_brief_col_hotfix(tactical, tactical_label, empty_tip)
+    return (
+        f'<div class="brief-row">{html_lib.escape(row)}</div>'
+        f'<div class="brief-grid">{strategy_html}{tactical_html}</div>'
+    )
+
+
+def _replace_daily_brief_section_hotfix(raw_html, title_candidates, brief_html):
+    for title in title_candidates:
+        pattern = re.compile(
+            r'(<section class="section">\s*<div class="section-title">)'
+            + re.escape(title)
+            + r'(</div>)(.*?)(</section>)',
+            re.S,
+        )
+        if not pattern.search(raw_html):
+            continue
+        replaced = pattern.sub(
+            lambda m: f"{m.group(1)}{title}{m.group(2)}\n    {brief_html}\n  {m.group(4)}",
+            raw_html,
+            count=1,
+        )
+        return replaced, True
+    return raw_html, False
+
+
+def _dedupe_home_items_hotfix(items, limit=3):
+    deduped = []
+    seen = set()
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        event_id = str(item.get("event_id") or "").strip().lower()
+        report_base = _strip_top3_prefixes(_strip_top3_prefixes(_strip_top3_prefixes(str(item.get("report_id") or ""))))
+        report_base = _strip_top3_prefixes(str(report_base))
+        report_base = re.sub(r"[-_](policy|industry|capital)$", "", str(report_base), flags=re.I)
+        title_key = _normalize_title_key(item.get("title_zh") or item.get("title_en") or item.get("title") or "")
+        key = event_id or report_base.lower() or title_key
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        deduped.append(item)
+        if limit and len(deduped) >= limit:
+            break
+    return deduped
+
+
+_LEGACY_POSTPROCESS_HOME_TOP_TRACKS = _postprocess_home_top_tracks
+
+
+def _postprocess_home_top_tracks(config):
+    # Keep legacy chain (AI/social bundle etc.)
+    _LEGACY_POSTPROCESS_HOME_TOP_TRACKS(config)
+
+    # Display-layer dedupe for homepage top tracks only
+    top3_path = os.path.join(config.data_dir, "status", "top3_list.json")
+    top3_data = _load_json_dict(top3_path)
+    raw_items = top3_data.get("items") if isinstance(top3_data, dict) else []
+    if not isinstance(raw_items, list) or not raw_items:
+        return
+
+    dedup_items = _dedupe_home_items_hotfix(raw_items, limit=3)
+    if not dedup_items:
+        return
+
+    reports_index_path = os.path.join(config.premium_dir, "reports_index.jsonl")
+    valid_report_ids = _load_reports_index_ids(reports_index_path)
+    daily_zh = _load_json_dict(os.path.join(config.data_dir, "status", "daily_report_zh.json"))
+    daily_en = _load_json_dict(os.path.join(config.data_dir, "status", "daily_report_en.json"))
+
+    dedup_payload = dict(top3_data)
+    dedup_payload["items"] = dedup_items
+
+    aggregate_cn = _build_home_aggregate_html(dedup_payload, valid_report_ids, daily_zh, lang="zh")
+    aggregate_en = _build_home_aggregate_html(dedup_payload, valid_report_ids, daily_en, lang="en")
+
+    top_targets = [
+        (
+            os.path.join(config.static_dir, "index.html"),
+            ["今日重点追踪（Top 3）", "今日重点专题"],
+            "今日重点专题",
+            aggregate_cn,
+        ),
+        (
+            os.path.join(config.static_dir, "cn", "index.html"),
+            ["今日重点追踪（Top 3）", "今日重点专题"],
+            "今日重点专题",
+            aggregate_cn,
+        ),
+        (
+            os.path.join(config.static_dir, "en", "index.html"),
+            ["Top Tracks (Top 3)", "Today's Focus"],
+            "Today's Focus",
+            aggregate_en,
+        ),
+    ]
+
+    for path, title_candidates, new_title, aggregate_html in top_targets:
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                raw_html = f.read()
+        except OSError:
+            continue
+        updated_html, replaced = _replace_top_tracks_section(
+            raw_html, title_candidates, new_title, aggregate_html
+        )
+        if replaced:
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(updated_html)
+            except OSError:
+                pass
+
+    # Daily brief sample floor = 20 (homepage display only)
+    try:
+        records = list(Storage(config).iter_records())
+    except Exception:
+        records = []
+
+    daily_targets = [
+        (
+            os.path.join(config.static_dir, "index.html"),
+            ["今日摘要（战略+操作）", "今日摘要"],
+            _render_daily_brief_hotfix(records, lang="zh", min_sample=20),
+        ),
+        (
+            os.path.join(config.static_dir, "cn", "index.html"),
+            ["今日摘要（战略+操作）", "今日摘要"],
+            _render_daily_brief_hotfix(records, lang="zh", min_sample=20),
+        ),
+        (
+            os.path.join(config.static_dir, "en", "index.html"),
+            ["Today Brief (Strategy + Tactics)", "Today Brief"],
+            _render_daily_brief_hotfix(records, lang="en", min_sample=20),
+        ),
+    ]
+
+    for path, title_candidates, brief_html in daily_targets:
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                raw_html = f.read()
+        except OSError:
+            continue
+        updated_html, replaced = _replace_daily_brief_section_hotfix(
+            raw_html, title_candidates, brief_html
+        )
+        if replaced:
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(updated_html)
+            except OSError:
+                pass
+
+
+# Cap daily cache fallback window to 12h without changing src/reporter.py
+if not getattr(Reporter, "_cache_window_12h_patched", False):
+    _ORIG_LOAD_DAILY_CACHE = Reporter._load_daily_report_cache
+
+    def _load_daily_report_cache_12h(self, lang="zh", max_age_hours=48):
+        capped = 12
+        try:
+            req = float(max_age_hours)
+            if req > 0:
+                capped = min(capped, req)
+        except (TypeError, ValueError):
+            pass
+        return _ORIG_LOAD_DAILY_CACHE(self, lang=lang, max_age_hours=capped)
+
+    Reporter._load_daily_report_cache = _load_daily_report_cache_12h
+    Reporter._cache_window_12h_patched = True
+
+
 if __name__ == "__main__":
     main()
