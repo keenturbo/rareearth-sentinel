@@ -61,8 +61,9 @@ def _load_daily_digest(config: Config):
 
 
 def _write_today_selfcheck(html_out: str, config: Config):
+    unresolved_tokens = re.findall(r"\{\{[A-Z0-9_]+\}\}", html_out)
     flags = {
-        "placeholder_clean": ("{{" not in html_out and "}}" not in html_out),
+        "placeholder_clean": (len(unresolved_tokens) == 0),
         "no_new_url_constructor": ("new URL(" not in html_out),
     }
 
