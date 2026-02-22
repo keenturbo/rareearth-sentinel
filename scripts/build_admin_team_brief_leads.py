@@ -707,7 +707,18 @@ def build_page(config):
 def main():
     config = Config.from_env()
     build_page(config)
+    # S13 small closeout: auto-patch won review cards into leads page
+    patch_result = None
+    try:
+        from scripts.patch_admin_team_brief_leads_won_reviews import patch_leads_page
+
+        patch_result = patch_leads_page(config)
+    except Exception as exc:
+        patch_result = {"ok": False, "error": f"won_review_patch_failed: {exc}"}
+
     print("Admin team brief leads page built")
+    if isinstance(patch_result, dict):
+        print(json.dumps({"won_review_patch": patch_result}, ensure_ascii=False))
 
 
 if __name__ == "__main__":
