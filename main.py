@@ -1779,17 +1779,17 @@ def _postprocess_home_top_tracks(config):
     daily_targets = [
         (
             os.path.join(config.static_dir, "index.html"),
-            ["今日摘要（战略+操作）", "今日摘要"],
+            ["今日摘要（战略 / 操作）", "今日摘要（战略+操作）", "今日摘要"],
             _render_daily_brief_hotfix(records, lang="zh", min_sample=20),
         ),
         (
             os.path.join(config.static_dir, "cn", "index.html"),
-            ["今日摘要（战略+操作）", "今日摘要"],
+            ["今日摘要（战略 / 操作）", "今日摘要（战略+操作）", "今日摘要"],
             _render_daily_brief_hotfix(records, lang="zh", min_sample=20),
         ),
         (
             os.path.join(config.static_dir, "en", "index.html"),
-            ["Today Brief (Strategy + Tactics)", "Today Brief"],
+            ["Today Brief (Strategy / Tactics)", "Today Brief (Strategy + Tactics)", "Today Brief"],
             _render_daily_brief_hotfix(records, lang="en", min_sample=20),
         ),
     ]
@@ -1829,7 +1829,6 @@ if not getattr(Reporter, "_cache_window_12h_patched", False):
 
     Reporter._load_daily_report_cache = _load_daily_report_cache_12h
     Reporter._cache_window_12h_patched = True
-
 
 if __name__ == "__main__":
     main()

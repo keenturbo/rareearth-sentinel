@@ -81,6 +81,7 @@ class Reporter:
                 "stats": stats,
                 "archives": archives,
                 "rollups": rollups,
+                "daily_brief_items": [self._safe_prune_record(r, lang=lang) for r in sorted_records if self._is_today(r)][:20],
                 "premium": premium_briefs.get(lang, []),
                 "index_watch": index_watch,
             }
@@ -228,7 +229,7 @@ class Reporter:
         suffix = "zh" if lang == "zh" else "en"
         return os.path.join(self.config.data_dir, "status", f"daily_report_{suffix}.json")
 
-    def _load_daily_report_cache(self, lang="zh", max_age_hours=48):
+    def _load_daily_report_cache(self, lang="zh", max_age_hours=12):
         path = self._daily_report_cache_path(lang)
         if not os.path.exists(path):
             return None, ""
@@ -482,7 +483,8 @@ class Reporter:
         daily_report_html = self._render_daily_report(
             daily_report, lang=lang, compact=compact_home
         )
-        daily_brief = self._render_daily_brief(items, lang=lang)
+        daily_brief_items = index_data.get("daily_brief_items") or items
+        daily_brief = self._render_daily_brief(daily_brief_items, lang=lang)
         archive_nav = self._render_archive_nav(
             index_data.get("archives", []),
             archive_month=archive_month,
@@ -1816,6 +1818,44 @@ class Reporter:
             return False
         return dt.date() == now_cst().date()
 
+    
+    def _dedupe_home_premium_items(self, premium_items):
+        import re
+        out = []
+        seen = set()
+
+        def norm(t):
+            t = str(t or "").lower()
+            t = re.sub(r"[^a-z0-9\u4e00-\u9fff]+", " ", t)
+            t = re.sub(r"\s+", " ", t).strip()
+            return t
+
+        def key(item):
+            t = norm(item.get("title") or item.get("value") or item.get("preview") or "")
+            # 强规则：印巴+稀土归为同一事件簇
+            if (("india" in t or "印度" in t) and ("brazil" in t or "巴西" in t) and ("rare earth" in t or "稀土" in t)):
+                return "cluster:india_brazil_rare_earth"
+            toks = [x for x in t.split(" ") if len(x) > 2][:8]
+            return "txt:" + " ".join(toks)
+
+        for it in (premium_items or []):
+            k = key(it)
+            if k in seen:
+                continue
+            seen.add(k)
+            out.append(it)
+            if len(out) >= 3:
+                break
+
+        if len(out) < 3:
+            for it in (premium_items or []):
+                if it in out:
+                    continue
+                out.append(it)
+                if len(out) >= 3:
+                    break
+        return out
+
     def _render_daily_brief(self, items, lang="zh"):
         strategy = []
         tactical = []
@@ -2051,7 +2091,7 @@ class Reporter:
 
         def _fallback_lang(lang):
             cached, generated_at = self._load_daily_report_cache(
-                lang=lang, max_age_hours=48
+                lang=lang, max_age_hours=12
             )
             if cached:
                 if lang == "en":
@@ -2260,7 +2300,33 @@ class Reporter:
                         '本期为重大事件三视角（资本 / 产业 / 政策）'
                         '</div>'
                     )
-            for item in premium_items[:3]:
+            deduped_items = []
+            seen_signatures = set()
+
+            def _topic_signature(text):
+                import re as _re
+                t = str(text or "").lower()
+                t = _re.sub(r"[^a-z0-9\u4e00-\u9fff]+", " ", t)
+                t = _re.sub(r"\s+", " ", t).strip()
+                flags = []
+                for kw in ("india", "brazil", "rare earth", "rare earths", "稀土", "印度", "巴西"):
+                    if kw in t:
+                        flags.append(kw)
+                if len(flags) >= 3:
+                    return "sig:" + "|".join(sorted(flags))
+                return "txt:" + " ".join(t.split()[:8])
+
+            for _it in premium_items:
+                _title = _it.get("title") or _it.get("value") or _it.get("preview") or ""
+                _sig = _topic_signature(_title)
+                if _sig in seen_signatures:
+                    continue
+                seen_signatures.add(_sig)
+                deduped_items.append(_it)
+                if len(deduped_items) >= 3:
+                    break
+
+            for item in deduped_items:
                 title_raw = self._ensure_subject_title(item.get("title", ""), lang=lang)
                 title = html.escape(title_raw)
                 value_raw = item.get("value", "")
