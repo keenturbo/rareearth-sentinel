@@ -118,6 +118,20 @@ li{margin:6px 0}
   </section>
 
   <section class="section">
+    <div class="muted" style="margin-bottom:8px">模板版本转化（近7天新增线索）</div>
+    <div class="hints" style="margin-bottom:10px;">
+      <div class="hint">{{BEST_TEMPLATE_VERSION_HINT}}</div>
+      <div class="hint">{{TEMPLATE_VERSION_TIP}}</div>
+    </div>
+    <table>
+      <thead>
+        <tr><th>模板版本</th><th>线索</th><th>报价</th><th>成交</th><th>丢失</th><th>成交/报价</th></tr>
+      </thead>
+      <tbody>{{TEMPLATE_VERSION_ROWS}}</tbody>
+    </table>
+  </section>
+
+  <section class="section">
     <div class="muted" style="margin-bottom:8px">归因联动看板（负责人 × 渠道 × 原因 × 结果）</div>
     <table>
       <thead>
