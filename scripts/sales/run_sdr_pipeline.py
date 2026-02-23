@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from pathlib import Path
 import os
 import sys
 
@@ -24,9 +25,9 @@ def run_pipeline(config: Config):
     steps.append({"step": "classify_replies", **classify_replies(config)})
     steps.append({"step": "build_sdr_daily_snapshot", **build_snapshot(config)})
     return {"ok": True, "steps": steps}
-
-
 def main():
+    project_root = Path(__file__).resolve().parents[2]
+    os.chdir(project_root)
     cfg = Config.from_env()
     result = run_pipeline(cfg)
     print(result)
