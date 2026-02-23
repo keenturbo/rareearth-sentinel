@@ -10,6 +10,7 @@ Builds on top of pay_confirm_server_auto_s5 and adds:
 This keeps S5 behavior unchanged while providing:
 - server-side grouping for today/overdue/expiring/high_priority/upsell_due
 - SDR task manual status update (draft -> approved -> sent/cancelled)
+- S14 P0: auto-create followup_d1 task when first_touch is marked sent (idempotent)
 """
 
 import json
@@ -17,7 +18,7 @@ import os
 import subprocess
 import sys
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List
 from urllib.parse import parse_qs, urlparse
 
@@ -176,6 +177,10 @@ def _sdr_audit_path(config) -> str:
     return os.path.join(config.data_dir, "sales", "audit_logs.jsonl")
 
 
+def _sdr_leads_path(config) -> str:
+    return os.path.join(config.data_dir, "sales", "leads.jsonl")
+
+
 def _normalize_task_row(row: Dict) -> Dict:
     out = dict(row or {})
     out["id"] = s5._normalize_text(out.get("id"), 80)
@@ -238,6 +243,136 @@ def _task_stats(rows: List[Dict]) -> Dict[str, int]:
     return stats
 
 
+def _read_sdr_leads_map(config) -> Dict[str, Dict]:
+    rows = s5._read_jsonl_rows(_sdr_leads_path(config))
+    out: Dict[str, Dict] = {}
+    for r in rows or []:
+        if not isinstance(r, dict):
+            continue
+        lid = s5._normalize_text(r.get("id"), 80)
+        if lid:
+            out[lid] = dict(r)
+    return out
+
+
+def _dt_to_utc_iso(dt_obj) -> str:
+    if not dt_obj:
+        return _utc_now_iso()
+    try:
+        if getattr(dt_obj, "tzinfo", None) is not None:
+            dt_obj = dt_obj.astimezone(timezone.utc)
+            return dt_obj.replace(tzinfo=None, microsecond=0).isoformat() + "Z"
+        return dt_obj.replace(microsecond=0).isoformat() + "Z"
+    except Exception:
+        return _utc_now_iso()
+
+
+def _build_followup_d1_text(lead: Dict) -> str:
+    name = s5._normalize_text((lead or {}).get("display_name"), 80) or s5._normalize_text((lead or {}).get("name"), 80) or "there"
+    return f"Hi {name}, quick follow-up — would a 24h rare-earth action memo be useful for your current watchlist?"
+
+
+def _has_sdr_task(rows: List[Dict], lead_id: str, channel: str, step: str) -> bool:
+    lid = s5._normalize_text(lead_id, 80)
+    ch = s5._normalize_text(channel, 40)
+    stp = s5._normalize_text(step, 40)
+    for row in rows or []:
+        cur = _normalize_task_row(row)
+        if cur.get("lead_id") != lid:
+            continue
+        if cur.get("channel") != ch:
+            continue
+        if cur.get("step") != stp:
+            continue
+        return True
+    return False
+
+
+def _make_sdr_task_id() -> str:
+    return f"otask-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{os.urandom(2).hex()}"
+
+
+def _maybe_create_followup_d1_locked(config, rows: List[Dict], trigger_task: Dict, operator: str) -> Dict:
+    cur = _normalize_task_row(trigger_task)
+    trigger_task_id = cur.get("id") or ""
+    lead_id = cur.get("lead_id") or ""
+    channel = cur.get("channel") or ""
+    step = cur.get("step") or ""
+
+    def _skip(reason: str, extra: Dict = None) -> Dict:
+        payload = {
+            "reason": reason,
+            "trigger_task_id": trigger_task_id,
+            "lead_id": lead_id,
+            "channel": channel,
+            "step": step,
+            "operator": operator,
+        }
+        if extra:
+            payload.update(extra)
+        _append_sdr_audit(config, "sdr_task_auto_followup_skipped", trigger_task_id, payload)
+        return {"action": "skipped", "reason": reason}
+
+    if cur.get("status") != "sent":
+        return {"action": "none"}
+    if step != "first_touch":
+        return _skip("not_first_touch")
+    if not lead_id or not channel:
+        return _skip("missing_lead_or_channel")
+    if _has_sdr_task(rows, lead_id, channel, "followup_d1"):
+        return _skip("already_exists")
+
+    lead = _read_sdr_leads_map(config).get(lead_id, {})
+    sent_dt = _parse_iso_dt(cur.get("sent_at") or cur.get("updated_at") or cur.get("created_at"))
+    if not sent_dt:
+        sent_dt = datetime.utcnow().replace(tzinfo=timezone.utc)
+    elif sent_dt.tzinfo is None:
+        sent_dt = sent_dt.replace(tzinfo=timezone.utc)
+
+    now_iso = _utc_now_iso()
+    scheduled_at = _dt_to_utc_iso(sent_dt + timedelta(days=1))
+    task_id = _make_sdr_task_id()
+    new_task = {
+        "id": task_id,
+        "lead_id": lead_id,
+        "channel": channel,
+        "step": "followup_d1",
+        "template_version": "followup_d1_v1",
+        "draft_text": _build_followup_d1_text(lead),
+        "status": "draft",
+        "scheduled_at": scheduled_at,
+        "sent_at": "",
+        "failure_reason": "",
+        "created_at": now_iso,
+        "updated_at": now_iso,
+        "auto_generated": True,
+        "trigger_task_id": trigger_task_id,
+        "trigger_rule": "sent_to_followup_d1",
+    }
+    rows.append(new_task)
+
+    _append_sdr_audit(
+        config,
+        "sdr_task_auto_followup_created",
+        task_id,
+        {
+            "trigger_task_id": trigger_task_id,
+            "lead_id": lead_id,
+            "channel": channel,
+            "step": "followup_d1",
+            "operator": operator,
+            "scheduled_at": scheduled_at,
+        },
+    )
+    return {
+        "action": "created",
+        "task_id": task_id,
+        "step": "followup_d1",
+        "scheduled_at": scheduled_at,
+        "trigger_task_id": trigger_task_id,
+    }
+
+
 def _list_sdr_tasks(config, status: str = "", limit: int = 200) -> Dict:
     rows = _read_sdr_tasks(config)
     st = s5._normalize_text(status, 20).lower()
@@ -252,17 +387,20 @@ def _list_sdr_tasks(config, status: str = "", limit: int = 200) -> Dict:
 
 
 def _update_sdr_task(config, payload: Dict):
+    no_auto = {"action": "none"}
     task_id = s5._normalize_text((payload or {}).get("task_id"), 80)
     if not task_id:
-        return {}, "missing_task_id"
+        return {}, "missing_task_id", no_auto
 
     new_status = s5._normalize_text((payload or {}).get("status"), 20).lower()
     if new_status not in _ALLOWED_TASK_STATUSES:
-        return {}, "invalid_status"
+        return {}, "invalid_status", no_auto
 
     operator = s5._normalize_text((payload or {}).get("operator"), 40) or "admin_sdr"
     note = s5._normalize_text((payload or {}).get("note"), 500)
     sent_at_in = s5._normalize_text((payload or {}).get("sent_at"), 40)
+
+    auto_followup = no_auto
 
     with _TASK_LOCK:
         rows = _read_sdr_tasks(config)
@@ -300,15 +438,34 @@ def _update_sdr_task(config, payload: Dict):
                     "step": cur.get("step"),
                 },
             )
+
+            if new_status == "sent" and before != "sent":
+                try:
+                    auto_followup = _maybe_create_followup_d1_locked(config, rows, cur, operator)
+                except Exception as e:
+                    auto_followup = {"action": "skipped", "reason": "exception"}
+                    _append_sdr_audit(
+                        config,
+                        "sdr_task_auto_followup_skipped",
+                        task_id,
+                        {
+                            "reason": "exception",
+                            "operator": operator,
+                            "lead_id": cur.get("lead_id"),
+                            "channel": cur.get("channel"),
+                            "step": cur.get("step"),
+                            "error": s5._normalize_text(str(e), 200),
+                        },
+                    )
             break
 
         if not updated:
-            return {}, "task_not_found"
+            return {}, "task_not_found", no_auto
 
         rows.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
         _write_sdr_tasks(config, rows)
 
-    return updated, ""
+    return updated, "", auto_followup
 
 
 def _refresh_admin_sdr_views() -> None:
@@ -377,7 +534,7 @@ def _patched_do_POST(self):
                 self._json_response(400, {"ok": False, "error": "bad_json"})
                 return
 
-            task, err = _update_sdr_task(self.config, data or {})
+            task, err, auto_followup = _update_sdr_task(self.config, data or {})
             if err:
                 code = 404 if err == "task_not_found" else 400
                 self._json_response(code, {"ok": False, "error": err})
@@ -388,7 +545,7 @@ def _patched_do_POST(self):
             except Exception:
                 pass
 
-            self._json_response(200, {"ok": True, "task": task})
+            self._json_response(200, {"ok": True, "task": task, "auto_followup": auto_followup})
             return
 
     except Exception:
