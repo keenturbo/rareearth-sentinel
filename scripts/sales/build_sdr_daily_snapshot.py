@@ -37,18 +37,36 @@ def build_snapshot(config: Config):
     reply_label = _count_status(replies, "reply_label")
 
     draft_ready = sum(1 for x in tasks if safe_str(x.get("status")) == "draft")
-    sent_24h = sum(1 for x in tasks if safe_str(x.get("status")) == "sent" and _within_24h(safe_str(x.get("sent_at") or x.get("updated_at") or x.get("created_at"))))
+    sent_24h = sum(
+        1
+        for x in tasks
+        if safe_str(x.get("status")) == "sent"
+        and _within_24h(safe_str(x.get("sent_at") or x.get("updated_at") or x.get("created_at")))
+    )
     replies_24h = sum(1 for x in replies if _within_24h(safe_str(x.get("created_at"))))
 
     qualified = int(lead_status.get("qualified", 0))
     proposal_sent = int(lead_status.get("proposal_sent", 0))
     won = int(lead_status.get("won", 0))
 
+    task_draft = int(task_status.get("draft", 0))
+    task_approved = int(task_status.get("approved", 0))
+    task_sent = int(task_status.get("sent", 0))
+    task_failed = int(task_status.get("failed", 0))
+    task_cancelled = int(task_status.get("cancelled", 0))
+
+    task_reviewable_total = task_draft + task_approved + task_sent + task_cancelled
+    approved_or_sent = task_approved + task_sent
+
     warnings = []
     if int(lead_status.get("new", 0)) > 0 and draft_ready == 0:
         warnings.append("new_leads_without_drafts")
     if qualified > 0 and proposal_sent == 0:
         warnings.append("qualified_without_proposal")
+    if task_draft > 0 and sent_24h == 0:
+        warnings.append("draft_tasks_without_recent_send")
+    if task_approved > 0 and sent_24h == 0:
+        warnings.append("approved_tasks_without_recent_send")
 
     quality_pass = len(warnings) == 0
 
@@ -66,10 +84,15 @@ def build_snapshot(config: Config):
         },
         "tasks": {
             "total": len(tasks),
-            "draft": int(task_status.get("draft", 0)),
-            "approved": int(task_status.get("approved", 0)),
-            "sent": int(task_status.get("sent", 0)),
-            "failed": int(task_status.get("failed", 0)),
+            "draft": task_draft,
+            "approved": task_approved,
+            "sent": task_sent,
+            "failed": task_failed,
+            "cancelled": task_cancelled,
+        },
+        "task_funnel": {
+            "approval_rate": f"{round((approved_or_sent / max(1, task_reviewable_total)) * 100)}%",
+            "send_rate": f"{round((task_sent / max(1, approved_or_sent)) * 100)}%",
         },
         "replies": {
             "total": len(replies),
@@ -102,7 +125,8 @@ def build_snapshot(config: Config):
     lines = [
         "【AI SDR Daily Brief】",
         f"Leads: {snapshot['leads']['total']} (new {snapshot['leads']['new']}, qualified {qualified}, won {won})",
-        f"Tasks: draft {snapshot['tasks']['draft']}, sent {snapshot['tasks']['sent']}",
+        f"Tasks: draft {task_draft}, approved {task_approved}, sent {task_sent}, cancelled {task_cancelled}",
+        f"Task Funnel: approval {snapshot['task_funnel']['approval_rate']} / send {snapshot['task_funnel']['send_rate']}",
         f"Replies(24h): {replies_24h}, Sent(24h): {sent_24h}",
         f"Funnel: Q {snapshot['funnel']['qualification_rate']} / P {snapshot['funnel']['proposal_rate']} / W {snapshot['funnel']['win_rate']}",
         f"Quality: {'PASS' if quality_pass else 'DEGRADED'}",

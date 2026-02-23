@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>管理员 · AI SDR</title>
   <style>
-    :root{--ink:#0f172a;--muted:#64748b;--bg:#f8fafc;--card:#fff;--line:#e2e8f0;--ok:#166534;--warn:#b45309}
+    :root{--ink:#0f172a;--muted:#64748b;--bg:#f8fafc;--card:#fff;--line:#e2e8f0;--ok:#166534;--warn:#b45309;--accent:#1d4ed8}
     *{box-sizing:border-box}
     body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
-    .wrap{max-width:1200px;margin:0 auto;padding:20px}
+    .wrap{max-width:1280px;margin:0 auto;padding:20px}
     .head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
     .head h1{margin:0;font-size:20px}
     .muted{color:var(--muted);font-size:12px}
@@ -24,6 +24,9 @@
     table{width:100%;border-collapse:collapse;font-size:12px}
     th,td{border-top:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}
     th{background:#f8fafc}
+    .btn{height:30px;padding:0 10px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
+    .task-status-select{height:30px;border:1px solid #dbe3ec;border-radius:6px;padding:0 8px;background:#fff}
+    .task-save-msg{margin-left:6px}
     @media (max-width:980px){.grid{grid-template-columns:repeat(2,minmax(120px,1fr));}}
   </style>
 </head>
@@ -52,17 +55,19 @@
       </div>
       <div class="grid" style="margin-top:10px">
         <div class="kpi"><div class="k">Draft Tasks</div><div class="v">{{TASK_DRAFT}}</div></div>
+        <div class="kpi"><div class="k">Approved Tasks</div><div class="v">{{TASK_APPROVED}}</div></div>
         <div class="kpi"><div class="k">Sent Tasks</div><div class="v">{{TASK_SENT}}</div></div>
+        <div class="kpi"><div class="k">Cancelled Tasks</div><div class="v">{{TASK_CANCELLED}}</div></div>
+        <div class="kpi"><div class="k">Task Approval/Send</div><div class="v">{{TASK_FUNNEL_APPROVAL}} / {{TASK_FUNNEL_SEND}}</div></div>
+      </div>
+      <div class="grid" style="margin-top:10px">
         <div class="kpi"><div class="k">Interested Replies</div><div class="v">{{REPLY_INTERESTED}}</div></div>
         <div class="kpi"><div class="k">Maybe Replies</div><div class="v">{{REPLY_MAYBE}}</div></div>
         <div class="kpi"><div class="k">No-fit Replies</div><div class="v">{{REPLY_NO_FIT}}</div></div>
-      </div>
-      <div class="grid" style="margin-top:10px">
         <div class="kpi"><div class="k">Qualification Rate</div><div class="v">{{FUNNEL_QUALIFICATION}}</div></div>
-        <div class="kpi"><div class="k">Proposal Rate</div><div class="v">{{FUNNEL_PROPOSAL}}</div></div>
-        <div class="kpi"><div class="k">Win Rate</div><div class="v">{{FUNNEL_WIN}}</div></div>
-        <div class="kpi"><div class="k">Quality</div><div class="v">{{QUALITY_STATUS}}</div></div>
+        <div class="kpi"><div class="k">Proposal / Win Rate</div><div class="v">{{FUNNEL_PROPOSAL}} / {{FUNNEL_WIN}}</div></div>
       </div>
+      <div style="margin-top:8px" class="muted">审批漏斗：草稿 -> 审批 -> 发送（人工发送后标记 sent）</div>
       <div style="margin-top:8px">{{WARNING_ROWS}}</div>
     </section>
 
@@ -77,12 +82,22 @@
     </section>
 
     <section class="card">
-      <h3 style="margin:0 0 8px 0">待审核草稿任务（Top 20）</h3>
+      <h3 style="margin:0 0 8px 0">外联任务（Top 20，可手动标记）</h3>
       <table>
         <thead>
-          <tr><th>Task ID</th><th>Lead ID</th><th>Channel</th><th>Step</th><th>Scheduled</th><th>Template</th></tr>
+          <tr>
+            <th>Created</th>
+            <th>Task ID</th>
+            <th>Lead ID</th>
+            <th>Channel</th>
+            <th>Step</th>
+            <th>Scheduled</th>
+            <th>Template</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
         </thead>
-        <tbody>{{DRAFT_TASK_ROWS}}</tbody>
+        <tbody id="taskRows">{{DRAFT_TASK_ROWS}}</tbody>
       </table>
     </section>
 
@@ -96,5 +111,75 @@
       </table>
     </section>
   </div>
+
+<script>
+(() => {
+  function normEndpoint(v, fallback){
+    const s = String(v || '').trim();
+    if (!s || s.includes('{') || s.includes('}')) return fallback;
+    return s;
+  }
+
+  const TASK_UPDATE_ENDPOINT = normEndpoint("{{TASK_UPDATE_ENDPOINT}}", "/api/admin/sales/sdr/tasks/update");
+
+  function safeApiUrl(endpoint, query){
+    const ep = String(endpoint || '').trim();
+    const rel = ep.startsWith('/') ? ep : ('/' + ep);
+    const u = new URL(rel, window.location.origin);
+    if (query) u.search = String(query);
+    return u.toString();
+  }
+
+  async function safeFetch(endpoint, options = {}){
+    const opts = Object.assign({}, options || {});
+    const query = opts.query || '';
+    delete opts.query;
+    const url = safeApiUrl(endpoint, query);
+    return fetch(url, Object.assign({credentials: 'same-origin'}, opts));
+  }
+
+  const taskRows = document.getElementById('taskRows');
+  if (!taskRows) return;
+
+  taskRows.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.task-save-btn');
+    if (!btn) return;
+    const tr = e.target.closest('tr[data-task-id]');
+    if (!tr) return;
+
+    const taskId = tr.getAttribute('data-task-id') || '';
+    const statusEl = tr.querySelector('.task-status-select');
+    const msgEl = tr.querySelector('.task-save-msg');
+    const status = statusEl ? String(statusEl.value || '').trim() : '';
+
+    if (!taskId || !status){
+      if (msgEl) msgEl.textContent = '缺少 task_id/status';
+      return;
+    }
+
+    btn.disabled = true;
+    if (msgEl) msgEl.textContent = '保存中...';
+
+    try{
+      const res = await safeFetch(TASK_UPDATE_ENDPOINT, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({task_id: taskId, status, operator: 'admin_sdr'})
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok){
+        throw new Error(data?.error || `HTTP ${res.status}`);
+      }
+      if (msgEl) msgEl.textContent = '已保存';
+      tr.setAttribute('data-task-status', status);
+      setTimeout(() => window.location.reload(), 400);
+    }catch(err){
+      if (msgEl) msgEl.textContent = `失败：${err.message || err}`;
+    }finally{
+      btn.disabled = false;
+    }
+  });
+})();
+</script>
 </body>
 </html>

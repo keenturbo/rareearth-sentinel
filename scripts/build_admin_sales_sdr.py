@@ -16,6 +16,11 @@ from src.config import Config
 from src.utils import isoformat, now_cst
 from _common import read_jsonl, sales_paths, safe_str
 
+_TASK_LIST_ENDPOINT = "/api/admin/sales/sdr/tasks/list"
+_TASK_UPDATE_ENDPOINT = "/api/admin/sales/sdr/tasks/update"
+
+_TASK_STATUS_ORDER = ["draft", "approved", "sent", "failed", "cancelled"]
+
 
 def _load_snapshot(path: str):
     if not os.path.exists(path):
@@ -47,22 +52,46 @@ def _render_lead_rows(rows):
     return "".join(out)
 
 
+def _task_status_options(current: str) -> str:
+    c = safe_str(current).lower() or "draft"
+    labels = {
+        "draft": "draft",
+        "approved": "approved",
+        "sent": "sent",
+        "failed": "failed",
+        "cancelled": "cancelled",
+    }
+    out = []
+    for st in _TASK_STATUS_ORDER:
+        sel = " selected" if st == c else ""
+        out.append(f'<option value="{st}"{sel}>{labels[st]}</option>')
+    return "".join(out)
+
+
 def _render_task_rows(rows):
     if not rows:
-        return '<tr><td colspan="6" class="muted">暂无草稿任务</td></tr>'
+        return '<tr><td colspan="9" class="muted">暂无任务</td></tr>'
+
+    active = [x for x in rows if safe_str(x.get("status")) in {"draft", "approved", "sent", "failed", "cancelled"}]
+    active = sorted(active, key=lambda x: safe_str(x.get("created_at")), reverse=True)[:20]
+    if not active:
+        return '<tr><td colspan="9" class="muted">暂无任务</td></tr>'
+
     out = []
-    rows = [x for x in rows if safe_str(x.get("status")) == "draft"][:20]
-    if not rows:
-        return '<tr><td colspan="6" class="muted">暂无草稿任务</td></tr>'
-    for r in rows:
+    for r in active:
+        task_id = html.escape(safe_str(r.get("id")))
+        status = safe_str(r.get("status")).lower() or "draft"
         out.append(
-            "<tr>"
-            f"<td>{html.escape(safe_str(r.get('id')))}</td>"
+            f'<tr data-task-id="{task_id}" data-task-status="{html.escape(status)}">'
+            f"<td>{html.escape(safe_str(r.get('created_at')))}</td>"
+            f"<td>{task_id}</td>"
             f"<td>{html.escape(safe_str(r.get('lead_id')))}</td>"
             f"<td>{html.escape(safe_str(r.get('channel')))}</td>"
             f"<td>{html.escape(safe_str(r.get('step')))}</td>"
             f"<td>{html.escape(safe_str(r.get('scheduled_at')))}</td>"
             f"<td>{html.escape(safe_str(r.get('template_version')))}</td>"
+            f"<td><select class='task-status-select'>{_task_status_options(status)}</select></td>"
+            "<td><button class='task-save-btn'>保存</button> <span class='task-save-msg muted'></span></td>"
             "</tr>"
         )
     return "".join(out)
@@ -108,6 +137,7 @@ def build_page(config: Config):
     quality = snapshot.get("quality_flags") or {}
     leads_cnt = snapshot.get("leads") or {}
     tasks_cnt = snapshot.get("tasks") or {}
+    task_funnel = snapshot.get("task_funnel") or {}
     replies_cnt = snapshot.get("replies") or {}
     funnel = snapshot.get("funnel") or {}
 
@@ -120,7 +150,11 @@ def build_page(config: Config):
         .replace("{{LEAD_PROPOSAL}}", str(int(leads_cnt.get("proposal_sent") or 0)))
         .replace("{{LEAD_WON}}", str(int(leads_cnt.get("won") or 0)))
         .replace("{{TASK_DRAFT}}", str(int(tasks_cnt.get("draft") or 0)))
+        .replace("{{TASK_APPROVED}}", str(int(tasks_cnt.get("approved") or 0)))
         .replace("{{TASK_SENT}}", str(int(tasks_cnt.get("sent") or 0)))
+        .replace("{{TASK_CANCELLED}}", str(int(tasks_cnt.get("cancelled") or 0)))
+        .replace("{{TASK_FUNNEL_APPROVAL}}", html.escape(safe_str(task_funnel.get("approval_rate") or "0%")))
+        .replace("{{TASK_FUNNEL_SEND}}", html.escape(safe_str(task_funnel.get("send_rate") or "0%")))
         .replace("{{REPLY_INTERESTED}}", str(int(replies_cnt.get("interested") or 0)))
         .replace("{{REPLY_MAYBE}}", str(int(replies_cnt.get("maybe") or 0)))
         .replace("{{REPLY_NO_FIT}}", str(int(replies_cnt.get("no_fit") or 0)))
@@ -132,6 +166,8 @@ def build_page(config: Config):
         .replace("{{TOP_LEAD_ROWS}}", _render_lead_rows(leads))
         .replace("{{DRAFT_TASK_ROWS}}", _render_task_rows(tasks))
         .replace("{{REPLY_ROWS}}", _render_reply_rows(replies))
+        .replace("{{TASK_LIST_ENDPOINT}}", _TASK_LIST_ENDPOINT)
+        .replace("{{TASK_UPDATE_ENDPOINT}}", _TASK_UPDATE_ENDPOINT)
     )
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
