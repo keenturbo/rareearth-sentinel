@@ -153,6 +153,12 @@ class Config:
     telegram_en_bot_token: str
     telegram_en_channel: str
     unlock_expires_days: int
+    input_guard_max_html_ratio: float
+    input_guard_max_script_hits: int
+    input_guard_min_text_len: int
+    input_guard_max_raw_len: int
+    input_guard_max_prompt_chars: int
+    prompt_min_evidence_sentences: int
     show_related_context: bool
 
     @classmethod
@@ -255,6 +261,12 @@ class Config:
             telegram_en_bot_token=_get_env("TELEGRAM_EN_BOT_TOKEN", ""),
             telegram_en_channel=_get_env("TELEGRAM_EN_CHANNEL", ""),
             unlock_expires_days=_get_int("UNLOCK_EXPIRES_DAYS", 7),
+            input_guard_max_html_ratio=_get_float("INPUT_GUARD_MAX_HTML_RATIO", 0.22),
+            input_guard_max_script_hits=_get_int("INPUT_GUARD_MAX_SCRIPT_HITS", 2),
+            input_guard_min_text_len=_get_int("INPUT_GUARD_MIN_TEXT_LEN", 240),
+            input_guard_max_raw_len=_get_int("INPUT_GUARD_MAX_RAW_LEN", 50000),
+            input_guard_max_prompt_chars=_get_int("INPUT_GUARD_MAX_PROMPT_CHARS", 12000),
+            prompt_min_evidence_sentences=_get_int("PROMPT_MIN_EVIDENCE_SENTENCES", 2),
             show_related_context=_get_bool("SHOW_RELATED_CONTEXT", False),
         )
 
