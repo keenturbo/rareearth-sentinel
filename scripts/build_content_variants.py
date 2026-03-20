@@ -2,7 +2,7 @@
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT not in sys.path:
@@ -11,6 +11,7 @@ if ROOT not in sys.path:
 from src.config import Config
 from src.content_variants_ai import generate_content_variants_bundle
 from src.storage import Storage
+from src.utils import now_cst
 
 
 def _read_json(path):
@@ -49,9 +50,53 @@ def _safe_int(value, default=0):
         return default
 
 
+def _parse_record_dt(value):
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        try:
+            dt = dt.replace(tzinfo=now_cst().tzinfo)
+        except Exception:
+            return dt
+    try:
+        dt = dt.astimezone(now_cst().tzinfo)
+    except Exception:
+        pass
+    return dt
+
+
+def _record_primary_dt(record):
+    for key in ("collected_at", "published_at"):
+        dt = _parse_record_dt(record.get(key))
+        if dt:
+            return dt
+    return None
+
+
+def _is_today_record(record):
+    dt = _record_primary_dt(record)
+    if not dt:
+        return False
+    return dt.date() == now_cst().date()
+
+
+def _is_recent_record(record, hours=48):
+    dt = _record_primary_dt(record)
+    if not dt:
+        return False
+    return dt >= (now_cst() - timedelta(hours=hours))
+
+
 def _record_date_candidates(record):
     candidates = []
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = now_cst().strftime("%Y-%m-%d")
     candidates.append(today)
     for key in ("published_at", "collected_at"):
         raw = str(record.get(key) or "").strip()
@@ -98,37 +143,66 @@ def _load_premium_payload(config, record):
 
 
 def _variant_sort_key(record):
+    dt = _record_primary_dt(record)
+    dt_key = dt.isoformat() if dt else ""
     return (
         _safe_int(record.get("risk_score"), 0),
         _safe_int(record.get("importance_score"), 0),
         _safe_int(record.get("confidence"), 0),
-        str(record.get("collected_at") or ""),
+        dt_key,
     )
 
 
+def _record_is_high_value(record, config):
+    content = str(record.get("content") or "").strip()
+    if not content or len(content) < 300:
+        return False
+
+    risk_score = _safe_int(record.get("risk_score"), 0)
+    importance = _safe_int(record.get("importance_score"), 0)
+    audience_fit = str(record.get("audience_fit") or "").strip().lower()
+    has_evidence = len(record.get("key_evidence") or []) >= 2
+
+    return (
+        risk_score >= getattr(config, "content_variants_min_risk", 70)
+        or importance >= getattr(config, "content_variants_min_importance", 4)
+        or (has_evidence and audience_fit in {"investor", "mixed"})
+    )
+
+
+def _extend_unique(target, candidates, seen_ids, limit):
+    for record in candidates:
+        record_id = str(record.get("id") or "").strip()
+        if not record_id or record_id in seen_ids:
+            continue
+        target.append(record)
+        seen_ids.add(record_id)
+        if len(target) >= limit:
+            break
+
+
 def _eligible_variant_records(records, config):
-    picked = []
-    for record in records:
-        content = str(record.get("content") or "").strip()
-        if not content:
-            continue
-        if len(content) < 300:
-            continue
-
-        risk_score = _safe_int(record.get("risk_score"), 0)
-        importance = _safe_int(record.get("importance_score"), 0)
-        audience_fit = str(record.get("audience_fit") or "").strip().lower()
-        has_evidence = len(record.get("key_evidence") or []) >= 2
-
-        if (
-            risk_score >= getattr(config, "content_variants_min_risk", 70)
-            or importance >= getattr(config, "content_variants_min_importance", 4)
-            or (has_evidence and audience_fit in {"investor", "mixed"})
-        ):
-            picked.append(record)
-
-    picked.sort(key=_variant_sort_key, reverse=True)
     top_n = max(1, int(getattr(config, "content_variants_top_n", 5) or 5))
+    high_value = [record for record in records if _record_is_high_value(record, config)]
+    high_value.sort(key=_variant_sort_key, reverse=True)
+
+    today_pool = [record for record in high_value if _is_today_record(record)]
+    recent_pool = [
+        record for record in high_value
+        if (not _is_today_record(record)) and _is_recent_record(record, hours=48)
+    ]
+    historical_pool = [
+        record for record in high_value
+        if (not _is_today_record(record)) and (not _is_recent_record(record, hours=48))
+    ]
+
+    picked = []
+    seen_ids = set()
+    _extend_unique(picked, today_pool, seen_ids, top_n)
+    if len(picked) < top_n:
+        _extend_unique(picked, recent_pool, seen_ids, top_n)
+    if len(picked) < top_n:
+        _extend_unique(picked, historical_pool, seen_ids, top_n)
     return picked[:top_n]
 
 
