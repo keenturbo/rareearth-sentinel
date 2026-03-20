@@ -1464,6 +1464,14 @@ def _run_build_datasets(config):
     build_datasets(config, records)
 
 
+def _run_build_content_variants(config):
+    try:
+        from scripts.build_content_variants import main as build_content_variants_main
+    except Exception as exc:
+        raise SystemExit(f"failed to import content variants builder: {exc}")
+    return build_content_variants_main()
+
+
 def main():
     parser = argparse.ArgumentParser(description="RareEarth Sentinel")
     parser.add_argument("--rebuild", action="store_true", help="Rebuild static pages")
@@ -1477,6 +1485,11 @@ def main():
         action="store_true",
         help="Build pricing / weekly-pack / task-sprint product pages",
     )
+    parser.add_argument(
+        "--build-content-variants",
+        action="store_true",
+        help="Build long-form content variants for admin review",
+    )
     args = parser.parse_args()
 
     config = Config.from_env()
@@ -1487,6 +1500,10 @@ def main():
 
     if args.build_datasets:
         _run_build_datasets(config)
+        return
+
+    if args.build_content_variants:
+        _run_build_content_variants(config)
         return
 
     if args.build_products:
