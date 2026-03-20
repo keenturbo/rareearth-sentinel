@@ -1,0 +1,532 @@
+import concurrent.futures
+import hashlib
+import json
+import re
+from datetime import datetime, timezone
+
+import google.generativeai as genai
+
+from .utils import extract_json
+
+GENERATOR_VERSION = "variants-v1"
+
+FORBIDDEN_PROMISE_WORDS = [
+    "稳赚",
+    "必涨",
+    "保本",
+    "稳赚不赔",
+    "稳赚不赔",
+    "guaranteed",
+    "sure win",
+    "risk-free",
+    "can’t lose",
+]
+
+DEEP_DIVE_REQUIRED_MARKERS = ["原文可证", "合理推断", "待验证点"]
+
+STYLE_MODES = [
+    "争议切入",
+    "变量切入",
+    "产业链切入",
+    "资本重估切入",
+]
+
+
+PERSONA = (
+    "你是 RareEarth Sentinel 的长内容主笔，面向投资者与供应链决策者写作。"
+    "要求：事实优先、推断克制、句子自然、避免模板腔。"
+)
+
+
+def _iso_now():
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _clean_text(text):
+    s = str(text or "")
+    s = s.replace("\r", "\n")
+    s = re.sub(r"\n{3,}", "\n\n", s)
+    s = re.sub(r"[ \t]+", " ", s)
+    return s.strip()
+
+
+def _clip_text(text, limit):
+    s = _clean_text(text)
+    if not limit or len(s) <= limit:
+        return s
+    return s[:limit].rstrip("，。；;,. ") + "…"
+
+
+def _normalize_compare(text):
+    return re.sub(r"[^\w\u4e00-\u9fff]+", "", str(text or "").lower())
+
+
+def _is_similar(a, b):
+    na = _normalize_compare(a)
+    nb = _normalize_compare(b)
+    if not na or not nb:
+        return False
+    if na == nb or na in nb or nb in na:
+        return True
+    sa, sb = set(na), set(nb)
+    union = sa | sb
+    if not union:
+        return False
+    return (len(sa & sb) / len(union)) >= 0.78
+
+
+def _safe_list(value, limit=5):
+    if value is None:
+        return []
+    if isinstance(value, list):
+        items = [str(v).strip() for v in value if str(v).strip()]
+    elif isinstance(value, str):
+        items = [v.strip("-• ").strip() for v in value.splitlines() if v.strip()]
+    else:
+        items = []
+    deduped = []
+    for item in items:
+        if not any(_is_similar(item, old) for old in deduped):
+            deduped.append(item)
+    return deduped[:limit]
+
+
+def _safe_int(value, default=0):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _extract_numbers(text, limit=6):
+    s = _clean_text(text)
+    if not s:
+        return []
+    parts = re.split(r"[\n。！？；;]+", s)
+    picked = []
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        if re.search(r"\d", part) and not any(_is_similar(part, old) for old in picked):
+            picked.append(_clip_text(part, 120))
+        if len(picked) >= limit:
+            break
+    return picked
+
+
+def _safe_response_text(response):
+    try:
+        return response.text or ""
+    except Exception:
+        pass
+    try:
+        cand = response.candidates[0] if getattr(response, "candidates", None) else None
+        parts = getattr(getattr(cand, "content", None), "parts", []) if cand else []
+        return "".join(getattr(part, "text", "") for part in parts if getattr(part, "text", ""))
+    except Exception:
+        return ""
+
+
+def _generate_with_timeout(model, prompt, timeout_seconds):
+    if not timeout_seconds or timeout_seconds <= 0:
+        return model.generate_content(prompt)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(model.generate_content, prompt)
+        return future.result(timeout=timeout_seconds)
+
+
+def _merge_unique(target, values, limit=6):
+    for value in values:
+        s = _clean_text(value)
+        if not s:
+            continue
+        if any(_is_similar(s, old) for old in target):
+            continue
+        target.append(s)
+        if len(target) >= limit:
+            break
+    return target
+
+
+def _content_excerpt(record, limit=2200):
+    content = _clean_text(record.get("content"))
+    return _clip_text(content, limit)
+
+
+def _extract_premium_block(premium_payload):
+    if not isinstance(premium_payload, dict):
+        return {}
+    if any(k in premium_payload for k in ("conclusion", "fact_checks", "tracking_nodes")):
+        return premium_payload
+    for key in ("zh", "brief_zh", "premium", "premium_zh"):
+        value = premium_payload.get(key)
+        if isinstance(value, dict) and any(k in value for k in ("conclusion", "fact_checks", "tracking_nodes")):
+            return value
+    return {}
+
+
+def _style_mode(record_id):
+    text = str(record_id or "default")
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    idx = int(digest[:8], 16) % len(STYLE_MODES)
+    return STYLE_MODES[idx]
+
+
+def _split_fact_layers(record, premium_payload=None):
+    premium = _extract_premium_block(premium_payload)
+
+    hard_facts = []
+    hard_facts = _merge_unique(hard_facts, _safe_list(premium.get("fact_checks"), limit=4), limit=6)
+    hard_facts = _merge_unique(hard_facts, _safe_list(record.get("key_evidence"), limit=4), limit=6)
+    hard_facts = _merge_unique(hard_facts, _extract_numbers(record.get("summary_zh"), limit=3), limit=6)
+    hard_facts = _merge_unique(hard_facts, _safe_list(premium.get("key_numbers"), limit=4), limit=6)
+
+    soft_inferences = []
+    soft_inferences = _merge_unique(soft_inferences, [_clean_text(record.get("expert_summary"))], limit=5)
+    soft_inferences = _merge_unique(soft_inferences, _safe_list(record.get("recommendations_strategy"), limit=3), limit=5)
+    soft_inferences = _merge_unique(soft_inferences, _safe_list(record.get("recommendations_tactical"), limit=3), limit=5)
+    soft_inferences = [
+        re.sub(r"^(中国|美国|市场|行业)", lambda m: m.group(0), s)
+        for s in soft_inferences
+    ]
+
+    unknowns = []
+    unknowns = _merge_unique(unknowns, _safe_list(record.get("assumptions"), limit=3), limit=5)
+    unknowns = _merge_unique(unknowns, _safe_list(premium.get("confidence_notes"), limit=3), limit=5)
+    if not unknowns:
+        unknowns = ["原文未覆盖更多执行细节，仍需跟踪后续项目、政策或资金落地。"]
+
+    return {
+        "hard_facts": hard_facts[:6],
+        "soft_inferences": soft_inferences[:5],
+        "unknowns": unknowns[:5],
+    }
+
+
+def build_fact_pack(config, record, premium_payload=None):
+    premium = _extract_premium_block(premium_payload)
+    grounding = _split_fact_layers(record, premium)
+    summary_zh = _clean_text(record.get("summary_zh"))
+    expert_summary = _clean_text(record.get("expert_summary"))
+    title = _clean_text(record.get("title"))
+    key_evidence = _safe_list(record.get("key_evidence"), limit=4)
+    assumptions = _safe_list(record.get("assumptions"), limit=4)
+
+    if not key_evidence:
+        key_evidence = grounding.get("hard_facts", [])[:3]
+    if not assumptions:
+        assumptions = grounding.get("unknowns", [])[:3]
+
+    pack = {
+        "record_id": str(record.get("id") or "").strip(),
+        "title": title,
+        "url": str(record.get("resolved_url") or record.get("url") or "").strip(),
+        "content_excerpt": _content_excerpt(record, limit=getattr(config, "content_variants_max_content_chars", 2200)),
+        "summary_zh": summary_zh,
+        "expert_summary": expert_summary,
+        "risk_score": _safe_int(record.get("risk_score"), 0),
+        "importance_score": _safe_int(record.get("importance_score"), 0),
+        "country_primary": _clean_text(record.get("country_primary")),
+        "action_type": _clean_text(record.get("action_type")),
+        "minerals": _safe_list(record.get("minerals"), limit=8),
+        "entities": _safe_list(record.get("entities"), limit=8),
+        "key_evidence": key_evidence,
+        "assumptions": assumptions,
+        "recommendations_strategy": _safe_list(record.get("recommendations_strategy"), limit=4),
+        "recommendations_tactical": _safe_list(record.get("recommendations_tactical"), limit=4),
+        "premium": {
+            "conclusion": _clean_text(premium.get("conclusion")),
+            "fact_checks": _safe_list(premium.get("fact_checks"), limit=4),
+            "fact_sources": _safe_list(premium.get("fact_sources"), limit=4),
+            "key_numbers": _safe_list(premium.get("key_numbers"), limit=4),
+            "tracking_nodes": _safe_list(premium.get("tracking_nodes"), limit=4),
+            "confidence_notes": _safe_list(premium.get("confidence_notes"), limit=4),
+            "value_proposition": _clean_text(premium.get("value_proposition")),
+        },
+        "grounding": grounding,
+        "meta": {
+            "audience_fit": _clean_text(record.get("audience_fit") or premium.get("audience_fit") or "mixed"),
+            "style_mode": _style_mode(record.get("id") or title),
+            "generated_at": _iso_now(),
+        },
+    }
+    return pack
+
+
+def _build_variants_prompt(fact_pack):
+    payload = {
+        "title": fact_pack.get("title"),
+        "summary_zh": fact_pack.get("summary_zh"),
+        "expert_summary": fact_pack.get("expert_summary"),
+        "risk_score": fact_pack.get("risk_score"),
+        "importance_score": fact_pack.get("importance_score"),
+        "country_primary": fact_pack.get("country_primary"),
+        "action_type": fact_pack.get("action_type"),
+        "minerals": fact_pack.get("minerals"),
+        "entities": fact_pack.get("entities"),
+        "key_evidence": fact_pack.get("key_evidence"),
+        "assumptions": fact_pack.get("assumptions"),
+        "recommendations_strategy": fact_pack.get("recommendations_strategy"),
+        "recommendations_tactical": fact_pack.get("recommendations_tactical"),
+        "premium": fact_pack.get("premium"),
+        "grounding": fact_pack.get("grounding"),
+        "style_mode": (fact_pack.get("meta") or {}).get("style_mode", "变量切入"),
+    }
+
+    return f"""
+角色设定：{PERSONA}
+
+你要基于同一份事实包，产出三种不同层次的中文长内容。
+只输出严格 JSON，不要 markdown，不要解释，不要补充说明。
+
+输出 JSON 结构固定为：
+{{
+  "xueqiu_long": {{"title": "...", "content": "..."}},
+  "sentinel_pro": {{"title": "...", "content": "..."}},
+  "deep_dive": {{"title": "...", "content": "..."}}
+}}
+
+硬规则：
+1. 只能基于输入事实包写作，不得发明新事实。
+2. 若属于推断，必须使用“可能/若/倾向于/仍需验证”等克制表述。
+3. 禁止使用“稳赚/必涨/完全替代/彻底摆脱/排华已完成”等绝对化表达。
+4. 三个版本必须职责明显不同，不能只是同义改写。
+5. 雪球长帖版：偏公开传播、投资讨论感强、可读性优先，不要写成研报提纲。
+6. 哨兵研判版：偏结构化内部稿，必须清楚包含“事件结论 / 影响路径 / 需要跟踪”。
+7. 深水区版本：必须明确写出以下三个小标题并逐段展开：
+   - 原文可证
+   - 合理推断
+   - 待验证点
+8. 如果事实包证据偏少，深水区版本必须明显保守。
+9. 风格模式：{payload['style_mode']}。请让雪球长帖版避免固定模板感。
+10. 内容面向中国投资者与供应链读者，默认中文。
+
+长度建议：
+- xueqiu_long.content：700-1400字
+- sentinel_pro.content：500-1000字
+- deep_dive.content：700-1400字
+
+事实包：
+{json.dumps(payload, ensure_ascii=False)}
+"""
+
+
+def _normalize_variant_item(item):
+    if not isinstance(item, dict):
+        return {"title": "", "content": ""}
+    return {
+        "title": _clip_text(_clean_text(item.get("title")), 80),
+        "content": _clean_text(item.get("content")),
+    }
+
+
+def generate_variants(config, fact_pack, timeout_seconds=20):
+    api_key = str(getattr(config, "gemini_api_key", "") or "").strip()
+    model_name = str(getattr(config, "gemini_model", "") or "").strip()
+    if not api_key or not model_name:
+        return None
+
+    prompt = _build_variants_prompt(fact_pack)
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(model_name, generation_config={"temperature": 0.35})
+        response = _generate_with_timeout(model, prompt, timeout_seconds=timeout_seconds)
+        raw = _safe_response_text(response)
+        data = extract_json(raw)
+        if not isinstance(data, dict):
+            return None
+        return {
+            "xueqiu_long": _normalize_variant_item(data.get("xueqiu_long")),
+            "sentinel_pro": _normalize_variant_item(data.get("sentinel_pro")),
+            "deep_dive": _normalize_variant_item(data.get("deep_dive")),
+        }
+    except Exception:
+        return None
+
+
+def _contains_forbidden_promise(text):
+    low = str(text or "").lower()
+    return any(word.lower() in low for word in FORBIDDEN_PROMISE_WORDS)
+
+
+def _pair_overlap_score(a, b):
+    na = _normalize_compare(a)
+    nb = _normalize_compare(b)
+    if not na or not nb:
+        return 0.0
+    sa, sb = set(na), set(nb)
+    union = sa | sb
+    if not union:
+        return 0.0
+    return len(sa & sb) / len(union)
+
+
+def _contains_conservative_markers(text):
+    s = str(text or "")
+    return any(marker in s for marker in ["待验证", "仍需验证", "可能", "若", "倾向于"])
+
+
+def validate_variants(fact_pack, variants):
+    issues = []
+    if not isinstance(variants, dict):
+        return False, {"passed": False, "issues": ["not_dict"], "reason": "not_dict", "fallback_used": True}
+
+    required = ["xueqiu_long", "sentinel_pro", "deep_dive"]
+    for key in required:
+        item = variants.get(key) or {}
+        title = _clean_text(item.get("title"))
+        content = _clean_text(item.get("content"))
+        if not title:
+            issues.append(f"missing_{key}_title")
+        if not content:
+            issues.append(f"missing_{key}_content")
+        if _contains_forbidden_promise(title) or _contains_forbidden_promise(content):
+            issues.append(f"forbidden_{key}")
+
+    if issues:
+        return False, {"passed": False, "issues": issues, "reason": issues[0], "fallback_used": True}
+
+    x = variants["xueqiu_long"]["content"]
+    s = variants["sentinel_pro"]["content"]
+    d = variants["deep_dive"]["content"]
+
+    if _pair_overlap_score(x, s) >= 0.84:
+        issues.append("xueqiu_vs_pro_too_similar")
+    if _pair_overlap_score(x, d) >= 0.84:
+        issues.append("xueqiu_vs_deep_too_similar")
+    if _pair_overlap_score(s, d) >= 0.86:
+        issues.append("pro_vs_deep_too_similar")
+
+    if "事件结论" not in s or "影响路径" not in s or "需要跟踪" not in s:
+        issues.append("sentinel_pro_missing_sections")
+
+    for marker in DEEP_DIVE_REQUIRED_MARKERS:
+        if marker not in d:
+            issues.append(f"deep_dive_missing_{marker}")
+
+    evidence_count = len(_safe_list(fact_pack.get("key_evidence"), limit=5))
+    if evidence_count < 2 and not _contains_conservative_markers(d):
+        issues.append("deep_dive_not_conservative_enough")
+
+    if len(_clean_text(x)) < 250:
+        issues.append("xueqiu_too_short")
+    if len(_clean_text(s)) < 180:
+        issues.append("sentinel_pro_too_short")
+    if len(_clean_text(d)) < 260:
+        issues.append("deep_dive_too_short")
+
+    passed = not issues
+    return passed, {
+        "passed": passed,
+        "issues": issues,
+        "reason": "ok" if passed else issues[0],
+        "fallback_used": not passed,
+    }
+
+
+def fallback_variants(fact_pack, reason="fallback"):
+    title = fact_pack.get("title") or "关键矿产事件"
+    summary = fact_pack.get("summary_zh") or fact_pack.get("expert_summary") or title
+    hard_facts = _safe_list((fact_pack.get("grounding") or {}).get("hard_facts"), limit=4)
+    soft_inferences = _safe_list((fact_pack.get("grounding") or {}).get("soft_inferences"), limit=3)
+    unknowns = _safe_list((fact_pack.get("grounding") or {}).get("unknowns"), limit=3)
+    key_evidence = _safe_list(fact_pack.get("key_evidence"), limit=3)
+    recommendations = _safe_list(fact_pack.get("recommendations_strategy"), limit=2) + _safe_list(fact_pack.get("recommendations_tactical"), limit=2)
+    premium = fact_pack.get("premium") or {}
+
+    xueqiu_lines = [
+        f"【{_clip_text(title, 28)}】",
+        _clip_text(summary, 180),
+    ]
+    if hard_facts:
+        xueqiu_lines.append("我先抓三点事实：")
+        for item in hard_facts[:3]:
+            xueqiu_lines.append(f"- {_clip_text(item, 70)}")
+    if soft_inferences:
+        xueqiu_lines.append("这件事真正值得看的是：")
+        for item in soft_inferences[:2]:
+            xueqiu_lines.append(f"- {_clip_text(item, 80)}")
+    xueqiu_lines.append("现在还不能下过满的结论，后面要继续看项目、政策和资金是否真正落地。")
+
+    pro_lines = [
+        f"事件结论：{_clip_text(premium.get('conclusion') or summary, 120)}",
+        "影响路径：",
+    ]
+    for item in (hard_facts[:2] + soft_inferences[:2])[:3]:
+        pro_lines.append(f"- {_clip_text(item, 110)}")
+    pro_lines.append("需要跟踪：")
+    for item in (premium.get("tracking_nodes") or recommendations or unknowns)[:3]:
+        pro_lines.append(f"- {_clip_text(item, 110)}")
+
+    deep_lines = [
+        "原文可证：",
+    ]
+    for item in (key_evidence or hard_facts or [summary])[:3]:
+        deep_lines.append(f"- {_clip_text(item, 110)}")
+    deep_lines.append("合理推断：")
+    for item in (soft_inferences or ["该事件可能影响后续供应链定价与政策预期，但强度仍需结合后续落地验证。 "])[:2]:
+        deep_lines.append(f"- {_clip_text(item, 110)}")
+    deep_lines.append("待验证点：")
+    for item in (unknowns or ["原文未覆盖更多执行细节，仍需继续验证。"] )[:3]:
+        deep_lines.append(f"- {_clip_text(item, 110)}")
+
+    return {
+        "xueqiu_long": {
+            "title": _clip_text(title, 40),
+            "content": "\n".join(xueqiu_lines).strip(),
+        },
+        "sentinel_pro": {
+            "title": _clip_text(f"哨兵研判｜{title}", 50),
+            "content": "\n".join(pro_lines).strip(),
+        },
+        "deep_dive": {
+            "title": _clip_text(f"深水区｜{title}", 50),
+            "content": "\n".join(deep_lines).strip(),
+        },
+        "_fallback_reason": reason,
+    }
+
+
+def generate_content_variants_bundle(config, record, premium_payload=None, timeout_seconds=20):
+    fact_pack = build_fact_pack(config, record, premium_payload=premium_payload)
+    variants = generate_variants(
+        config,
+        fact_pack,
+        timeout_seconds=timeout_seconds or getattr(config, "content_variants_timeout_seconds", 20),
+    )
+
+    if not variants:
+        variants = fallback_variants(fact_pack, reason="gemini_exception")
+        validator = {
+            "passed": False,
+            "issues": ["gemini_exception"],
+            "reason": "gemini_exception",
+            "fallback_used": True,
+        }
+    else:
+        passed, validator = validate_variants(fact_pack, variants)
+        if not passed:
+            reason = validator.get("reason") or "validator_failed"
+            variants = fallback_variants(fact_pack, reason=reason)
+            validator = {
+                "passed": False,
+                "issues": validator.get("issues", []),
+                "reason": reason,
+                "fallback_used": True,
+            }
+        else:
+            validator["fallback_used"] = False
+
+    return {
+        "generated_at": _iso_now(),
+        "generator_version": GENERATOR_VERSION,
+        "model": str(getattr(config, "gemini_model", "") or ""),
+        "fact_pack": fact_pack,
+        "variants": {
+            "xueqiu_long": variants.get("xueqiu_long", {}),
+            "sentinel_pro": variants.get("sentinel_pro", {}),
+            "deep_dive": variants.get("deep_dive", {}),
+        },
+        "validator": validator,
+    }
