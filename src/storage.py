@@ -30,6 +30,10 @@ class Storage:
         return os.path.join(self.config.data_dir, "intel.jsonl")
 
     @property
+    def content_variants_jsonl_path(self):
+        return os.path.join(self.config.data_dir, "status", "content_variants.jsonl")
+
+    @property
     def premium_dir(self):
         return self.config.premium_dir
 
@@ -139,6 +143,9 @@ class Storage:
             "recommendations_tactical": analysis.get(
                 "recommendations_tactical", []
             ),
+            "key_evidence": analysis.get("key_evidence", []),
+            "assumptions": analysis.get("assumptions", []),
+            "audience_fit": analysis.get("audience_fit", "mixed"),
             "supply_risk_score": analysis.get("supply_risk_score", 50),
             "policy_risk_score": analysis.get("policy_risk_score", 50),
             "price_pressure_score": analysis.get("price_pressure_score", 50),
@@ -157,6 +164,9 @@ class Storage:
             "recommendations_tactical_en": analysis_en.get(
                 "recommendations_tactical_en", []
             ),
+            "key_evidence_en": analysis_en.get("key_evidence", []),
+            "assumptions_en": analysis_en.get("assumptions", []),
+            "audience_fit_en": analysis_en.get("audience_fit", "mixed"),
             "supply_risk_score_en": analysis_en.get(
                 "supply_risk_score_en", 50
             ),
@@ -191,6 +201,12 @@ class Storage:
             f.write(json.dumps(record, ensure_ascii=False))
             f.write("\n")
 
+    def append_content_variant(self, payload):
+        os.makedirs(os.path.dirname(self.content_variants_jsonl_path), exist_ok=True)
+        with open(self.content_variants_jsonl_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=False))
+            f.write("\n")
+
     def read_recent(self, limit):
         total = 0
         recent = deque(maxlen=limit)
@@ -222,6 +238,20 @@ class Storage:
                 except json.JSONDecodeError:
                     continue
                 yield record
+
+    def iter_content_variants(self):
+        if not os.path.exists(self.content_variants_jsonl_path):
+            return
+        with open(self.content_variants_jsonl_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                yield payload
 
     def write_index_json(self, index_data, subdir=""):
         path = os.path.join(self._subdir_base(subdir), "index.json")

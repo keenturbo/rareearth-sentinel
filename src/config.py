@@ -160,6 +160,13 @@ class Config:
     input_guard_max_prompt_chars: int
     prompt_min_evidence_sentences: int
     show_related_context: bool
+    content_variants_enabled: bool
+    content_variants_dir: str
+    content_variants_min_risk: int
+    content_variants_min_importance: int
+    content_variants_top_n: int
+    content_variants_timeout_seconds: int
+    content_variants_max_content_chars: int
 
     @classmethod
     def from_env(cls):
@@ -268,6 +275,13 @@ class Config:
             input_guard_max_prompt_chars=_get_int("INPUT_GUARD_MAX_PROMPT_CHARS", 12000),
             prompt_min_evidence_sentences=_get_int("PROMPT_MIN_EVIDENCE_SENTENCES", 2),
             show_related_context=_get_bool("SHOW_RELATED_CONTEXT", False),
+            content_variants_enabled=_get_bool("CONTENT_VARIANTS_ENABLED", True),
+            content_variants_dir=_get_env("CONTENT_VARIANTS_DIR", "data/status"),
+            content_variants_min_risk=_get_int("CONTENT_VARIANTS_MIN_RISK", 70),
+            content_variants_min_importance=_get_int("CONTENT_VARIANTS_MIN_IMPORTANCE", 4),
+            content_variants_top_n=_get_int("CONTENT_VARIANTS_TOP_N", 5),
+            content_variants_timeout_seconds=_get_int("CONTENT_VARIANTS_TIMEOUT_SECONDS", 20),
+            content_variants_max_content_chars=_get_int("CONTENT_VARIANTS_MAX_CONTENT_CHARS", 8000),
         )
 
 
