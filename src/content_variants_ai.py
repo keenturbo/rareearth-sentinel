@@ -8,7 +8,7 @@ import google.generativeai as genai
 
 from .utils import extract_json
 
-GENERATOR_VERSION = "variants-v1"
+GENERATOR_VERSION = "variants-v1.1"
 
 FORBIDDEN_PROMISE_WORDS = [
     "稳赚",
@@ -23,6 +23,47 @@ FORBIDDEN_PROMISE_WORDS = [
 ]
 
 DEEP_DIVE_REQUIRED_MARKERS = ["原文可证", "合理推断", "待验证点"]
+DEEP_DIVE_HARD_JUDGMENT_WORDS = [
+    "必然",
+    "绝对",
+    "注定",
+    "将直接",
+    "已经形成",
+    "完全替代",
+    "彻底摆脱",
+    "等同于禁运",
+    "系统性瘫痪",
+]
+DEEP_DIVE_CONSERVATIVE_MARKERS = ["可能", "若", "倾向于", "仍需验证", "仍需观察", "不排除"]
+ACTION_HINTS = [
+    "强化",
+    "推动",
+    "加速",
+    "监控",
+    "布局",
+    "锁定",
+    "引导",
+    "对冲",
+    "增配",
+    "减持",
+    "关注",
+    "跟踪",
+    "配置",
+    "建议",
+    "优先",
+    "trim",
+    "reduce",
+    "add",
+    "hedge",
+    "rotate",
+    "de-risk",
+    "buy",
+    "sell",
+    "overweight",
+    "underweight",
+    "track",
+    "watch",
+]
 
 STYLE_MODES = [
     "争议切入",
@@ -30,7 +71,6 @@ STYLE_MODES = [
     "产业链切入",
     "资本重估切入",
 ]
-
 
 PERSONA = (
     "你是 RareEarth Sentinel 的长内容主笔，面向投资者与供应链决策者写作。"
@@ -173,29 +213,73 @@ def _style_mode(record_id):
     return STYLE_MODES[idx]
 
 
+def _looks_like_actionable(text):
+    s = _clean_text(text)
+    if not s:
+        return False
+    return any(token.lower() in s.lower() for token in ACTION_HINTS)
+
+
+def _soften_inference(text):
+    s = _clean_text(text)
+    if not s:
+        return ""
+    replacements = [
+        ("将导致", "可能导致"),
+        ("将带来", "可能带来"),
+        ("已形成", "有形成趋势"),
+        ("直接挑战", "可能形成挤压"),
+        ("绝对垄断", "仍占据显著主导地位"),
+        ("系统性瘫痪", "明显的系统性压力"),
+        ("等同于禁运", "接近禁运式压力"),
+    ]
+    for old, new in replacements:
+        s = s.replace(old, new)
+    if not any(marker in s for marker in DEEP_DIVE_CONSERVATIVE_MARKERS):
+        s = "基于现有信息，" + s
+        s = s.replace("基于现有信息，可能", "可能")
+    return s
+
+
+def _normalize_unknown(text):
+    s = _clean_text(text)
+    if not s:
+        return ""
+    s = re.sub(r"^(已验证|待证实|推断|Verified|Unverified|Inferred)[:：]\s*", "", s, flags=re.I)
+    return s
+
+
 def _split_fact_layers(record, premium_payload=None):
     premium = _extract_premium_block(premium_payload)
 
     hard_facts = []
-    hard_facts = _merge_unique(hard_facts, _safe_list(premium.get("fact_checks"), limit=4), limit=6)
     hard_facts = _merge_unique(hard_facts, _safe_list(record.get("key_evidence"), limit=4), limit=6)
-    hard_facts = _merge_unique(hard_facts, _extract_numbers(record.get("summary_zh"), limit=3), limit=6)
+    hard_facts = _merge_unique(hard_facts, _safe_list(premium.get("fact_checks"), limit=4), limit=6)
     hard_facts = _merge_unique(hard_facts, _safe_list(premium.get("key_numbers"), limit=4), limit=6)
+    if not hard_facts:
+        hard_facts = _merge_unique(hard_facts, _extract_numbers(record.get("summary_zh"), limit=3), limit=6)
 
     soft_inferences = []
-    soft_inferences = _merge_unique(soft_inferences, [_clean_text(record.get("expert_summary"))], limit=5)
-    soft_inferences = _merge_unique(soft_inferences, _safe_list(record.get("recommendations_strategy"), limit=3), limit=5)
-    soft_inferences = _merge_unique(soft_inferences, _safe_list(record.get("recommendations_tactical"), limit=3), limit=5)
-    soft_inferences = [
-        re.sub(r"^(中国|美国|市场|行业)", lambda m: m.group(0), s)
-        for s in soft_inferences
-    ]
+    for candidate in [
+        _clean_text(record.get("expert_summary")),
+        _clean_text(premium.get("conclusion")),
+    ]:
+        if not candidate:
+            continue
+        if _looks_like_actionable(candidate):
+            continue
+        candidate = _soften_inference(candidate)
+        if candidate:
+            _merge_unique(soft_inferences, [candidate], limit=5)
 
     unknowns = []
-    unknowns = _merge_unique(unknowns, _safe_list(record.get("assumptions"), limit=3), limit=5)
-    unknowns = _merge_unique(unknowns, _safe_list(premium.get("confidence_notes"), limit=3), limit=5)
+    unknowns = _merge_unique(unknowns, [_normalize_unknown(x) for x in _safe_list(record.get("assumptions"), limit=3)], limit=5)
+    unknowns = _merge_unique(unknowns, [_normalize_unknown(x) for x in _safe_list(premium.get("confidence_notes"), limit=3)], limit=5)
     if not unknowns:
-        unknowns = ["原文未覆盖更多执行细节，仍需跟踪后续项目、政策或资金落地。"]
+        unknowns = [
+            "原文未覆盖更多执行细节，仍需跟踪后续项目、政策或资金落地。",
+            "关键时间表、产能兑现与政策执行强度仍待验证。",
+        ]
 
     return {
         "hard_facts": hard_facts[:6],
@@ -208,7 +292,7 @@ def build_fact_pack(config, record, premium_payload=None):
     premium = _extract_premium_block(premium_payload)
     grounding = _split_fact_layers(record, premium)
     summary_zh = _clean_text(record.get("summary_zh"))
-    expert_summary = _clean_text(record.get("expert_summary"))
+    expert_summary = _soften_inference(record.get("expert_summary"))
     title = _clean_text(record.get("title"))
     key_evidence = _safe_list(record.get("key_evidence"), limit=4)
     assumptions = _safe_list(record.get("assumptions"), limit=4)
@@ -236,7 +320,7 @@ def build_fact_pack(config, record, premium_payload=None):
         "recommendations_strategy": _safe_list(record.get("recommendations_strategy"), limit=4),
         "recommendations_tactical": _safe_list(record.get("recommendations_tactical"), limit=4),
         "premium": {
-            "conclusion": _clean_text(premium.get("conclusion")),
+            "conclusion": _soften_inference(premium.get("conclusion")),
             "fact_checks": _safe_list(premium.get("fact_checks"), limit=4),
             "fact_sources": _safe_list(premium.get("fact_sources"), limit=4),
             "key_numbers": _safe_list(premium.get("key_numbers"), limit=4),
@@ -298,9 +382,10 @@ def _build_variants_prompt(fact_pack):
    - 原文可证
    - 合理推断
    - 待验证点
-8. 如果事实包证据偏少，深水区版本必须明显保守。
-9. 风格模式：{payload['style_mode']}。请让雪球长帖版避免固定模板感。
-10. 内容面向中国投资者与供应链读者，默认中文。
+8. 深水区版本中，“原文可证”只允许使用硬事实，不得混入建议句和强判断词；“合理推断”必须保守；“待验证点”必须具体。
+9. 如果事实包证据偏少，深水区版本必须明显保守。
+10. 风格模式：{payload['style_mode']}。请让雪球长帖版避免固定模板感。
+11. 内容面向中国投资者与供应链读者，默认中文。
 
 长度建议：
 - xueqiu_long.content：700-1400字
@@ -364,7 +449,27 @@ def _pair_overlap_score(a, b):
 
 def _contains_conservative_markers(text):
     s = str(text or "")
-    return any(marker in s for marker in ["待验证", "仍需验证", "可能", "若", "倾向于"])
+    return any(marker in s for marker in DEEP_DIVE_CONSERVATIVE_MARKERS)
+
+
+def _extract_section(text, heading):
+    s = str(text or "")
+    if not s or heading not in s:
+        return ""
+    pattern = re.compile(rf"{re.escape(heading)}\s*[:：]\s*(.*?)(?=\n(?:原文可证|合理推断|待验证点)\s*[:：]|$)", re.S)
+    m = pattern.search(s)
+    return m.group(1).strip() if m else ""
+
+
+def _section_line_count(text):
+    count = 0
+    for line in str(text or "").splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        if s.startswith("-") or s.startswith("•"):
+            count += 1
+    return count
 
 
 def validate_variants(fact_pack, variants):
@@ -405,9 +510,21 @@ def validate_variants(fact_pack, variants):
         if marker not in d:
             issues.append(f"deep_dive_missing_{marker}")
 
+    deep_hard = _extract_section(d, "原文可证")
+    deep_infer = _extract_section(d, "合理推断")
+    deep_unknown = _extract_section(d, "待验证点")
+
+    if any(word in deep_hard for word in DEEP_DIVE_HARD_JUDGMENT_WORDS):
+        issues.append("deep_dive_hard_facts_too_soft")
+    if not _contains_conservative_markers(deep_infer):
+        issues.append("deep_dive_inference_not_softened")
+
     evidence_count = len(_safe_list(fact_pack.get("key_evidence"), limit=5))
-    if evidence_count < 2 and not _contains_conservative_markers(d):
-        issues.append("deep_dive_not_conservative_enough")
+    if evidence_count < 2:
+        if not _contains_conservative_markers(d):
+            issues.append("deep_dive_not_conservative_enough")
+        if _section_line_count(deep_unknown) < 2:
+            issues.append("deep_dive_unknowns_too_few")
 
     if len(_clean_text(x)) < 250:
         issues.append("xueqiu_too_short")
@@ -465,10 +582,10 @@ def fallback_variants(fact_pack, reason="fallback"):
     for item in (key_evidence or hard_facts or [summary])[:3]:
         deep_lines.append(f"- {_clip_text(item, 110)}")
     deep_lines.append("合理推断：")
-    for item in (soft_inferences or ["该事件可能影响后续供应链定价与政策预期，但强度仍需结合后续落地验证。 "])[:2]:
-        deep_lines.append(f"- {_clip_text(item, 110)}")
+    for item in (soft_inferences or ["该事件可能影响后续供应链定价与政策预期，但强度仍需结合后续落地验证。"] )[:2]:
+        deep_lines.append(f"- {_clip_text(_soften_inference(item), 110)}")
     deep_lines.append("待验证点：")
-    for item in (unknowns or ["原文未覆盖更多执行细节，仍需继续验证。"] )[:3]:
+    for item in (unknowns or ["原文未覆盖更多执行细节，仍需继续验证。", "关键时间表、资金落实与产能兑现仍待确认。"] )[:3]:
         deep_lines.append(f"- {_clip_text(item, 110)}")
 
     return {
