@@ -8,7 +8,7 @@ import google.generativeai as genai
 
 from .utils import extract_json
 
-GENERATOR_VERSION = "variants-v1.3"
+GENERATOR_VERSION = "variants-v1.4"
 
 FORBIDDEN_PROMISE_WORDS = [
     "稳赚",
@@ -258,6 +258,18 @@ def _extract_premium_block(premium_payload):
     return {}
 
 
+def _clip_list(values, item_limit=4, text_limit=120):
+    out = []
+    for value in values or []:
+        s = _clip_text(value, text_limit)
+        if not s:
+            continue
+        out.append(s)
+        if len(out) >= item_limit:
+            break
+    return out
+
+
 def _style_mode(record_id):
     text = str(record_id or "default")
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -505,25 +517,43 @@ def build_fact_pack(config, record, premium_payload=None):
     return pack
 
 
-def _build_variants_prompt(fact_pack):
-    payload = {
-        "title": fact_pack.get("title"),
-        "summary_zh": fact_pack.get("summary_zh"),
-        "expert_summary": fact_pack.get("expert_summary"),
+def _trim_fact_pack_for_prompt(fact_pack):
+    premium = fact_pack.get("premium") or {}
+    grounding = fact_pack.get("grounding") or {}
+    return {
+        "title": _clip_text(fact_pack.get("title"), 120),
+        "summary_zh": _clip_text(fact_pack.get("summary_zh"), 280),
+        "expert_summary": _clip_text(fact_pack.get("expert_summary"), 220),
         "risk_score": fact_pack.get("risk_score"),
         "importance_score": fact_pack.get("importance_score"),
-        "country_primary": fact_pack.get("country_primary"),
-        "action_type": fact_pack.get("action_type"),
-        "minerals": fact_pack.get("minerals"),
-        "entities": fact_pack.get("entities"),
-        "key_evidence": fact_pack.get("key_evidence"),
-        "assumptions": fact_pack.get("assumptions"),
-        "recommendations_strategy": fact_pack.get("recommendations_strategy"),
-        "recommendations_tactical": fact_pack.get("recommendations_tactical"),
-        "premium": fact_pack.get("premium"),
-        "grounding": fact_pack.get("grounding"),
-        "style_mode": (fact_pack.get("meta") or {}).get("style_mode", "变量切入"),
+        "country_primary": _clip_text(fact_pack.get("country_primary"), 60),
+        "action_type": _clip_text(fact_pack.get("action_type"), 40),
+        "minerals": _clip_list(fact_pack.get("minerals"), item_limit=6, text_limit=24),
+        "entities": _clip_list(fact_pack.get("entities"), item_limit=6, text_limit=40),
+        "key_evidence": _clip_list(fact_pack.get("key_evidence"), item_limit=4, text_limit=120),
+        "assumptions": _clip_list(fact_pack.get("assumptions"), item_limit=3, text_limit=100),
+        "recommendations_strategy": _clip_list(fact_pack.get("recommendations_strategy"), item_limit=3, text_limit=80),
+        "recommendations_tactical": _clip_list(fact_pack.get("recommendations_tactical"), item_limit=3, text_limit=80),
+        "premium": {
+            "conclusion": _clip_text(premium.get("conclusion"), 180),
+            "fact_checks": _clip_list(premium.get("fact_checks"), item_limit=4, text_limit=110),
+            "fact_sources": _clip_list(premium.get("fact_sources"), item_limit=3, text_limit=80),
+            "key_numbers": _clip_list(premium.get("key_numbers"), item_limit=4, text_limit=80),
+            "tracking_nodes": _clip_list(premium.get("tracking_nodes"), item_limit=3, text_limit=100),
+            "confidence_notes": _clip_list(premium.get("confidence_notes"), item_limit=3, text_limit=90),
+            "value_proposition": _clip_text(premium.get("value_proposition"), 140),
+        },
+        "grounding": {
+            "hard_facts": _clip_list(grounding.get("hard_facts"), item_limit=4, text_limit=110),
+            "soft_inferences": _clip_list(grounding.get("soft_inferences"), item_limit=3, text_limit=110),
+            "unknowns": _clip_list(grounding.get("unknowns"), item_limit=3, text_limit=100),
+        },
+        "style_mode": _clip_text((fact_pack.get("meta") or {}).get("style_mode", "变量切入"), 20),
     }
+
+
+def _build_variants_prompt(fact_pack):
+    payload = _trim_fact_pack_for_prompt(fact_pack)
 
     return f"""
 角色设定：{PERSONA}
@@ -574,13 +604,7 @@ def _normalize_variant_item(item):
     }
 
 
-def generate_variants(config, fact_pack, timeout_seconds=20):
-    api_key = str(getattr(config, "gemini_api_key", "") or "").strip()
-    model_name = str(getattr(config, "gemini_model", "") or "").strip()
-    if not api_key or not model_name:
-        return None
-
-    prompt = _build_variants_prompt(fact_pack)
+def _generate_variants_once(api_key, model_name, prompt, timeout_seconds=20):
     try:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel(model_name, generation_config={"temperature": 0.35})
@@ -588,14 +612,37 @@ def generate_variants(config, fact_pack, timeout_seconds=20):
         raw = _safe_response_text(response)
         data = extract_json(raw)
         if not isinstance(data, dict):
-            return None
+            return None, "gemini_parse_error"
         return {
             "xueqiu_long": _normalize_variant_item(data.get("xueqiu_long")),
             "sentinel_pro": _normalize_variant_item(data.get("sentinel_pro")),
             "deep_dive": _normalize_variant_item(data.get("deep_dive")),
-        }
+        }, "ok"
+    except concurrent.futures.TimeoutError:
+        return None, "gemini_timeout"
     except Exception:
-        return None
+        return None, "gemini_exception"
+
+
+def generate_variants(config, fact_pack, timeout_seconds=20):
+    api_key = str(getattr(config, "gemini_api_key", "") or "").strip()
+    model_name = str(getattr(config, "gemini_model", "") or "").strip()
+    if not api_key or not model_name:
+        return None, "no_api"
+
+    prompt = _build_variants_prompt(fact_pack)
+    variants, reason = _generate_variants_once(api_key, model_name, prompt, timeout_seconds=timeout_seconds)
+    if variants:
+        return variants, "ok"
+
+    retryable = {"gemini_timeout", "gemini_parse_error", "gemini_exception"}
+    if reason in retryable:
+        retry_variants, retry_reason = _generate_variants_once(api_key, model_name, prompt, timeout_seconds=timeout_seconds)
+        if retry_variants:
+            return retry_variants, "ok"
+        return None, retry_reason or reason
+
+    return None, reason or "gemini_exception"
 
 
 def _contains_forbidden_promise(text):
@@ -828,18 +875,19 @@ def fallback_variants(fact_pack, reason="fallback"):
 
 def generate_content_variants_bundle(config, record, premium_payload=None, timeout_seconds=20):
     fact_pack = build_fact_pack(config, record, premium_payload=premium_payload)
-    variants = generate_variants(
+    variants, generate_reason = generate_variants(
         config,
         fact_pack,
         timeout_seconds=timeout_seconds or getattr(config, "content_variants_timeout_seconds", 20),
     )
 
     if not variants:
-        variants = fallback_variants(fact_pack, reason="gemini_exception")
+        reason = generate_reason or "gemini_exception"
+        variants = fallback_variants(fact_pack, reason=reason)
         validator = {
             "passed": False,
-            "issues": ["gemini_exception"],
-            "reason": "gemini_exception",
+            "issues": [reason],
+            "reason": reason,
             "fallback_used": True,
         }
     else:
