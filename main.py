@@ -1472,6 +1472,14 @@ def _run_build_content_variants(config):
     return build_content_variants_main()
 
 
+def _run_build_harness_health(config):
+    try:
+        from scripts.build_harness_health import main as build_harness_health_main
+    except Exception as exc:
+        raise SystemExit(f"failed to import harness health builder: {exc}")
+    return build_harness_health_main()
+
+
 def main():
     parser = argparse.ArgumentParser(description="RareEarth Sentinel")
     parser.add_argument("--rebuild", action="store_true", help="Rebuild static pages")
@@ -1490,6 +1498,11 @@ def main():
         action="store_true",
         help="Build long-form content variants for admin review",
     )
+    parser.add_argument(
+        "--build-harness-health",
+        action="store_true",
+        help="Build repo-level harness health snapshot",
+    )
     args = parser.parse_args()
 
     config = Config.from_env()
@@ -1504,6 +1517,10 @@ def main():
 
     if args.build_content_variants:
         _run_build_content_variants(config)
+        return
+
+    if args.build_harness_health:
+        _run_build_harness_health(config)
         return
 
     if args.build_products:

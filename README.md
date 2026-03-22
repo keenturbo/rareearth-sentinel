@@ -9,6 +9,13 @@ Global (non-China) rare earth intelligence sentinel: multi-source crawl, Gemini 
 - L2 Decision: task sprint (14 days)
 - L3 Team: team brief (manual delivery)
 
+## Agent / Harness Docs
+
+- `AGENTS.md`
+- `docs/HARNESS_ENGINEERING_V1.md`
+- `docs/OUTPUT_CHAINS_V1.md`
+- `docs/ERROR_FEEDBACK_PROTOCOL_V1.md`
+
 ### New page builders
 
 Build product pages (pricing / weekly-pack / task sprint):
@@ -48,4 +55,16 @@ PYTHONPATH=/root/rareearth-sentinel python3 main.py --rebuild
 
 ```bash
 PYTHONPATH=/root/rareearth-sentinel python3 main.py --build-datasets
+```
+
+## Build content variants
+
+```bash
+PYTHONPATH=/root/rareearth-sentinel python3 main.py --build-content-variants
+```
+
+## Build harness health
+
+```bash
+PYTHONPATH=/root/rareearth-sentinel python3 main.py --build-harness-health
 ```
