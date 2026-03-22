@@ -497,7 +497,7 @@ def build_fact_pack(config, record, premium_payload=None):
         },
         "grounding": grounding,
         "meta": {
-            "audience_fit": _clean_text(record.get("audience_fit" ) or premium.get("audience_fit") or "mixed"),
+            "audience_fit": _clean_text(record.get("audience_fit") or premium.get("audience_fit") or "mixed"),
             "style_mode": _style_mode(record.get("id") or title),
             "generated_at": _iso_now(),
         },
@@ -619,7 +619,11 @@ def _extract_section(text, heading):
     s = str(text or "")
     if not s or heading not in s:
         return ""
-    pattern = re.compile(rf"{re.escape(heading)}\s*[:：]\s*(.*?)(?=\n(?:原文可证|合理推断|待验证点)\s*[:：]|$)", re.S)
+    next_headings = "|".join(re.escape(h) for h in DEEP_DIVE_REQUIRED_MARKERS)
+    pattern = re.compile(
+        rf"(?:^|\n)\s*(?:#{{1,6}}\s*)?{re.escape(heading)}\s*(?:[:：]\s*)?(.*?)(?=(?:\n\s*(?:#{{1,6}}\s*)?(?:{next_headings})\s*(?:[:：]\s*)?(?:\n|$))|$)",
+        re.S,
+    )
     m = pattern.search(s)
     return m.group(1).strip() if m else ""
 
