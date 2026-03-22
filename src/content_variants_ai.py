@@ -8,7 +8,7 @@ import google.generativeai as genai
 
 from .utils import extract_json
 
-GENERATOR_VERSION = "variants-v1.1"
+GENERATOR_VERSION = "variants-v1.2"
 
 FORBIDDEN_PROMISE_WORDS = [
     "稳赚",
@@ -34,7 +34,26 @@ DEEP_DIVE_HARD_JUDGMENT_WORDS = [
     "等同于禁运",
     "系统性瘫痪",
 ]
-DEEP_DIVE_CONSERVATIVE_MARKERS = ["可能", "若", "倾向于", "仍需验证", "仍需观察", "不排除"]
+DEEP_DIVE_CONSERVATIVE_MARKERS = [
+    "可能",
+    "若",
+    "倾向于",
+    "仍需验证",
+    "仍需观察",
+    "不排除",
+    "基于现有信息",
+    "现有公开信息下",
+    "在当前信息下",
+    "初步看",
+    "短期看",
+    "尚待确认",
+    "需继续观察",
+    "需继续验证",
+    "based on current information",
+    "at this stage",
+    "subject to verification",
+    "pending confirmation",
+]
 ACTION_HINTS = [
     "强化",
     "推动",
@@ -63,6 +82,26 @@ ACTION_HINTS = [
     "underweight",
     "track",
     "watch",
+]
+RESEARCH_LIKE_TOKENS = [
+    "nature",
+    "science",
+    "journal",
+    "study",
+    "paper",
+    "research",
+    "university",
+    "laboratory",
+    "lab",
+    "catalyst",
+    "electrolyte",
+    "通讯",
+    "论文",
+    "研究",
+    "实验室",
+    "大学",
+    "期刊",
+    "催化",
 ]
 
 STYLE_MODES = [
@@ -220,8 +259,20 @@ def _looks_like_actionable(text):
     return any(token.lower() in s.lower() for token in ACTION_HINTS)
 
 
-def _soften_inference(text):
+def _normalize_inference_sentence(text):
     s = _clean_text(text)
+    if not s:
+        return ""
+    s = re.sub(r"^(基于现有信息[，,\s]*){2,}", "基于现有信息，", s)
+    s = re.sub(r"^(现有公开信息下[，,\s]*){2,}", "现有公开信息下，", s)
+    s = re.sub(r"^(based on current information[,:\s]*){2,}", "Based on current information, ", s, flags=re.I)
+    s = re.sub(r"([，,]){2,}", "，", s)
+    s = re.sub(r"\s+", " ", s)
+    return s.strip("，, ")
+
+
+def _soften_inference(text):
+    s = _normalize_inference_sentence(text)
     if not s:
         return ""
     replacements = [
@@ -232,10 +283,23 @@ def _soften_inference(text):
         ("绝对垄断", "仍占据显著主导地位"),
         ("系统性瘫痪", "明显的系统性压力"),
         ("等同于禁运", "接近禁运式压力"),
+        ("将实质性延缓", "可能延缓"),
+        ("将明显削弱", "可能削弱"),
+        ("将打破", "可能改变"),
+        ("必然导致", "可能导致"),
+        ("注定会", "可能会"),
+        ("彻底摆脱", "逐步降低依赖"),
+        ("完全替代", "部分替代"),
+        ("will materially delay", "may delay"),
+        ("will directly", "may directly"),
+        ("will significantly", "may significantly"),
+        ("inevitably", "may"),
+        ("fully replace", "partially replace"),
     ]
     for old, new in replacements:
         s = s.replace(old, new)
-    if not any(marker in s for marker in DEEP_DIVE_CONSERVATIVE_MARKERS):
+    s = _normalize_inference_sentence(s)
+    if not any(marker.lower() in s.lower() for marker in DEEP_DIVE_CONSERVATIVE_MARKERS):
         s = "基于现有信息，" + s
         s = s.replace("基于现有信息，可能", "可能")
     return s
@@ -247,6 +311,20 @@ def _normalize_unknown(text):
         return ""
     s = re.sub(r"^(已验证|待证实|推断|Verified|Unverified|Inferred)[:：]\s*", "", s, flags=re.I)
     return s
+
+
+def _is_research_like_fact_pack(fact_pack):
+    action = _clean_text(fact_pack.get("action_type")).lower()
+    if action in {"discovery", "research", "technology"}:
+        return True
+    blob = " ".join(
+        [
+            str(fact_pack.get("title") or ""),
+            str(fact_pack.get("summary_zh") or ""),
+            str((fact_pack.get("premium") or {}).get("conclusion") or ""),
+        ]
+    ).lower()
+    return any(token in blob for token in RESEARCH_LIKE_TOKENS)
 
 
 def _split_fact_layers(record, premium_payload=None):
@@ -383,9 +461,10 @@ def _build_variants_prompt(fact_pack):
    - 合理推断
    - 待验证点
 8. 深水区版本中，“原文可证”只允许使用硬事实，不得混入建议句和强判断词；“合理推断”必须保守；“待验证点”必须具体。
-9. 如果事实包证据偏少，深水区版本必须明显保守。
-10. 风格模式：{payload['style_mode']}。请让雪球长帖版避免固定模板感。
-11. 内容面向中国投资者与供应链读者，默认中文。
+9. 深水区的“合理推断”段请优先使用这些表达之一：基于现有信息 / 在当前信息下 / 可能 / 若后续 / 仍需验证。
+10. 如果事实包证据偏少，深水区版本必须明显保守。
+11. 风格模式：{payload['style_mode']}。请让雪球长帖版避免固定模板感。
+12. 内容面向中国投资者与供应链读者，默认中文。
 
 长度建议：
 - xueqiu_long.content：700-1400字
@@ -448,8 +527,8 @@ def _pair_overlap_score(a, b):
 
 
 def _contains_conservative_markers(text):
-    s = str(text or "")
-    return any(marker in s for marker in DEEP_DIVE_CONSERVATIVE_MARKERS)
+    s = str(text or "").lower()
+    return any(marker.lower() in s for marker in DEEP_DIVE_CONSERVATIVE_MARKERS)
 
 
 def _extract_section(text, heading):
@@ -477,6 +556,8 @@ def validate_variants(fact_pack, variants):
     if not isinstance(variants, dict):
         return False, {"passed": False, "issues": ["not_dict"], "reason": "not_dict", "fallback_used": True}
 
+    forbidden_field = ""
+    debug_preview = ""
     required = ["xueqiu_long", "sentinel_pro", "deep_dive"]
     for key in required:
         item = variants.get(key) or {}
@@ -488,9 +569,17 @@ def validate_variants(fact_pack, variants):
             issues.append(f"missing_{key}_content")
         if _contains_forbidden_promise(title) or _contains_forbidden_promise(content):
             issues.append(f"forbidden_{key}")
+            if not forbidden_field:
+                forbidden_field = key
+                preview_source = (title + "\n" + content).strip() or title or content
+                debug_preview = _clip_text(preview_source, 220)
 
     if issues:
-        return False, {"passed": False, "issues": issues, "reason": issues[0], "fallback_used": True}
+        payload = {"passed": False, "issues": issues, "reason": issues[0], "fallback_used": True}
+        if forbidden_field:
+            payload["failed_field"] = forbidden_field
+            payload["debug_preview"] = debug_preview
+        return False, payload
 
     x = variants["xueqiu_long"]["content"]
     s = variants["sentinel_pro"]["content"]
@@ -511,7 +600,7 @@ def validate_variants(fact_pack, variants):
             issues.append(f"deep_dive_missing_{marker}")
 
     deep_hard = _extract_section(d, "原文可证")
-    deep_infer = _extract_section(d, "合理推断")
+    deep_infer = _normalize_inference_sentence(_extract_section(d, "合理推断"))
     deep_unknown = _extract_section(d, "待验证点")
 
     if any(word in deep_hard for word in DEEP_DIVE_HARD_JUDGMENT_WORDS):
@@ -551,6 +640,7 @@ def fallback_variants(fact_pack, reason="fallback"):
     key_evidence = _safe_list(fact_pack.get("key_evidence"), limit=3)
     recommendations = _safe_list(fact_pack.get("recommendations_strategy"), limit=2) + _safe_list(fact_pack.get("recommendations_tactical"), limit=2)
     premium = fact_pack.get("premium") or {}
+    research_like = _is_research_like_fact_pack(fact_pack)
 
     xueqiu_lines = [
         f"【{_clip_text(title, 28)}】",
@@ -566,15 +656,32 @@ def fallback_variants(fact_pack, reason="fallback"):
             xueqiu_lines.append(f"- {_clip_text(item, 80)}")
     xueqiu_lines.append("现在还不能下过满的结论，后面要继续看项目、政策和资金是否真正落地。")
 
-    pro_lines = [
-        f"事件结论：{_clip_text(premium.get('conclusion') or summary, 120)}",
-        "影响路径：",
-    ]
-    for item in (hard_facts[:2] + soft_inferences[:2])[:3]:
-        pro_lines.append(f"- {_clip_text(item, 110)}")
-    pro_lines.append("需要跟踪：")
-    for item in (premium.get("tracking_nodes") or recommendations or unknowns)[:3]:
-        pro_lines.append(f"- {_clip_text(item, 110)}")
+    if research_like:
+        pro_conclusion = premium.get("conclusion") or "该事件显示相关技术路线有新进展，但距离产业兑现仍需继续验证。"
+        tracking_pool = _safe_list(premium.get("tracking_nodes"), limit=3) or unknowns or [
+            "论文结果到中试放大的时间与成本仍待验证。",
+            "规模化生产的一致性、寿命与良率仍待确认。",
+            "后续是否出现产业化合作、示范线或资本投入值得继续跟踪。",
+        ]
+        pro_lines = [
+            f"事件结论：{_clip_text(pro_conclusion, 120)}",
+            "影响路径：",
+        ]
+        for item in (hard_facts[:2] + soft_inferences[:1])[:3]:
+            pro_lines.append(f"- {_clip_text(item, 110)}")
+        pro_lines.append("需要跟踪：")
+        for item in tracking_pool[:3]:
+            pro_lines.append(f"- {_clip_text(item, 110)}")
+    else:
+        pro_lines = [
+            f"事件结论：{_clip_text(premium.get('conclusion') or summary, 120)}",
+            "影响路径：",
+        ]
+        for item in (hard_facts[:2] + soft_inferences[:2])[:3]:
+            pro_lines.append(f"- {_clip_text(item, 110)}")
+        pro_lines.append("需要跟踪：")
+        for item in (_safe_list(premium.get("tracking_nodes"), limit=3) or recommendations or unknowns)[:3]:
+            pro_lines.append(f"- {_clip_text(item, 110)}")
 
     deep_lines = [
         "原文可证：",
@@ -582,10 +689,10 @@ def fallback_variants(fact_pack, reason="fallback"):
     for item in (key_evidence or hard_facts or [summary])[:3]:
         deep_lines.append(f"- {_clip_text(item, 110)}")
     deep_lines.append("合理推断：")
-    for item in (soft_inferences or ["该事件可能影响后续供应链定价与政策预期，但强度仍需结合后续落地验证。"] )[:2]:
+    for item in (soft_inferences or ["该事件可能影响后续供应链定价与政策预期，但强度仍需结合后续落地验证。"])[:2]:
         deep_lines.append(f"- {_clip_text(_soften_inference(item), 110)}")
     deep_lines.append("待验证点：")
-    for item in (unknowns or ["原文未覆盖更多执行细节，仍需继续验证。", "关键时间表、资金落实与产能兑现仍待确认。"] )[:3]:
+    for item in (unknowns or ["原文未覆盖更多执行细节，仍需继续验证。", "关键时间表、资金落实与产能兑现仍待确认。"])[:3]:
         deep_lines.append(f"- {_clip_text(item, 110)}")
 
     return {
@@ -626,12 +733,16 @@ def generate_content_variants_bundle(config, record, premium_payload=None, timeo
         if not passed:
             reason = validator.get("reason") or "validator_failed"
             variants = fallback_variants(fact_pack, reason=reason)
-            validator = {
+            base_validator = {
                 "passed": False,
                 "issues": validator.get("issues", []),
                 "reason": reason,
                 "fallback_used": True,
             }
+            for key in ("failed_field", "debug_preview"):
+                if validator.get(key):
+                    base_validator[key] = validator.get(key)
+            validator = base_validator
         else:
             validator["fallback_used"] = False
 
