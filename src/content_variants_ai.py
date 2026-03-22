@@ -8,7 +8,7 @@ import google.generativeai as genai
 
 from .utils import extract_json
 
-GENERATOR_VERSION = "variants-v1.2"
+GENERATOR_VERSION = "variants-v1.3"
 
 FORBIDDEN_PROMISE_WORDS = [
     "稳赚",
@@ -102,6 +102,19 @@ RESEARCH_LIKE_TOKENS = [
     "大学",
     "期刊",
     "催化",
+]
+XUEQIU_OVERHEAT_WORDS = [
+    "资本狂欢",
+    "杀伤力",
+    "版图会被重写",
+    "版图将被重写",
+    "盲盒",
+    "王炸",
+    "爆表",
+    "炸裂",
+    "重写全球",
+    "重写版图",
+    "狂飙",
 ]
 
 STYLE_MODES = [
@@ -327,6 +340,82 @@ def _is_research_like_fact_pack(fact_pack):
     return any(token in blob for token in RESEARCH_LIKE_TOKENS)
 
 
+def _looks_like_softened_inference(text, unknown_text=""):
+    s = _normalize_inference_sentence(text)
+    low = s.lower()
+    if not s:
+        return False
+    if _contains_conservative_markers(s):
+        return True
+    pattern_hits = [
+        r"若[^。；\n]+",
+        r"如果[^。；\n]+",
+        r"取决于",
+        r"需看",
+        r"要看",
+        r"后续需看",
+        r"关键在于.*是否",
+        r"是否[^。；\n]+仍",
+        r"仍待",
+        r"still depends on",
+        r"will depend on",
+        r"subject to",
+        r"remains contingent on",
+    ]
+    if any(re.search(p, low, re.I) for p in pattern_hits):
+        return True
+    if _section_line_count(unknown_text) >= 2 and any(tok in low for tok in ["是否", "取决于", "需看", "要看", "depends", "contingent"]):
+        return True
+    return False
+
+
+def _contains_conservative_markers(text):
+    s = str(text or "").lower()
+    return any(marker.lower() in s for marker in DEEP_DIVE_CONSERVATIVE_MARKERS)
+
+
+def _is_xueqiu_overheated_style(title, content):
+    blob = " ".join([str(title or ""), str(content or "")]).lower()
+    if any(token.lower() in blob for token in XUEQIU_OVERHEAT_WORDS):
+        return True
+    if re.search(r"[？?].*[？?]", str(title or "")):
+        return True
+    if re.search(r"会被重写吗|会改写吗|谁会赢|是不是要", str(title or "")):
+        return True
+    return False
+
+
+def _cool_down_xueqiu_style(title, content):
+    repl = [
+        ("资本狂欢", "资本重估"),
+        ("杀伤力", "影响力"),
+        ("版图会被重写吗", "版图将如何变化"),
+        ("版图将被重写", "版图正在变化"),
+        ("重写全球", "影响全球"),
+        ("重写版图", "改变版图"),
+        ("盲盒", "新变量"),
+        ("王炸", "关键变量"),
+        ("爆表", "上升"),
+        ("炸裂", "显著"),
+        ("狂飙", "走强"),
+    ]
+    new_title = _clean_text(title)
+    new_content = _clean_text(content)
+    changed = False
+    for old, new in repl:
+        if old in new_title:
+            new_title = new_title.replace(old, new)
+            changed = True
+        if old in new_content:
+            new_content = new_content.replace(old, new)
+            changed = True
+    new_title = re.sub(r"[？?]+$", "", new_title).strip()
+    new_title = new_title.replace("全球稀土版图将如何变化", "全球稀土版图变化的新变量")
+    if new_title != _clean_text(title):
+        changed = True
+    return new_title, new_content, changed
+
+
 def _split_fact_layers(record, premium_payload=None):
     premium = _extract_premium_block(premium_payload)
 
@@ -408,7 +497,7 @@ def build_fact_pack(config, record, premium_payload=None):
         },
         "grounding": grounding,
         "meta": {
-            "audience_fit": _clean_text(record.get("audience_fit") or premium.get("audience_fit") or "mixed"),
+            "audience_fit": _clean_text(record.get("audience_fit" ) or premium.get("audience_fit") or "mixed"),
             "style_mode": _style_mode(record.get("id") or title),
             "generated_at": _iso_now(),
         },
@@ -526,11 +615,6 @@ def _pair_overlap_score(a, b):
     return len(sa & sb) / len(union)
 
 
-def _contains_conservative_markers(text):
-    s = str(text or "").lower()
-    return any(marker.lower() in s for marker in DEEP_DIVE_CONSERVATIVE_MARKERS)
-
-
 def _extract_section(text, heading):
     s = str(text or "")
     if not s or heading not in s:
@@ -556,7 +640,7 @@ def validate_variants(fact_pack, variants):
     if not isinstance(variants, dict):
         return False, {"passed": False, "issues": ["not_dict"], "reason": "not_dict", "fallback_used": True}
 
-    forbidden_field = ""
+    failed_field = ""
     debug_preview = ""
     required = ["xueqiu_long", "sentinel_pro", "deep_dive"]
     for key in required:
@@ -569,15 +653,14 @@ def validate_variants(fact_pack, variants):
             issues.append(f"missing_{key}_content")
         if _contains_forbidden_promise(title) or _contains_forbidden_promise(content):
             issues.append(f"forbidden_{key}")
-            if not forbidden_field:
-                forbidden_field = key
-                preview_source = (title + "\n" + content).strip() or title or content
-                debug_preview = _clip_text(preview_source, 220)
+            if not failed_field:
+                failed_field = key
+                debug_preview = _clip_text((title + "\n" + content).strip() or content or title, 220)
 
     if issues:
         payload = {"passed": False, "issues": issues, "reason": issues[0], "fallback_used": True}
-        if forbidden_field:
-            payload["failed_field"] = forbidden_field
+        if failed_field:
+            payload["failed_field"] = failed_field
             payload["debug_preview"] = debug_preview
         return False, payload
 
@@ -605,12 +688,12 @@ def validate_variants(fact_pack, variants):
 
     if any(word in deep_hard for word in DEEP_DIVE_HARD_JUDGMENT_WORDS):
         issues.append("deep_dive_hard_facts_too_soft")
-    if not _contains_conservative_markers(deep_infer):
+    if not _looks_like_softened_inference(deep_infer, deep_unknown):
         issues.append("deep_dive_inference_not_softened")
 
     evidence_count = len(_safe_list(fact_pack.get("key_evidence"), limit=5))
     if evidence_count < 2:
-        if not _contains_conservative_markers(d):
+        if not _looks_like_softened_inference(d, deep_unknown):
             issues.append("deep_dive_not_conservative_enough")
         if _section_line_count(deep_unknown) < 2:
             issues.append("deep_dive_unknowns_too_few")
@@ -622,13 +705,22 @@ def validate_variants(fact_pack, variants):
     if len(_clean_text(d)) < 260:
         issues.append("deep_dive_too_short")
 
+    deep_issues = [i for i in issues if i.startswith("deep_dive")]
+    if deep_issues and not failed_field:
+        failed_field = "deep_dive"
+        debug_preview = _clip_text(d, 260)
+
     passed = not issues
-    return passed, {
+    payload = {
         "passed": passed,
         "issues": issues,
         "reason": "ok" if passed else issues[0],
         "fallback_used": not passed,
     }
+    if failed_field:
+        payload["failed_field"] = failed_field
+        payload["debug_preview"] = debug_preview
+    return passed, payload
 
 
 def fallback_variants(fact_pack, reason="fallback"):
@@ -683,22 +775,40 @@ def fallback_variants(fact_pack, reason="fallback"):
         for item in (_safe_list(premium.get("tracking_nodes"), limit=3) or recommendations or unknowns)[:3]:
             pro_lines.append(f"- {_clip_text(item, 110)}")
 
+    if research_like:
+        deep_unknown_pool = _safe_list(premium.get("tracking_nodes"), limit=3) or unknowns or [
+            "实验室结果到中试放大的时间与成本仍待验证。",
+            "寿命、良率与规模化一致性是否成立仍需继续观察。",
+            "后续是否出现产业合作、示范线或资本投入仍待披露。",
+        ]
+    else:
+        deep_unknown_pool = unknowns or [
+            "后续法律披露或项目更新是否改变当前判断，仍待验证。",
+            "资金、审批与执行节奏是否受影响，仍需继续观察。",
+            "空头指控与公司回应哪一方更接近项目实际状态，仍需结合后续披露判断。",
+        ]
+
     deep_lines = [
         "原文可证：",
     ]
     for item in (key_evidence or hard_facts or [summary])[:3]:
         deep_lines.append(f"- {_clip_text(item, 110)}")
     deep_lines.append("合理推断：")
-    for item in (soft_inferences or ["该事件可能影响后续供应链定价与政策预期，但强度仍需结合后续落地验证。"])[:2]:
+    infer_pool = soft_inferences or ["基于现有信息，该事件可能影响后续供应链定价与政策预期，但强度仍需结合后续披露验证。"]
+    for item in infer_pool[:2]:
         deep_lines.append(f"- {_clip_text(_soften_inference(item), 110)}")
     deep_lines.append("待验证点：")
-    for item in (unknowns or ["原文未覆盖更多执行细节，仍需继续验证。", "关键时间表、资金落实与产能兑现仍待确认。"])[:3]:
+    for item in deep_unknown_pool[:3]:
+        item = _normalize_unknown(item)
+        item = item.replace("假设", "").replace("属实", "").replace("具有参考价值", "值得继续观察")
         deep_lines.append(f"- {_clip_text(item, 110)}")
+
+    x_title, x_content, _ = _cool_down_xueqiu_style(title, "\n".join(xueqiu_lines).strip())
 
     return {
         "xueqiu_long": {
-            "title": _clip_text(title, 40),
-            "content": "\n".join(xueqiu_lines).strip(),
+            "title": _clip_text(x_title, 40),
+            "content": x_content,
         },
         "sentinel_pro": {
             "title": _clip_text(f"哨兵研判｜{title}", 50),
@@ -729,6 +839,14 @@ def generate_content_variants_bundle(config, record, premium_payload=None, timeo
             "fallback_used": True,
         }
     else:
+        x_item = variants.get("xueqiu_long") or {}
+        cooled_title, cooled_content, cooled = _cool_down_xueqiu_style(x_item.get("title"), x_item.get("content"))
+        if cooled or _is_xueqiu_overheated_style(x_item.get("title"), x_item.get("content")):
+            variants["xueqiu_long"] = {
+                "title": _clip_text(cooled_title, 80),
+                "content": _clean_text(cooled_content),
+            }
+
         passed, validator = validate_variants(fact_pack, variants)
         if not passed:
             reason = validator.get("reason") or "validator_failed"
