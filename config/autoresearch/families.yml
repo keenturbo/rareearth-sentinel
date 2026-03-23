@@ -1,0 +1,42 @@
+families:
+  - family: homepage_topic_policy
+    target_chain: homepage_topic
+    enabled: true
+    reviewer: admin
+    runtime_tier: tier2
+    description: Optimize homepage focus/topic rendering policy without touching production source-of-truth.
+    baseline_name: homepage_topic_baseline
+    allowed_config_keys:
+      - selection_mode
+      - dedupe_mode
+      - sample_floor
+      - preview_clip_len
+    metrics_profile: homepage_topic_v1
+
+  - family: social_copy_policy
+    target_chain: social_copy
+    enabled: true
+    reviewer: admin
+    runtime_tier: tier2
+    description: Optimize publishable social copy strategy and fallback behavior.
+    baseline_name: social_copy_baseline
+    allowed_config_keys:
+      - subject_mode
+      - evidence_mode
+      - fallback_policy
+      - style_profile
+    metrics_profile: social_copy_v1
+
+  - family: content_variants_policy
+    target_chain: content_variants
+    enabled: true
+    reviewer: admin
+    runtime_tier: tier2
+    description: Optimize today-first selection and variants generation safety/quality.
+    baseline_name: content_variants_baseline
+    allowed_config_keys:
+      - selection_mode
+      - today_weight
+      - deep_dive_rule_profile
+      - similarity_guard_mode
+    metrics_profile: content_variants_v1

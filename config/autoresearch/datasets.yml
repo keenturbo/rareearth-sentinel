@@ -1,0 +1,24 @@
+datasets:
+  - dataset_id: homepage_focus_gold_v1
+    family: homepage_topic_policy
+    enabled: true
+    source_kind: snapshot_json
+    source_path: data/status/autoresearch/homepage_focus_gold_v1.json
+    description: Fixed replay snapshot for homepage focus/topic experiments.
+    owner: admin
+
+  - dataset_id: social_copy_gold_v1
+    family: social_copy_policy
+    enabled: true
+    source_kind: snapshot_json
+    source_path: data/status/autoresearch/social_copy_gold_v1.json
+    description: Fixed replay snapshot for social copy experiments.
+    owner: admin
+
+  - dataset_id: variants_gold_v1
+    family: content_variants_policy
+    enabled: true
+    source_kind: snapshot_json
+    source_path: data/status/autoresearch/variants_gold_v1.json
+    description: Fixed replay snapshot for content variants experiments.
+    owner: admin
