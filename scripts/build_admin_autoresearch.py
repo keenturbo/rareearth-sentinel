@@ -62,6 +62,7 @@ def _read_jsonl(path):
     return rows
 
 
+
 def _parse_dt(value):
     text = str(value or "").strip()
     if not text:
@@ -78,6 +79,7 @@ def _parse_dt(value):
     return dt.astimezone(timezone.utc)
 
 
+
 def _safe_float(value, default=0.0):
     try:
         return float(value)
@@ -85,9 +87,11 @@ def _safe_float(value, default=0.0):
         return default
 
 
+
 def _family_label(family):
     raw = str(family or "").strip()
     return FAMILY_LABELS.get(raw, raw or "-")
+
 
 
 def _build_experiment_map():
@@ -101,11 +105,13 @@ def _build_experiment_map():
     return out
 
 
+
 def _build_family_meta(config):
     out = {}
     for item in load_family_definitions(config):
         out[item.family] = item
     return out
+
 
 
 def _recent_7d_rows(rows):
@@ -117,6 +123,7 @@ def _recent_7d_rows(rows):
         if dt and dt >= start:
             out.append(row)
     return out
+
 
 
 def _summary_cards(rows):
@@ -151,6 +158,7 @@ def _summary_cards(rows):
         "review_count": review_count,
         "best_family_label": best_family,
     }
+
 
 
 def _family_rows(rows):
@@ -191,6 +199,7 @@ def _family_rows(rows):
     return result
 
 
+
 def _reason_rows(rows):
     decision_counter = Counter()
     validator_counter = Counter()
@@ -220,8 +229,10 @@ def _reason_rows(rows):
     return decision_rows, validator_rows, failed_field_rows
 
 
+
 def _badge(label, tone):
     return f'<span class="badge {html.escape(tone)}">{html.escape(label)}</span>'
+
 
 
 def _decision_badge(decision):
@@ -229,9 +240,11 @@ def _decision_badge(decision):
     return _badge(label, tone)
 
 
+
 def _status_badge(status):
     label, tone = STATUS_LABELS.get(str(status or "pending"), STATUS_LABELS["pending"])
     return _badge(label, tone)
+
 
 
 def _family_stats_html(rows):
@@ -253,6 +266,7 @@ def _family_stats_html(rows):
     return "".join(html_rows)
 
 
+
 def _simple_reason_table(rows, key_name="reason", empty_text="暂无数据"):
     if not rows:
         return f"<tr><td colspan='2' class='muted'>{html.escape(empty_text)}</td></tr>"
@@ -269,8 +283,10 @@ def _simple_reason_table(rows, key_name="reason", empty_text="暂无数据"):
     return "".join(html_rows)
 
 
+
 def _sort_run_rows(rows):
     return sorted(rows, key=lambda row: _parse_dt(row.get("finished_at") or row.get("started_at")) or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+
 
 
 def _build_homepage_recent_decisions(rows, limit=HOMEPAGE_COMPARE_LIMIT):
@@ -294,6 +310,7 @@ def _build_homepage_recent_decisions(rows, limit=HOMEPAGE_COMPARE_LIMIT):
                 decisions.append(decision)
         out[experiment_id] = decisions
     return out
+
 
 
 def _build_homepage_experiment_summary(rows, limit=HOMEPAGE_COMPARE_LIMIT):
@@ -345,6 +362,7 @@ def _build_homepage_experiment_summary(rows, limit=HOMEPAGE_COMPARE_LIMIT):
     return result
 
 
+
 def _homepage_experiments_html(rows):
     if not rows:
         return "<tr><td colspan='7' class='muted'>暂无 homepage experiment 对比数据</td></tr>"
@@ -365,9 +383,11 @@ def _homepage_experiments_html(rows):
     return "".join(html_rows)
 
 
+
 def _stability_latest_ts(row):
     dt = _parse_dt(row.get("latest_finished_at"))
     return dt.timestamp() if dt else 0.0
+
 
 
 def _rows_are_close(left, right):
@@ -379,6 +399,7 @@ def _rows_are_close(left, right):
         and round(_safe_float(left.get("avg_candidate_score")), 4) == round(_safe_float(right.get("avg_candidate_score")), 4)
         and str(left.get("latest_decision") or "") == str(right.get("latest_decision") or "")
     )
+
 
 
 def _build_homepage_stability_hints(rows):
@@ -433,11 +454,13 @@ def _build_homepage_stability_hints(rows):
     return hints[:2]
 
 
+
 def _homepage_stability_hints_html(rows):
     hints = _build_homepage_stability_hints(rows)
     if not hints:
         hints = ["暂无足够的 homepage 实验数据，暂不能生成稳定性提示。"]
     return "".join(f"<li>{html.escape(item)}</li>" for item in hints)
+
 
 
 def _build_homepage_trend_hints(compare_rows, recent_decisions_map):
@@ -477,9 +500,11 @@ def _build_homepage_trend_hints(compare_rows, recent_decisions_map):
     return hints[:2] if hints else ["暂无足够的 homepage 实验数据，暂不能生成趋势提示。"]
 
 
+
 def _homepage_trend_hints_html(compare_rows, recent_decisions_map):
     hints = _build_homepage_trend_hints(compare_rows, recent_decisions_map)
     return "".join(f"<li>{html.escape(item)}</li>" for item in hints)
+
 
 
 def _short_experiment_id(experiment_id):
@@ -487,6 +512,7 @@ def _short_experiment_id(experiment_id):
     if text.startswith("exp-homepage-"):
         return text.replace("exp-homepage-", "", 1)
     return text or "homepage"
+
 
 
 def _pick_stable_row(rows):
@@ -501,6 +527,7 @@ def _pick_stable_row(rows):
             -_stability_latest_ts(row),
         ),
     )
+
 
 
 def _build_homepage_summary_hint(compare_rows, recent_decisions_map):
@@ -544,6 +571,51 @@ def _build_homepage_summary_hint(compare_rows, recent_decisions_map):
         return f"当前 {stable_name} 更稳，{other_name} 近期也保持稳定。"
 
     return f"当前 {stable_name} 更稳，{other_name} 建议继续积累样本。"
+
+
+
+def _build_homepage_recommend_hint(compare_rows, recent_decisions_map):
+    if not compare_rows:
+        return "当前样本仍少，建议先继续积累实验结果。"
+    if len(compare_rows) == 1:
+        return "当前样本仍少，建议先继续积累实验结果。"
+    if len(compare_rows) >= 2 and _rows_are_close(compare_rows[0], compare_rows[1]):
+        return "当前两条轨道表现接近，建议先继续积累样本。"
+
+    stable = _pick_stable_row(compare_rows)
+    if not stable:
+        return "当前样本仍少，建议先继续积累实验结果。"
+
+    stable_name = _short_experiment_id(stable.get("experiment_id"))
+    others = [row for row in compare_rows if str(row.get("experiment_id") or "") != str(stable.get("experiment_id") or "")]
+    if not others:
+        return f"本轮可优先关注 {stable_name}，其余实验结果仍需继续积累。"
+
+    other = others[0]
+    other_name = _short_experiment_id(other.get("experiment_id"))
+    other_decisions = list(recent_decisions_map.get(str(other.get("experiment_id") or "")) or [])
+    other_recent = int(other.get("recent_runs") or 0)
+
+    if other_recent < 2 or len(other_decisions) < 2:
+        return f"本轮可优先关注 {stable_name}，{other_name} 先继续积累样本。"
+
+    latest = other_decisions[0]
+    if latest == "needs_review":
+        return f"本轮可优先关注 {stable_name}，{other_name} 暂继续观察。"
+    if latest == "keep" and "needs_review" in other_decisions[1:]:
+        return f"本轮可优先关注 {stable_name}，{other_name} 已恢复稳定，可继续跟踪。"
+
+    streak = 0
+    for decision in other_decisions:
+        if decision == "keep":
+            streak += 1
+        else:
+            break
+    if streak >= 2:
+        return f"本轮可优先关注 {stable_name}，{other_name} 继续跟踪即可。"
+
+    return f"本轮可优先关注 {stable_name}，{other_name} 建议继续积累样本。"
+
 
 
 def _recent_runs_html(rows, experiment_map, family_meta):
@@ -592,6 +664,7 @@ def _recent_runs_html(rows, experiment_map, family_meta):
     )
 
 
+
 def build_admin_autoresearch_page(config):
     template_path = os.path.join(config.templates_dir, "admin_autoresearch.html")
     output_path = os.path.join(config.static_dir, "cn", "admin", "autoresearch", "index.html")
@@ -604,6 +677,7 @@ def build_admin_autoresearch_page(config):
     homepage_experiment_rows = _build_homepage_experiment_summary(runs)
     homepage_recent_decisions = _build_homepage_recent_decisions(runs)
     homepage_summary_hint = _build_homepage_summary_hint(homepage_experiment_rows, homepage_recent_decisions)
+    homepage_recommend_hint = _build_homepage_recommend_hint(homepage_experiment_rows, homepage_recent_decisions)
     decision_reason_rows, validator_reason_rows, failed_field_rows = _reason_rows(runs)
 
     with open(template_path, "r", encoding="utf-8") as f:
@@ -617,6 +691,7 @@ def build_admin_autoresearch_page(config):
         .replace("{{DISCARD_COUNT}}", str(summary["discard_count"]))
         .replace("{{REVIEW_COUNT}}", str(summary["review_count"]))
         .replace("{{BEST_FAMILY}}", html.escape(summary["best_family_label"]))
+        .replace("{{HOMEPAGE_RECOMMEND_HINT}}", html.escape(homepage_recommend_hint))
         .replace("{{HOMEPAGE_SUMMARY_HINT}}", html.escape(homepage_summary_hint))
         .replace("{{HOMEPAGE_STABILITY_HINTS}}", _homepage_stability_hints_html(homepage_experiment_rows))
         .replace("{{HOMEPAGE_TREND_HINTS}}", _homepage_trend_hints_html(homepage_experiment_rows, homepage_recent_decisions))
@@ -632,6 +707,7 @@ def build_admin_autoresearch_page(config):
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html_out)
     return output_path
+
 
 
 def main():

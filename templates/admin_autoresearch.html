@@ -42,6 +42,7 @@ th{font-weight:600;color:#334155;background:#f8fafc;white-space:nowrap}
 .muted{color:var(--muted)}
 .hint-list{margin:0 0 10px;padding-left:18px;color:var(--ink)}
 .hint-list li{margin:6px 0}
+.recommend-hint{margin:0 0 12px;padding:10px 12px;border:1px solid #dcfce7;background:#f0fdf4;border-radius:10px;color:#166534;font-weight:600}
 .summary-hint{margin:0 0 12px;padding:10px 12px;border:1px solid #dbeafe;background:#eff6ff;border-radius:10px;color:#1e3a8a;font-weight:600}
 code{font-size:11px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:6px;padding:2px 6px}
 </style>
@@ -88,6 +89,8 @@ code{font-size:11px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:6p
 
   <section class="section">
     <div class="caption">Homepage Experiments 对比（最近 5 次，正式轨道）</div>
+    <div class="caption">轻量推荐</div>
+    <div class="recommend-hint">{{HOMEPAGE_RECOMMEND_HINT}}</div>
     <div class="caption">结论摘要</div>
     <div class="summary-hint">{{HOMEPAGE_SUMMARY_HINT}}</div>
     <div class="caption">稳定性提示</div>
