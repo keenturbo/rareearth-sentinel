@@ -311,3 +311,10 @@ def load_keywords(path, custom_path=None):
         merged.append(keyword)
         seen.add(keyword)
     return merged
+
+
+if _get_bool("ENABLE_P0_PATCH", True):
+    try:
+        from . import p0_patch  # noqa: F401
+    except Exception as exc:
+        print(f"[p0-patch] disabled: {exc}")
