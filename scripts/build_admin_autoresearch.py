@@ -17,6 +17,11 @@ from src.utils import isoformat, now_cst
 
 EXPERIMENTS_PATH = os.path.join("data", "status", "autoresearch_experiments.jsonl")
 RUNS_PATH = os.path.join("data", "status", "autoresearch_runs.jsonl")
+HOMEPAGE_COMPARE_EXPERIMENTS = [
+    "exp-homepage-provider-v1",
+    "exp-homepage-evidence-v1",
+]
+HOMEPAGE_COMPARE_LIMIT = 5
 
 FAMILY_LABELS = {
     "homepage_topic_policy": "首页专题",
@@ -264,15 +269,85 @@ def _simple_reason_table(rows, key_name="reason", empty_text="暂无数据"):
     return "".join(html_rows)
 
 
+def _sort_run_rows(rows):
+    return sorted(rows, key=lambda row: _parse_dt(row.get("finished_at") or row.get("started_at")) or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+
+
+def _build_homepage_experiment_summary(rows, limit=HOMEPAGE_COMPARE_LIMIT):
+    grouped = defaultdict(list)
+    for row in rows:
+        experiment_id = str(row.get("experiment_id") or "").strip()
+        family = str(row.get("family") or "").strip()
+        if family != "homepage_topic_policy":
+            continue
+        if experiment_id not in HOMEPAGE_COMPARE_EXPERIMENTS:
+            continue
+        grouped[experiment_id].append(row)
+
+    result = []
+    for experiment_id in HOMEPAGE_COMPARE_EXPERIMENTS:
+        recent = _sort_run_rows(grouped.get(experiment_id) or [])[:limit]
+        if not recent:
+            continue
+        keep_count = 0
+        review_count = 0
+        scores = []
+        for row in recent:
+            decision = str((row.get("decision") or {}).get("decision") or "").strip()
+            if decision == "keep":
+                keep_count += 1
+            elif decision == "needs_review":
+                review_count += 1
+            summary = row.get("candidate_summary") or {}
+            score_val = summary.get("composite_score")
+            if score_val is not None:
+                scores.append(_safe_float(score_val))
+        latest = recent[0]
+        latest_decision = str((latest.get("decision") or {}).get("decision") or "").strip()
+        latest_status = str(latest.get("status") or "").strip() or "pending"
+        latest_result_kind = "decision" if latest_decision else "status"
+        result.append(
+            {
+                "experiment_id": experiment_id,
+                "recent_runs": len(recent),
+                "keep_count": keep_count,
+                "needs_review_count": review_count,
+                "avg_candidate_score": round(sum(scores) / len(scores), 4) if scores else 0.0,
+                "latest_decision": latest_decision,
+                "latest_status": latest_status,
+                "latest_result_kind": latest_result_kind,
+                "latest_finished_at": str(latest.get("finished_at") or latest.get("started_at") or "-"),
+            }
+        )
+    return result
+
+
+def _homepage_experiments_html(rows):
+    if not rows:
+        return "<tr><td colspan='7' class='muted'>暂无 homepage experiment 对比数据</td></tr>"
+    html_rows = []
+    for row in rows:
+        latest_badge = _decision_badge(row.get("latest_decision")) if row.get("latest_result_kind") == "decision" else _status_badge(row.get("latest_status"))
+        html_rows.append(
+            "<tr>"
+            f"<td><code>{html.escape(str(row['experiment_id']))}</code></td>"
+            f"<td>{int(row['recent_runs'])}</td>"
+            f"<td>{int(row['keep_count'])}</td>"
+            f"<td>{int(row['needs_review_count'])}</td>"
+            f"<td>{row['avg_candidate_score']:.4f}</td>"
+            f"<td>{latest_badge}</td>"
+            f"<td>{html.escape(str(row['latest_finished_at']))}</td>"
+            "</tr>"
+        )
+    return "".join(html_rows)
+
+
 def _recent_runs_html(rows, experiment_map, family_meta):
     if not rows:
         return '<div class="empty">暂无实验记录。<br/>请先运行 <code>scripts/run_autoresearch_replay.py</code> 生成首条 run。</div>'
 
-    def _sort_key(row):
-        return str(row.get("finished_at") or row.get("started_at") or "")
-
     html_rows = []
-    for row in sorted(rows, key=_sort_key, reverse=True)[:50]:
+    for row in _sort_run_rows(rows)[:50]:
         experiment_id = str(row.get("experiment_id") or "").strip()
         experiment = experiment_map.get(experiment_id, {})
         family = str(row.get("family") or experiment.get("family") or "").strip()
@@ -322,6 +397,7 @@ def build_admin_autoresearch_page(config):
 
     summary = _summary_cards(runs)
     family_rows = _family_rows(runs)
+    homepage_experiment_rows = _build_homepage_experiment_summary(runs)
     decision_reason_rows, validator_reason_rows, failed_field_rows = _reason_rows(runs)
 
     with open(template_path, "r", encoding="utf-8") as f:
@@ -335,6 +411,7 @@ def build_admin_autoresearch_page(config):
         .replace("{{DISCARD_COUNT}}", str(summary["discard_count"]))
         .replace("{{REVIEW_COUNT}}", str(summary["review_count"]))
         .replace("{{BEST_FAMILY}}", html.escape(summary["best_family_label"]))
+        .replace("{{HOMEPAGE_EXPERIMENT_ROWS}}", _homepage_experiments_html(homepage_experiment_rows))
         .replace("{{FAMILY_ROWS}}", _family_stats_html(family_rows))
         .replace("{{DECISION_REASON_ROWS}}", _simple_reason_table(decision_reason_rows, key_name="reason", empty_text="暂无决策原因统计"))
         .replace("{{VALIDATOR_REASON_ROWS}}", _simple_reason_table(validator_reason_rows, key_name="reason", empty_text="暂无质量失败原因统计"))
