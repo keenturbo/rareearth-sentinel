@@ -1,9 +1,11 @@
 import html
 import json
 import re
-from urllib.parse import parse_qs, quote, unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import requests
+
+from .html_cleaner import extract_main_text
 
 
 class Fetcher:
@@ -57,14 +59,21 @@ class Fetcher:
         if resp.status_code != 200:
             print(f"  - fetch: direct_status {resp.status_code}")
             return None, f"direct_status:{resp.status_code}"
-        return resp.text, "direct_ok"
+
+        content_type = (resp.headers.get("Content-Type") or "").lower()
+        body = resp.text
+        if "html" in content_type or "<html" in body.lower() or "<body" in body.lower():
+            cleaned = extract_main_text(body)
+            if cleaned:
+                return cleaned, "direct_ok:html_cleaned"
+            return None, "direct_ok:html_empty"
+        return body, "direct_ok"
 
     def _resolve_url(self, url):
         parsed = urlparse(url)
         if parsed.netloc != "news.google.com":
             return url
 
-        # Some Google News links include the final URL in query params.
         query = parse_qs(parsed.query)
         for key in ("url", "u", "q"):
             if key in query and query[key]:
@@ -168,7 +177,7 @@ class Fetcher:
             ]
         ]
 
-        data = "f.req=" + quote(json.dumps([payload]))
+        data = "f.req=" + requests.utils.quote(json.dumps([payload]))
         try:
             resp = self.session.post(
                 "https://news.google.com/_/DotsSplashUi/data/batchexecute",
