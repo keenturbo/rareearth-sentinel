@@ -342,6 +342,81 @@ def _homepage_experiments_html(rows):
     return "".join(html_rows)
 
 
+def _stability_latest_ts(row):
+    dt = _parse_dt(row.get("latest_finished_at"))
+    return dt.timestamp() if dt else 0.0
+
+
+def _rows_are_close(left, right):
+    if not left or not right:
+        return False
+    return (
+        int(left.get("needs_review_count") or 0) == int(right.get("needs_review_count") or 0)
+        and int(left.get("keep_count") or 0) == int(right.get("keep_count") or 0)
+        and round(_safe_float(left.get("avg_candidate_score")), 4) == round(_safe_float(right.get("avg_candidate_score")), 4)
+        and str(left.get("latest_decision") or "") == str(right.get("latest_decision") or "")
+    )
+
+
+def _build_homepage_stability_hints(rows):
+    if not rows:
+        return ["暂无足够的 homepage 实验数据，暂不能生成稳定性提示。"]
+    if len(rows) == 1:
+        row = rows[0]
+        return [
+            f"当前活跃实验：{row['experiment_id']}（最近 {int(row['recent_runs'])} 次，KEEP {int(row['keep_count'])}）"
+        ]
+    if len(rows) == 2 and _rows_are_close(rows[0], rows[1]):
+        return ["当前两条 homepage 正式轨道表现接近，建议继续积累样本后再判断。"]
+
+    stable = min(
+        rows,
+        key=lambda row: (
+            int(row.get("needs_review_count") or 0),
+            -int(row.get("keep_count") or 0),
+            -_safe_float(row.get("avg_candidate_score")),
+            -_stability_latest_ts(row),
+        ),
+    )
+    observe = max(
+        rows,
+        key=lambda row: (
+            int(row.get("needs_review_count") or 0),
+            -_safe_float(row.get("avg_candidate_score")),
+            1 if str(row.get("latest_decision") or "") != "keep" else 0,
+            _stability_latest_ts(row),
+        ),
+    )
+
+    hints = []
+    stable_recent = int(stable.get("recent_runs") or 0)
+    stable_keep = int(stable.get("keep_count") or 0)
+    stable_review = int(stable.get("needs_review_count") or 0)
+    stable_avg = _safe_float(stable.get("avg_candidate_score"))
+    if stable_recent > 0 and stable_keep == stable_recent and stable_review == 0:
+        hints.append(f"当前更稳：{stable['experiment_id']}（最近 {stable_recent} 次均为 KEEP，平均分 {stable_avg:.4f}）")
+    else:
+        hints.append(f"当前更稳：{stable['experiment_id']}（最近 {stable_recent} 次中 KEEP {stable_keep}，平均分 {stable_avg:.4f}）")
+
+    if observe.get("experiment_id") != stable.get("experiment_id"):
+        observe_recent = int(observe.get("recent_runs") or 0)
+        observe_review = int(observe.get("needs_review_count") or 0)
+        observe_avg = _safe_float(observe.get("avg_candidate_score"))
+        latest_decision = str(observe.get("latest_decision") or "").strip()
+        if observe_review > 0:
+            hints.append(f"需继续观察：{observe['experiment_id']}（最近 {observe_recent} 次含 {observe_review} 次 REVIEW，平均分 {observe_avg:.4f}）")
+        elif latest_decision and latest_decision != "keep":
+            hints.append(f"需继续观察：{observe['experiment_id']}（最新结果为 {latest_decision.upper()}，平均分 {observe_avg:.4f}）")
+    return hints[:2]
+
+
+def _homepage_stability_hints_html(rows):
+    hints = _build_homepage_stability_hints(rows)
+    if not hints:
+        hints = ["暂无足够的 homepage 实验数据，暂不能生成稳定性提示。"]
+    return "".join(f"<li>{html.escape(item)}</li>" for item in hints)
+
+
 def _recent_runs_html(rows, experiment_map, family_meta):
     if not rows:
         return '<div class="empty">暂无实验记录。<br/>请先运行 <code>scripts/run_autoresearch_replay.py</code> 生成首条 run。</div>'
@@ -411,6 +486,7 @@ def build_admin_autoresearch_page(config):
         .replace("{{DISCARD_COUNT}}", str(summary["discard_count"]))
         .replace("{{REVIEW_COUNT}}", str(summary["review_count"]))
         .replace("{{BEST_FAMILY}}", html.escape(summary["best_family_label"]))
+        .replace("{{HOMEPAGE_STABILITY_HINTS}}", _homepage_stability_hints_html(homepage_experiment_rows))
         .replace("{{HOMEPAGE_EXPERIMENT_ROWS}}", _homepage_experiments_html(homepage_experiment_rows))
         .replace("{{FAMILY_ROWS}}", _family_stats_html(family_rows))
         .replace("{{DECISION_REASON_ROWS}}", _simple_reason_table(decision_reason_rows, key_name="reason", empty_text="暂无决策原因统计"))

@@ -39,6 +39,9 @@ th{font-weight:600;color:#334155;background:#f8fafc;white-space:nowrap}
 .badge.info{background:#dbeafe;color:#1d4ed8}
 .badge.muted{background:#f3f4f6;color:#6b7280}
 .empty{background:#fff;border:1px dashed #cbd5e1;border-radius:12px;padding:30px;text-align:center;color:var(--muted)}
+.muted{color:var(--muted)}
+.hint-list{margin:0 0 10px;padding-left:18px;color:var(--ink)}
+.hint-list li{margin:6px 0}
 code{font-size:11px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:6px;padding:2px 6px}
 </style>
 </head>
@@ -84,6 +87,8 @@ code{font-size:11px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:6p
 
   <section class="section">
     <div class="caption">Homepage Experiments 对比（最近 5 次，正式轨道）</div>
+    <div class="caption">稳定性提示</div>
+    <ul class="hint-list">{{HOMEPAGE_STABILITY_HINTS}}</ul>
     <table>
       <thead>
         <tr><th>Experiment</th><th>最近N次</th><th>Keep</th><th>Needs Review</th><th>Avg Candidate</th><th>最新结果</th><th>最新时间</th></tr>
