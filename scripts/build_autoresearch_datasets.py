@@ -112,14 +112,112 @@ def _pick_record_context(record_map: dict[str, dict[str, Any]], top_items: list[
     return rows
 
 
+def _synthetic_top_item_from_variant(row: dict[str, Any]) -> dict[str, Any]:
+    source_pack = row.get("source_pack") or row.get("fact_pack") or {}
+    report_id = str(row.get("report_id") or row.get("record_id") or "").strip()
+    record_id = str(row.get("record_id") or report_id).strip()
+    title_zh = str(source_pack.get("title") or report_id or record_id).strip()
+    title_en = str(source_pack.get("title_en") or source_pack.get("title") or report_id or record_id).strip()
+    value_zh = _clip_text(source_pack.get("summary_zh") or source_pack.get("expert_summary") or title_zh, 220)
+    value_en = _clip_text(source_pack.get("summary_en") or source_pack.get("expert_summary_en") or title_en, 220)
+    report_contains_zh = _clip_text((source_pack.get("premium") or {}).get("conclusion") or value_zh, 220)
+    report_contains_en = _clip_text((source_pack.get("premium") or {}).get("conclusion_en") or value_en, 220)
+    return {
+        "report_id": report_id,
+        "event_id": record_id,
+        "title": title_zh,
+        "title_zh": title_zh,
+        "title_en": title_en,
+        "value_zh": value_zh,
+        "value_en": value_en,
+        "report_contains_zh": report_contains_zh,
+        "report_contains_en": report_contains_en,
+        "risk_score": source_pack.get("risk_score") or 80,
+        "impact_score": source_pack.get("importance_score") or 4,
+    }
+
+
+def _synthetic_top_item_from_record(record: dict[str, Any]) -> dict[str, Any]:
+    record_id = str(record.get("id") or "").strip()
+    title_zh = str(record.get("title") or record_id).strip()
+    title_en = str(record.get("title_en") or record.get("title") or record_id).strip()
+    value_zh = _clip_text(record.get("summary_zh") or record.get("expert_summary") or title_zh, 220)
+    value_en = _clip_text(record.get("summary_en") or record.get("expert_summary_en") or title_en, 220)
+    report_contains_zh = _clip_text(record.get("expert_summary") or value_zh, 220)
+    report_contains_en = _clip_text(record.get("expert_summary_en") or value_en, 220)
+    return {
+        "report_id": record_id,
+        "event_id": record_id,
+        "title": title_zh,
+        "title_zh": title_zh,
+        "title_en": title_en,
+        "value_zh": value_zh,
+        "value_en": value_en,
+        "report_contains_zh": report_contains_zh,
+        "report_contains_en": report_contains_en,
+        "risk_score": record.get("risk_score") or 80,
+        "impact_score": record.get("importance_score") or 4,
+    }
+
+
+def _fallback_top_items(storage: Storage, limit: int = 3) -> tuple[list[dict[str, Any]], str, str]:
+    variant_rows = list(storage.iter_content_variants() or [])
+    variant_rows.sort(key=lambda row: str(row.get("generated_at") or ""), reverse=True)
+    items: list[dict[str, Any]] = []
+    date_value = ""
+    for row in variant_rows:
+        synthetic = _synthetic_top_item_from_variant(row)
+        if not synthetic.get("event_id"):
+            continue
+        items.append(synthetic)
+        if not date_value:
+            generated_at = str(row.get("generated_at") or "")
+            if len(generated_at) >= 10:
+                date_value = generated_at[:10]
+        if len(items) >= limit:
+            break
+    if items:
+        return items[:limit], "variants_fallback", date_value or str(now_cst().date())
+
+    _, recent_records = storage.read_recent(200)
+    sorted_records = sorted(
+        recent_records,
+        key=lambda row: (str(row.get("collected_at") or ""), int(row.get("risk_score") or 0), int(row.get("importance_score") or 0)),
+        reverse=True,
+    )
+    items = []
+    for record in sorted_records:
+        synthetic = _synthetic_top_item_from_record(record)
+        if not synthetic.get("event_id"):
+            continue
+        items.append(synthetic)
+        if not date_value:
+            collected_at = str(record.get("collected_at") or "")
+            if len(collected_at) >= 10:
+                date_value = collected_at[:10]
+        if len(items) >= limit:
+            break
+    if items:
+        return items[:limit], "intel_fallback", date_value or str(now_cst().date())
+
+    return [], "empty", str(now_cst().date())
+
+
+def _get_effective_top_items(top3: dict[str, Any], storage: Storage, limit: int = 3) -> tuple[list[dict[str, Any]], str, str]:
+    items = top3.get("items") if isinstance(top3, dict) else []
+    if isinstance(items, list) and items:
+        return items[:limit], "top3", str(top3.get("date") or now_cst().date())
+    return _fallback_top_items(storage, limit=limit)
+
+
 def _build_homepage_focus_gold(config: Config, storage: Storage) -> dict[str, Any]:
     top3_path = os.path.join(config.data_dir, "status", "top3_list.json")
     daily_zh_path = os.path.join(config.data_dir, "status", "daily_report_zh.json")
     daily_en_path = os.path.join(config.data_dir, "status", "daily_report_en.json")
 
     top3 = _read_json(top3_path)
-    items = top3.get("items") if isinstance(top3, dict) else []
-    if not isinstance(items, list) or not items:
+    items, source_mode, date_value = _get_effective_top_items(top3, storage, limit=3)
+    if not items:
         raise ValueError(f"homepage_top3_missing: {top3_path}")
 
     daily_zh = _read_json(daily_zh_path)
@@ -128,7 +226,6 @@ def _build_homepage_focus_gold(config: Config, storage: Storage) -> dict[str, An
     context_rows = _pick_record_context(record_map, items)
 
     out_items: list[dict[str, Any]] = []
-    date_value = str(top3.get("date") or now_cst().date())
 
     if daily_zh:
         out_items.append(
@@ -146,7 +243,7 @@ def _build_homepage_focus_gold(config: Config, storage: Storage) -> dict[str, An
                 },
                 "baseline_material": {
                     "existing_topic_text": "",
-                    "existing_source": "top3+daily_report",
+                    "existing_source": source_mode,
                 },
             }
         )
@@ -167,7 +264,7 @@ def _build_homepage_focus_gold(config: Config, storage: Storage) -> dict[str, An
                 },
                 "baseline_material": {
                     "existing_topic_text": "",
-                    "existing_source": "top3+daily_report",
+                    "existing_source": source_mode,
                 },
             }
         )
@@ -184,12 +281,13 @@ def _build_homepage_focus_gold(config: Config, storage: Storage) -> dict[str, An
             "daily_report_zh": daily_zh_path,
             "daily_report_en": daily_en_path,
             "intel": storage.jsonl_path,
+            "top_items_source": source_mode,
         },
         "items": out_items,
     }
 
 
-def _build_social_copy_gold(config: Config) -> dict[str, Any]:
+def _build_social_copy_gold(config: Config, storage: Storage) -> dict[str, Any]:
     top3_path = os.path.join(config.data_dir, "status", "top3_list.json")
     daily_zh_path = os.path.join(config.data_dir, "status", "daily_report_zh.json")
     daily_en_path = os.path.join(config.data_dir, "status", "daily_report_en.json")
@@ -197,8 +295,8 @@ def _build_social_copy_gold(config: Config) -> dict[str, Any]:
     reports_index_path = os.path.join(config.premium_dir, "reports_index.jsonl")
 
     top3 = _read_json(top3_path)
-    items = top3.get("items") if isinstance(top3, dict) else []
-    if not isinstance(items, list) or not items:
+    items, source_mode, date_value = _get_effective_top_items(top3, storage, limit=3)
+    if not items:
         raise ValueError(f"social_top3_missing: {top3_path}")
 
     reports_index = _read_reports_index(reports_index_path)
@@ -211,7 +309,6 @@ def _build_social_copy_gold(config: Config) -> dict[str, Any]:
         raise ValueError("social_daily_reports_missing")
 
     current_bundle = _read_json(social_cache_path)
-    date_value = str(top3.get("date") or now_cst().date())
 
     return {
         "dataset_id": "social_copy_gold_v1",
@@ -223,6 +320,7 @@ def _build_social_copy_gold(config: Config) -> dict[str, Any]:
             "daily_report_en": daily_en_path,
             "reports_index": reports_index_path,
             "social_cache": social_cache_path,
+            "top_items_source": source_mode,
         },
         "items": [
             {
@@ -324,7 +422,7 @@ def build_autoresearch_datasets(config: Config) -> dict[str, Any]:
         if definition.dataset_id == "homepage_focus_gold_v1":
             payload = _build_homepage_focus_gold(config, storage)
         elif definition.dataset_id == "social_copy_gold_v1":
-            payload = _build_social_copy_gold(config)
+            payload = _build_social_copy_gold(config, storage)
         elif definition.dataset_id == "variants_gold_v1":
             payload = _build_variants_gold(config, storage)
         else:
