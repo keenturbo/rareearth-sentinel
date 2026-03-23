@@ -76,7 +76,8 @@ def main() -> int:
             )
         try:
             dataset_payload = load_homepage_focus_gold(config)
-            bundle = build_homepage_provider_bundle(dataset_payload)
+            track = str((experiment.config_patch or {}).get("track") or "provider").strip().lower()
+            bundle = build_homepage_provider_bundle(dataset_payload, track=track)
             baseline_input = bundle.get("baseline") or {}
             candidate_input = bundle.get("candidate") or {}
         except Exception as exc:

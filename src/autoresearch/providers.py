@@ -4,6 +4,17 @@ import re
 from typing import Any
 
 
+DEFAULT_TRACK = "provider"
+EVIDENCE_TRACK = "evidence"
+
+
+def _normalize_track(track: Any) -> str:
+    value = str(track or "").strip().lower()
+    if value == EVIDENCE_TRACK:
+        return EVIDENCE_TRACK
+    return DEFAULT_TRACK
+
+
 def _clean_text(text: Any) -> str:
     s = str(text or "")
     s = s.replace("\r", "\n")
@@ -43,9 +54,17 @@ def _title_for_lang(top_item: dict[str, Any], lang: str) -> str:
     return _first_non_empty(top_item.get("title_zh"), top_item.get("title"), top_item.get("title_en"), "今日重点专题")
 
 
-def _impact_for_lang(case_payload: dict[str, Any], top_item: dict[str, Any], lang: str) -> str:
+def _impact_for_lang(case_payload: dict[str, Any], top_item: dict[str, Any], lang: str, track: str = DEFAULT_TRACK) -> str:
     daily = (case_payload or {}).get("daily_report") or {}
     if lang == "en":
+        if track == EVIDENCE_TRACK:
+            value = _first_non_empty(
+                top_item.get("value_en"),
+                top_item.get("report_contains_en"),
+                _title_for_lang(top_item, lang),
+            )
+            conservative = value or "Public signals suggest the homepage theme is changing, but the persistence still needs more samples."
+            return _clip_text(conservative, 150)
         return _clip_text(
             _first_non_empty(
                 top_item.get("value_en"),
@@ -57,6 +76,14 @@ def _impact_for_lang(case_payload: dict[str, Any], top_item: dict[str, Any], lan
             ),
             180,
         )
+    if track == EVIDENCE_TRACK:
+        value = _first_non_empty(
+            top_item.get("value_zh"),
+            top_item.get("report_contains_zh"),
+            _title_for_lang(top_item, lang),
+        )
+        conservative = value or "公开信息显示专题相关信号正在变化，但持续性仍需后续样本确认。"
+        return _clip_text(conservative, 90)
     return _clip_text(
         _first_non_empty(
             top_item.get("value_zh"),
@@ -70,9 +97,11 @@ def _impact_for_lang(case_payload: dict[str, Any], top_item: dict[str, Any], lan
     )
 
 
-def _action_for_lang(case_payload: dict[str, Any], lang: str) -> str:
+def _action_for_lang(case_payload: dict[str, Any], lang: str, track: str = DEFAULT_TRACK) -> str:
     daily = (case_payload or {}).get("daily_report") or {}
     if lang == "en":
+        if track == EVIDENCE_TRACK:
+            return "Watch whether policy and supply signals remain consistent before increasing homepage emphasis."
         picked = _first_non_empty(
             daily.get("strategy"),
             daily.get("strategies"),
@@ -81,6 +110,8 @@ def _action_for_lang(case_payload: dict[str, Any], lang: str) -> str:
             daily.get("action_items"),
         )
         return _clip_text(picked or "Track policy, capacity and order conversion before adjusting the homepage emphasis.", 160)
+    if track == EVIDENCE_TRACK:
+        return "先观察政策与供给信号是否持续，再决定是否强化首页专题权重。"
     picked = _first_non_empty(
         daily.get("strategy"),
         daily.get("strategies"),
@@ -91,22 +122,36 @@ def _action_for_lang(case_payload: dict[str, Any], lang: str) -> str:
     return _clip_text(picked or "优先跟踪政策、产能与订单兑现节奏，再决定首页专题强化方向。", 100)
 
 
-def _risk_for_lang(case_payload: dict[str, Any], lang: str) -> str:
+def _risk_for_lang(case_payload: dict[str, Any], lang: str, track: str = DEFAULT_TRACK) -> str:
     if lang == "en":
-        return "If supply, policy, or pricing signals reverse quickly, the homepage focus may need to be rotated."  # noqa: E501
+        if track == EVIDENCE_TRACK:
+            return "If follow-on samples stay thin or reverse, the homepage priority may need to move down quickly."
+        return "If supply, policy, or pricing signals reverse quickly, the homepage focus may need to be rotated."
+    if track == EVIDENCE_TRACK:
+        return "若后续样本不足或信号反转，当前专题优先级可能回落。"
     return "若供给、政策或价格信号快速反转，当前首页专题需要及时轮换。"
 
 
-def _evidence_for_lang(case_payload: dict[str, Any], top_item: dict[str, Any], lang: str) -> str:
+def _evidence_for_lang(case_payload: dict[str, Any], top_item: dict[str, Any], lang: str, track: str = DEFAULT_TRACK) -> str:
     date_value = str((case_payload or {}).get("date") or "").strip() or "today"
     record_context = (case_payload or {}).get("record_context") or []
     first_ctx = record_context[0] if isinstance(record_context, list) and record_context else {}
     title = _title_for_lang(top_item, lang)
     if lang == "en":
+        if track == EVIDENCE_TRACK:
+            ctx = _clip_text(_first_non_empty(first_ctx.get("summary_en"), first_ctx.get("summary_zh"), first_ctx.get("title")), 140)
+            if ctx:
+                return f"{date_value} public sample: {ctx}"
+            return f"{date_value} public sample referenced {title}."
         ctx = _clip_text(_first_non_empty(first_ctx.get("summary_en"), first_ctx.get("summary_zh")), 120)
         if ctx:
             return f"{date_value} sample context: {ctx}"
         return f"{date_value} public sample highlighted {title} as a homepage focus case."
+    if track == EVIDENCE_TRACK:
+        ctx = _clip_text(_first_non_empty(first_ctx.get("summary_zh"), first_ctx.get("title")), 100)
+        if ctx:
+            return f"{date_value} 公开样本：{ctx}"
+        return f"{date_value} 公开样本提到《{title}》。"
     ctx = _clip_text(_first_non_empty(first_ctx.get("summary_zh"), first_ctx.get("title")), 90)
     if ctx:
         return f"{date_value} 公开样本：{ctx}"
@@ -130,14 +175,41 @@ def _baseline_text(case_payload: dict[str, Any], lang: str) -> str:
     ])
 
 
-def _candidate_text(case_payload: dict[str, Any], lang: str) -> str:
+def _candidate_text_provider(case_payload: dict[str, Any], lang: str) -> str:
     top_items = (case_payload or {}).get("top_items") or []
     top_item = top_items[0] if top_items else {}
     title = _title_for_lang(top_item, lang)
-    impact = _impact_for_lang(case_payload, top_item, lang)
-    action = _action_for_lang(case_payload, lang)
-    risk = _risk_for_lang(case_payload, lang)
-    evidence = _evidence_for_lang(case_payload, top_item, lang)
+    impact = _impact_for_lang(case_payload, top_item, lang, track=DEFAULT_TRACK)
+    action = _action_for_lang(case_payload, lang, track=DEFAULT_TRACK)
+    risk = _risk_for_lang(case_payload, lang, track=DEFAULT_TRACK)
+    evidence = _evidence_for_lang(case_payload, top_item, lang, track=DEFAULT_TRACK)
+    if lang == "en":
+        return "\n".join([
+            f"Core fact: {title}",
+            f"Impact path: {impact}",
+            f"Investor action: {action}",
+            f"Counter-risk: {risk}",
+            f"Evidence anchor: {evidence}",
+            "⚠️ Risk note: Not investment advice.",
+        ])
+    return "\n".join([
+        f"核心事实：{title}",
+        f"影响路径：{impact}",
+        f"投资动作：{action}",
+        f"反方风险：{risk}",
+        f"证据锚点：{evidence}",
+        "⚠️ 风险提示：不构成投资建议。",
+    ])
+
+
+def _candidate_text_evidence(case_payload: dict[str, Any], lang: str) -> str:
+    top_items = (case_payload or {}).get("top_items") or []
+    top_item = top_items[0] if top_items else {}
+    title = _title_for_lang(top_item, lang)
+    impact = _impact_for_lang(case_payload, top_item, lang, track=EVIDENCE_TRACK)
+    action = _action_for_lang(case_payload, lang, track=EVIDENCE_TRACK)
+    risk = _risk_for_lang(case_payload, lang, track=EVIDENCE_TRACK)
+    evidence = _evidence_for_lang(case_payload, top_item, lang, track=EVIDENCE_TRACK)
     if lang == "en":
         return "\n".join([
             f"Core fact: {title}",
@@ -177,28 +249,36 @@ def build_homepage_baseline_outputs(dataset_payload: dict[str, Any]) -> dict[str
     return outputs
 
 
-def build_homepage_candidate_outputs(dataset_payload: dict[str, Any]) -> dict[str, Any]:
+def build_homepage_candidate_outputs(dataset_payload: dict[str, Any], track: str = DEFAULT_TRACK) -> dict[str, Any]:
     outputs: dict[str, Any] = {}
+    normalized_track = _normalize_track(track)
     for case_payload in (dataset_payload or {}).get("items") or []:
         case_id = str((case_payload or {}).get("case_id") or "").strip()
         if not case_id:
             continue
         lang = str((case_payload or {}).get("lang") or "zh").strip().lower()
         lang = "en" if lang == "en" else "zh"
+        if normalized_track == EVIDENCE_TRACK:
+            topic_text = _candidate_text_evidence(case_payload, lang)
+            source_mode = "homepage_provider_candidate_evidence_v1"
+        else:
+            topic_text = _candidate_text_provider(case_payload, lang)
+            source_mode = "homepage_provider_candidate_v1"
         outputs[case_id] = {
             "case_id": case_id,
             "lang": lang,
-            "topic_text": _candidate_text(case_payload, lang),
+            "topic_text": topic_text,
             "meta": {
                 "fallback_used": False,
-                "source_mode": "homepage_provider_candidate_v1",
+                "source_mode": source_mode,
             },
         }
     return outputs
 
 
-def build_homepage_provider_bundle(dataset_payload: dict[str, Any]) -> dict[str, Any]:
+def build_homepage_provider_bundle(dataset_payload: dict[str, Any], track: str = DEFAULT_TRACK) -> dict[str, Any]:
+    normalized_track = _normalize_track(track)
     return {
         "baseline": build_homepage_baseline_outputs(dataset_payload),
-        "candidate": build_homepage_candidate_outputs(dataset_payload),
+        "candidate": build_homepage_candidate_outputs(dataset_payload, track=normalized_track),
     }
