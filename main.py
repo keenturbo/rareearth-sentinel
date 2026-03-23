@@ -66,6 +66,7 @@ def _context_lines(context_summary, limit=0):
     return lines
 
 
+
 def _load_candidate_seen(path):
     seen = set()
     if not os.path.exists(path):
@@ -85,8 +86,10 @@ def _load_candidate_seen(path):
     return seen
 
 
+
 def _has_keyword_chars(text):
     return bool(re.search(r"[A-Za-z\u4e00-\u9fff]", text))
+
 
 
 def _guess_keyword_type(name):
@@ -132,6 +135,7 @@ def _guess_keyword_type(name):
     ):
         return "institution"
     return "company"
+
 
 
 def _append_keyword_candidates(
@@ -203,12 +207,14 @@ def _append_keyword_candidates(
     return len(candidates)
 
 
+
 def _normalize_title_key(text):
     if not text:
         return ""
     text = re.sub(r"\s+", " ", str(text)).strip().lower()
     text = re.sub(r"[^\w\u4e00-\u9fff]", "", text)
     return text
+
 
 
 def _company_key(record):
@@ -230,6 +236,7 @@ def _company_key(record):
     return _normalize_title_key(company)
 
 
+
 def _entry_title(entry, record):
     preview_zh = entry.get("preview_zh") or {}
     preview_en = entry.get("preview_en") or {}
@@ -240,6 +247,7 @@ def _entry_title(entry, record):
         or (record.get("title") if record else "")
     )
     return str(title or "").strip()
+
 
 
 def _source_key(record, entry):
@@ -254,6 +262,7 @@ def _source_key(record, entry):
     return domain
 
 
+
 def _entry_impact_score(entry):
     for key in ("impact_score", "impact_score_zh", "impact_score_en"):
         value = entry.get(key)
@@ -264,6 +273,7 @@ def _entry_impact_score(entry):
         except (TypeError, ValueError):
             continue
     return 0
+
 
 
 def _entry_risk_score(entry, record_map):
@@ -277,6 +287,7 @@ def _entry_risk_score(entry, record_map):
         return int(record.get("risk_score", 0) or 0)
     except (TypeError, ValueError):
         return 0
+
 
 
 def _dedupe_entries(entries, record_map, limit=3):
@@ -309,6 +320,7 @@ def _dedupe_entries(entries, record_map, limit=3):
     return deduped
 
 
+
 def _select_major_event_entries(entries, record_map):
     candidates = []
     for entry in entries:
@@ -336,11 +348,13 @@ def _select_major_event_entries(entries, record_map):
     return view_entries[:3]
 
 
+
 def _select_top3_entries(entries, record_map, limit=3):
     major_entries = _select_major_event_entries(entries, record_map)
     if major_entries:
         return major_entries
     return _dedupe_entries(entries, record_map, limit=limit)
+
 
 
 def _build_top3_items(entries, record_map):
@@ -439,6 +453,7 @@ def _build_top3_items(entries, record_map):
     return items
 
 
+
 def _write_top3_list(config, items, date_key):
     path = os.path.join(config.data_dir, "status", "top3_list.json")
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -451,6 +466,7 @@ def _write_top3_list(config, items, date_key):
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
 
+
 def _load_json_dict(path):
     if not os.path.exists(path):
         return {}
@@ -460,6 +476,7 @@ def _load_json_dict(path):
     except (OSError, json.JSONDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
+
 
 
 def _load_reports_index_ids(path):
@@ -481,6 +498,7 @@ def _load_reports_index_ids(path):
     return ids
 
 
+
 def _normalize_punct_topic(text):
     cleaned = str(text or "")
     replacements = [
@@ -497,11 +515,13 @@ def _normalize_punct_topic(text):
     return cleaned.strip()
 
 
+
 def _clip_text(text, limit):
     text = str(text or "").strip()
     if not text or not limit or len(text) <= limit:
         return text
     return text[:limit].rstrip("，。;；, .") + "…"
+
 
 
 def _to_int_topic(value):
@@ -511,8 +531,10 @@ def _to_int_topic(value):
         return 0
 
 
+
 def _normalize_compare_topic(text):
     return re.sub(r"[^\w\u4e00-\u9fff]", "", str(text or "").lower())
+
 
 
 def _is_similar_topic(a, b):
@@ -530,6 +552,7 @@ def _is_similar_topic(a, b):
     return (len(sa & sb) / len(union)) >= 0.72
 
 
+
 def _strip_top3_prefixes(text):
     raw = str(text or "").strip()
     if not raw:
@@ -541,6 +564,7 @@ def _strip_top3_prefixes(text):
             break
     raw = re.sub(r"^[\-\*\u2022]+\s*", "", raw)
     return raw.strip()
+
 
 
 def _extract_angle_candidates(raw, lang="zh", limit=60):
@@ -582,6 +606,7 @@ def _extract_angle_candidates(raw, lang="zh", limit=60):
     return deduped
 
 
+
 def _view_from_report_id_topic(report_id):
     rid = str(report_id or "").lower()
     if rid.endswith("-policy") or rid.endswith("_policy"):
@@ -591,6 +616,7 @@ def _view_from_report_id_topic(report_id):
     if rid.endswith("-capital") or rid.endswith("_capital"):
         return "capital"
     return ""
+
 
 
 def _angle_meta(view, idx, lang="zh"):
@@ -607,6 +633,7 @@ def _angle_meta(view, idx, lang="zh"):
     if idx < len(fallback):
         return fallback[idx]
     return ("🔹", "要点" if lang == "zh" else "Signal")
+
 
 
 def _collect_item_candidates(item, lang="zh", line_limit=60):
@@ -627,6 +654,7 @@ def _collect_item_candidates(item, lang="zh", line_limit=60):
     return deduped
 
 
+
 def _pick_distinct_line(candidates, used_lines):
     for c in candidates:
         if c and not any(_is_similar_topic(c, u) for u in used_lines):
@@ -637,6 +665,7 @@ def _pick_distinct_line(candidates, used_lines):
         used_lines.append(chosen)
         return chosen
     return ""
+
 
 
 def _pick_primary_report_id_topic(top_items, valid_report_ids):
@@ -654,6 +683,7 @@ def _pick_primary_report_id_topic(top_items, valid_report_ids):
     return ids[0]
 
 
+
 def _extract_topic_tokens(text, lang="zh"):
     raw = str(text or "")
     tokens = set()
@@ -665,6 +695,7 @@ def _extract_topic_tokens(text, lang="zh"):
         if t not in {"today", "focus", "report", "includes", "signal", "window", "action"}:
             tokens.add(t)
     return tokens
+
 
 
 def _iter_daily_actions(daily_report):
@@ -696,6 +727,7 @@ def _iter_daily_actions(daily_report):
     return out
 
 
+
 def _pick_opportunity_window(daily_report, topic_text, lang="zh"):
     candidates = _iter_daily_actions(daily_report)
     if not candidates:
@@ -723,6 +755,7 @@ def _pick_opportunity_window(daily_report, topic_text, lang="zh"):
     return _clip_text(selected, 66 if lang == "zh" else 140)
 
 
+
 def _build_evidence_anchor(items, lang="zh"):
     anchors = []
     title_keys = ["title_zh", "title"] if lang == "zh" else ["title_en", "title"]
@@ -745,6 +778,7 @@ def _build_evidence_anchor(items, lang="zh"):
     return "; ".join(anchors)
 
 
+
 def _select_top1_item_topic(items):
     if not items:
         return None
@@ -757,6 +791,7 @@ def _select_top1_item_topic(items):
         return (risk, impact, pref.get(view, -1))
 
     return sorted(items, key=key_fn, reverse=True)[0]
+
 
 
 def _build_home_top1_fallback(item, valid_report_ids, lang="zh"):
@@ -816,6 +851,7 @@ def _build_home_top1_fallback(item, valid_report_ids, lang="zh"):
         f'<a class="premium-btn" href="{html_lib.escape(unlock)}">{html_lib.escape(btn_label)}</a>'
         '</div>'
     )
+
 
 
 def _build_home_aggregate_html(top3_data, valid_report_ids, daily_report, lang="zh"):
@@ -969,6 +1005,7 @@ def _build_home_aggregate_html(top3_data, valid_report_ids, daily_report, lang="
     )
 
 
+
 def _build_home_ai_topic_html(topic_text, items, valid_report_ids, lang="zh"):
     raw = str(topic_text or "").strip()
     if not raw:
@@ -1060,6 +1097,7 @@ def _build_home_ai_topic_html(topic_text, items, valid_report_ids, lang="zh"):
     )
 
 
+
 def _replace_top_tracks_section(raw_html, title_candidates, new_title, aggregate_html):
     for title in title_candidates:
         pattern = re.compile(
@@ -1078,6 +1116,7 @@ def _replace_top_tracks_section(raw_html, title_candidates, new_title, aggregate
         )
         return replaced, True
     return raw_html, False
+
 
 
 def _postprocess_home_top_tracks(config):
@@ -1180,6 +1219,7 @@ def _postprocess_home_top_tracks(config):
             continue
 
 
+
 def _build_context_builder(config, records):
     mode = (config.context_mode or "token").strip().lower()
     if mode == "vector":
@@ -1202,6 +1242,7 @@ def _build_context_builder(config, records):
         ),
         None,
     )
+
 
 
 def run_pipeline(config):
@@ -1451,6 +1492,7 @@ def run_pipeline(config):
         raise
 
 
+
 def _run_rebuild(config):
     storage = Storage(config)
     reporter = Reporter(config)
@@ -1458,10 +1500,12 @@ def _run_rebuild(config):
     _postprocess_home_top_tracks(config)
 
 
+
 def _run_build_datasets(config):
     storage = Storage(config)
     records = list(storage.iter_records())
     build_datasets(config, records)
+
 
 
 def _run_build_content_variants(config):
@@ -1472,12 +1516,14 @@ def _run_build_content_variants(config):
     return build_content_variants_main()
 
 
+
 def _run_build_harness_health(config):
     try:
         from scripts.build_harness_health import main as build_harness_health_main
     except Exception as exc:
         raise SystemExit(f"failed to import harness health builder: {exc}")
     return build_harness_health_main()
+
 
 
 def main():
@@ -1542,6 +1588,7 @@ def main():
 from datetime import datetime, timezone  # noqa: E402
 
 
+
 def _parse_iso_dt_hotfix(value):
     text = str(value or "").strip()
     if not text:
@@ -1552,6 +1599,7 @@ def _parse_iso_dt_hotfix(value):
         return datetime.fromisoformat(text)
     except ValueError:
         return None
+
 
 
 def _to_tz_hotfix(dt, tzinfo):
@@ -1565,6 +1613,7 @@ def _to_tz_hotfix(dt, tzinfo):
         return dt
 
 
+
 def _record_is_today_hotfix(record):
     dt = _parse_iso_dt_hotfix(record.get("collected_at") or record.get("published_at"))
     if not dt:
@@ -1572,6 +1621,7 @@ def _record_is_today_hotfix(record):
     now = now_cst()
     dt_local = _to_tz_hotfix(dt, now.tzinfo)
     return dt_local.date() == now.date()
+
 
 
 def _append_unique_hotfix(target, seen, value, limit=5):
@@ -1587,6 +1637,7 @@ def _append_unique_hotfix(target, seen, value, limit=5):
         del target[limit:]
 
 
+
 def _render_brief_col_hotfix(items, label, empty_text):
     if not items:
         return (
@@ -1598,6 +1649,7 @@ def _render_brief_col_hotfix(items, label, empty_text):
         f'<div class="brief-col"><div class="meta">{label}</div>'
         f"<ul>{lis}</ul></div>"
     )
+
 
 
 def _render_daily_brief_hotfix(records, lang="zh", min_sample=20):
@@ -1695,6 +1747,7 @@ def _render_daily_brief_hotfix(records, lang="zh", min_sample=20):
     )
 
 
+
 def _replace_daily_brief_section_hotfix(raw_html, title_candidates, brief_html):
     for title in title_candidates:
         pattern = re.compile(
@@ -1712,6 +1765,92 @@ def _replace_daily_brief_section_hotfix(raw_html, title_candidates, brief_html):
         )
         return replaced, True
     return raw_html, False
+
+
+
+def _load_top3_source_hotfix(config):
+    path = os.path.join(config.data_dir, "status", "top3_build_status.json")
+    data = _load_json_dict(path)
+    return str(data.get("source") or "").strip()
+
+
+
+def _pick_item_link_hotfix(item, lang="zh", valid_report_ids=None):
+    if lang == "zh":
+        explicit = str(item.get("link_zh") or item.get("link") or "").strip()
+        subdir = "cn"
+    else:
+        explicit = str(item.get("link_en") or item.get("link") or "").strip()
+        subdir = "en"
+
+    if explicit:
+        return explicit
+
+    report_id = str(item.get("report_id") or "").strip()
+    if report_id and ((not valid_report_ids) or report_id in valid_report_ids):
+        return f"/{subdir}/pay/{report_id}.html"
+    return f"/{subdir}/news/"
+
+
+
+def _build_home_simple_fallback_html_hotfix(items, valid_report_ids, lang="zh"):
+    items = [item for item in (items or []) if isinstance(item, dict)]
+    if not items:
+        if lang == "zh":
+            return '<div class="meta">暂无重点追踪</div>'
+        return '<div class="meta">No top track yet.</div>'
+
+    if lang == "zh":
+        core_label = "核心事件"
+        signal_labels = ["关键信号一", "关键信号二", "关键信号三"]
+        button_label = "查看相关情报"
+        sep = "："
+        title = str(items[0].get("title_zh") or items[0].get("title") or "").strip()
+        title_limit = 72
+        line_limit = 64
+    else:
+        core_label = "Core event"
+        signal_labels = ["Signal 1", "Signal 2", "Signal 3"]
+        button_label = "View related signal"
+        sep = ": "
+        title = str(items[0].get("title_en") or items[0].get("title") or "").strip()
+        title_limit = 180
+        line_limit = 160
+
+    lines_html = []
+    if title:
+        lines_html.append(
+            f'<div class="premium-reason"><span class="label-gray">{html_lib.escape(core_label)}</span>{sep}{html_lib.escape(_clip_text(title, title_limit))}</div>'
+        )
+
+    for idx, item in enumerate(items[:3]):
+        line = ""
+        candidates = _collect_item_candidates(item, lang=lang, line_limit=line_limit)
+        if candidates:
+            line = candidates[0]
+        if not line:
+            fallback_title = str(item.get("title_zh") if lang == "zh" else item.get("title_en") or item.get("title") or "").strip()
+            line = _clip_text(fallback_title, line_limit)
+        if not line:
+            continue
+        label = signal_labels[idx] if idx < len(signal_labels) else signal_labels[-1]
+        lines_html.append(
+            f'<div class="premium-reason"><span class="label-gray">{html_lib.escape(label)}</span>{sep}{html_lib.escape(line)}</div>'
+        )
+
+    if not lines_html:
+        if lang == "zh":
+            return '<div class="meta">暂无重点追踪</div>'
+        return '<div class="meta">No top track yet.</div>'
+
+    link = _pick_item_link_hotfix(items[0], lang=lang, valid_report_ids=valid_report_ids)
+    return (
+        '<div class="premium-item premium-aggregate">'
+        + "".join(lines_html)
+        + f'<a class="premium-btn" href="{html_lib.escape(link)}">{html_lib.escape(button_label)}</a>'
+        + '</div>'
+    )
+
 
 
 def _dedupe_home_items_hotfix(items, limit=3):
@@ -1739,6 +1878,7 @@ def _dedupe_home_items_hotfix(items, limit=3):
 _LEGACY_POSTPROCESS_HOME_TOP_TRACKS = _postprocess_home_top_tracks
 
 
+
 def _postprocess_home_top_tracks(config):
     # Keep legacy chain (AI/social bundle etc.)
     _LEGACY_POSTPROCESS_HOME_TOP_TRACKS(config)
@@ -1762,8 +1902,17 @@ def _postprocess_home_top_tracks(config):
     dedup_payload = dict(top3_data)
     dedup_payload["items"] = dedup_items
 
-    aggregate_cn = _build_home_aggregate_html(dedup_payload, valid_report_ids, daily_zh, lang="zh")
-    aggregate_en = _build_home_aggregate_html(dedup_payload, valid_report_ids, daily_en, lang="en")
+    top3_source = _load_top3_source_hotfix(config)
+    if top3_source and top3_source != "premium_today":
+        aggregate_cn = _build_home_simple_fallback_html_hotfix(
+            dedup_payload.get("items"), valid_report_ids, lang="zh"
+        )
+        aggregate_en = _build_home_simple_fallback_html_hotfix(
+            dedup_payload.get("items"), valid_report_ids, lang="en"
+        )
+    else:
+        aggregate_cn = _build_home_aggregate_html(dedup_payload, valid_report_ids, daily_zh, lang="zh")
+        aggregate_en = _build_home_aggregate_html(dedup_payload, valid_report_ids, daily_en, lang="en")
 
     top_targets = [
         (
