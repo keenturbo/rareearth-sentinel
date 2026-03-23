@@ -273,6 +273,29 @@ def _sort_run_rows(rows):
     return sorted(rows, key=lambda row: _parse_dt(row.get("finished_at") or row.get("started_at")) or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
 
 
+def _build_homepage_recent_decisions(rows, limit=HOMEPAGE_COMPARE_LIMIT):
+    grouped = defaultdict(list)
+    for row in rows:
+        experiment_id = str(row.get("experiment_id") or "").strip()
+        family = str(row.get("family") or "").strip()
+        if family != "homepage_topic_policy":
+            continue
+        if experiment_id not in HOMEPAGE_COMPARE_EXPERIMENTS:
+            continue
+        grouped[experiment_id].append(row)
+
+    out = {}
+    for experiment_id in HOMEPAGE_COMPARE_EXPERIMENTS:
+        recent = _sort_run_rows(grouped.get(experiment_id) or [])[:limit]
+        decisions = []
+        for row in recent:
+            decision = str((row.get("decision") or {}).get("decision") or "").strip()
+            if decision:
+                decisions.append(decision)
+        out[experiment_id] = decisions
+    return out
+
+
 def _build_homepage_experiment_summary(rows, limit=HOMEPAGE_COMPARE_LIMIT):
     grouped = defaultdict(list)
     for row in rows:
@@ -417,6 +440,48 @@ def _homepage_stability_hints_html(rows):
     return "".join(f"<li>{html.escape(item)}</li>" for item in hints)
 
 
+def _build_homepage_trend_hints(compare_rows, recent_decisions_map):
+    if not compare_rows:
+        return ["暂无足够的 homepage 实验数据，暂不能生成趋势提示。"]
+
+    hints = []
+    for row in compare_rows:
+        experiment_id = str(row.get("experiment_id") or "").strip()
+        decisions = list(recent_decisions_map.get(experiment_id) or [])
+        recent_runs = int(row.get("recent_runs") or 0)
+        if recent_runs < 2 or len(decisions) < 2:
+            hints.append(f"{experiment_id}：样本仍少，趋势判断暂不稳定")
+            continue
+
+        latest = decisions[0]
+        if latest == "needs_review":
+            hints.append(f"{experiment_id}：最近一次为 REVIEW，短期仍需观察")
+            continue
+
+        if latest == "keep" and "needs_review" in decisions[1:]:
+            hints.append(f"{experiment_id}：近 {len(decisions)} 次中曾出现 REVIEW，当前已恢复 KEEP")
+            continue
+
+        streak = 0
+        for decision in decisions:
+            if decision == "keep":
+                streak += 1
+            else:
+                break
+        if streak >= 2:
+            hints.append(f"{experiment_id}：最近 {streak} 次连续 KEEP")
+            continue
+
+        hints.append(f"{experiment_id}：近期表现平稳，建议继续积累样本")
+
+    return hints[:2] if hints else ["暂无足够的 homepage 实验数据，暂不能生成趋势提示。"]
+
+
+def _homepage_trend_hints_html(compare_rows, recent_decisions_map):
+    hints = _build_homepage_trend_hints(compare_rows, recent_decisions_map)
+    return "".join(f"<li>{html.escape(item)}</li>" for item in hints)
+
+
 def _recent_runs_html(rows, experiment_map, family_meta):
     if not rows:
         return '<div class="empty">暂无实验记录。<br/>请先运行 <code>scripts/run_autoresearch_replay.py</code> 生成首条 run。</div>'
@@ -473,6 +538,7 @@ def build_admin_autoresearch_page(config):
     summary = _summary_cards(runs)
     family_rows = _family_rows(runs)
     homepage_experiment_rows = _build_homepage_experiment_summary(runs)
+    homepage_recent_decisions = _build_homepage_recent_decisions(runs)
     decision_reason_rows, validator_reason_rows, failed_field_rows = _reason_rows(runs)
 
     with open(template_path, "r", encoding="utf-8") as f:
@@ -487,6 +553,7 @@ def build_admin_autoresearch_page(config):
         .replace("{{REVIEW_COUNT}}", str(summary["review_count"]))
         .replace("{{BEST_FAMILY}}", html.escape(summary["best_family_label"]))
         .replace("{{HOMEPAGE_STABILITY_HINTS}}", _homepage_stability_hints_html(homepage_experiment_rows))
+        .replace("{{HOMEPAGE_TREND_HINTS}}", _homepage_trend_hints_html(homepage_experiment_rows, homepage_recent_decisions))
         .replace("{{HOMEPAGE_EXPERIMENT_ROWS}}", _homepage_experiments_html(homepage_experiment_rows))
         .replace("{{FAMILY_ROWS}}", _family_stats_html(family_rows))
         .replace("{{DECISION_REASON_ROWS}}", _simple_reason_table(decision_reason_rows, key_name="reason", empty_text="暂无决策原因统计"))
