@@ -482,6 +482,70 @@ def _homepage_trend_hints_html(compare_rows, recent_decisions_map):
     return "".join(f"<li>{html.escape(item)}</li>" for item in hints)
 
 
+def _short_experiment_id(experiment_id):
+    text = str(experiment_id or "").strip()
+    if text.startswith("exp-homepage-"):
+        return text.replace("exp-homepage-", "", 1)
+    return text or "homepage"
+
+
+def _pick_stable_row(rows):
+    if not rows:
+        return None
+    return min(
+        rows,
+        key=lambda row: (
+            int(row.get("needs_review_count") or 0),
+            -int(row.get("keep_count") or 0),
+            -_safe_float(row.get("avg_candidate_score")),
+            -_stability_latest_ts(row),
+        ),
+    )
+
+
+def _build_homepage_summary_hint(compare_rows, recent_decisions_map):
+    if not compare_rows:
+        return "当前样本仍少，homepage 实验结论暂不稳定。"
+    if len(compare_rows) == 1:
+        return "当前样本仍少，homepage 实验结论暂不稳定。"
+    if len(compare_rows) >= 2 and _rows_are_close(compare_rows[0], compare_rows[1]):
+        return "当前两条 homepage 正式轨道表现接近，建议继续积累样本。"
+
+    stable = _pick_stable_row(compare_rows)
+    if not stable:
+        return "当前样本仍少，homepage 实验结论暂不稳定。"
+
+    others = [row for row in compare_rows if str(row.get("experiment_id") or "") != str(stable.get("experiment_id") or "")]
+    if not others:
+        return f"当前 {_short_experiment_id(stable.get('experiment_id'))} 表现更稳，建议继续积累样本。"
+
+    other = others[0]
+    stable_name = _short_experiment_id(stable.get("experiment_id"))
+    other_name = _short_experiment_id(other.get("experiment_id"))
+    other_decisions = list(recent_decisions_map.get(str(other.get("experiment_id") or "")) or [])
+    other_recent = int(other.get("recent_runs") or 0)
+
+    if other_recent < 2 or len(other_decisions) < 2:
+        return f"当前 {stable_name} 更稳，{other_name} 样本仍少，建议继续积累。"
+
+    latest = other_decisions[0]
+    if latest == "needs_review":
+        return f"当前 {stable_name} 更稳，{other_name} 短期仍需观察。"
+    if latest == "keep" and "needs_review" in other_decisions[1:]:
+        return f"当前 {stable_name} 更稳，{other_name} 已从 REVIEW 恢复为 KEEP。"
+
+    streak = 0
+    for decision in other_decisions:
+        if decision == "keep":
+            streak += 1
+        else:
+            break
+    if streak >= 2:
+        return f"当前 {stable_name} 更稳，{other_name} 近期也保持稳定。"
+
+    return f"当前 {stable_name} 更稳，{other_name} 建议继续积累样本。"
+
+
 def _recent_runs_html(rows, experiment_map, family_meta):
     if not rows:
         return '<div class="empty">暂无实验记录。<br/>请先运行 <code>scripts/run_autoresearch_replay.py</code> 生成首条 run。</div>'
@@ -539,6 +603,7 @@ def build_admin_autoresearch_page(config):
     family_rows = _family_rows(runs)
     homepage_experiment_rows = _build_homepage_experiment_summary(runs)
     homepage_recent_decisions = _build_homepage_recent_decisions(runs)
+    homepage_summary_hint = _build_homepage_summary_hint(homepage_experiment_rows, homepage_recent_decisions)
     decision_reason_rows, validator_reason_rows, failed_field_rows = _reason_rows(runs)
 
     with open(template_path, "r", encoding="utf-8") as f:
@@ -552,6 +617,7 @@ def build_admin_autoresearch_page(config):
         .replace("{{DISCARD_COUNT}}", str(summary["discard_count"]))
         .replace("{{REVIEW_COUNT}}", str(summary["review_count"]))
         .replace("{{BEST_FAMILY}}", html.escape(summary["best_family_label"]))
+        .replace("{{HOMEPAGE_SUMMARY_HINT}}", html.escape(homepage_summary_hint))
         .replace("{{HOMEPAGE_STABILITY_HINTS}}", _homepage_stability_hints_html(homepage_experiment_rows))
         .replace("{{HOMEPAGE_TREND_HINTS}}", _homepage_trend_hints_html(homepage_experiment_rows, homepage_recent_decisions))
         .replace("{{HOMEPAGE_EXPERIMENT_ROWS}}", _homepage_experiments_html(homepage_experiment_rows))
