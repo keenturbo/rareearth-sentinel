@@ -48,6 +48,40 @@ def _first_non_empty(*values: Any) -> str:
     return ""
 
 
+def _normalize_compare_text(text: Any) -> str:
+    s = _clean_text(text).lower()
+    s = re.sub(r"\b\d{4}-\d{2}-\d{2}\b", " ", s)
+    s = re.sub(r"公开样本[:：]?", " ", s)
+    s = re.sub(r"公开信号显示", " ", s)
+    s = re.sub(r"sample context[:：]?", " ", s)
+    s = re.sub(r"public sample[:：]?", " ", s)
+    s = re.sub(r"public sample highlighted", " ", s)
+    s = re.sub(r"public sample referenced", " ", s)
+    s = re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", s)
+    return s.strip()
+
+
+def _is_semantic_duplicate(a: Any, b: Any) -> bool:
+    left = _normalize_compare_text(a)
+    right = _normalize_compare_text(b)
+    if not left or not right:
+        return False
+    if left == right:
+        return True
+    shortest = min(len(left), len(right))
+    if shortest < 16:
+        return False
+    return left in right or right in left
+
+
+def _dedup_evidence_track_impact(impact: str, evidence: str, lang: str) -> str:
+    if not _is_semantic_duplicate(impact, evidence):
+        return impact
+    if lang == "en":
+        return "Public signals suggest the homepage theme is changing, but persistence still needs more follow-on samples."
+    return "公开信息显示该主题信号正在累积，但持续性仍需后续样本确认。"
+
+
 def _title_for_lang(top_item: dict[str, Any], lang: str) -> str:
     if lang == "en":
         return _first_non_empty(top_item.get("title_en"), top_item.get("title"), top_item.get("title_zh"), "Today's focus")
@@ -210,6 +244,7 @@ def _candidate_text_evidence(case_payload: dict[str, Any], lang: str) -> str:
     action = _action_for_lang(case_payload, lang, track=EVIDENCE_TRACK)
     risk = _risk_for_lang(case_payload, lang, track=EVIDENCE_TRACK)
     evidence = _evidence_for_lang(case_payload, top_item, lang, track=EVIDENCE_TRACK)
+    impact = _dedup_evidence_track_impact(impact, evidence, lang)
     if lang == "en":
         return "\n".join([
             f"Core fact: {title}",
