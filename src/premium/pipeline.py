@@ -7,7 +7,10 @@ from urllib.parse import urlparse
 import yaml
 
 from .briefs import PremiumBriefGenerator, brief_quality_score
-from ..utils import now_cst
+from ..utils import now_cst, isoformat
+
+
+PREMIUM_GENERATION_STATUS_FILENAME = "premium_generation_status.json"
 
 
 def _ensure_dir(path):
@@ -262,38 +265,78 @@ def _merge_global_index(base_dir, entries):
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
+def _premium_generation_status_path(config):
+    return os.path.join(config.data_dir, "status", PREMIUM_GENERATION_STATUS_FILENAME)
+
+
+def _write_generation_status(config, payload):
+    path = _premium_generation_status_path(config)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def _base_generation_status(config, date_key, today_input_records=0, eligible_records=0, limit=0):
+    return {
+        "date": date_key,
+        "generated_at": isoformat(now_cst()),
+        "today_input_records": int(today_input_records or 0),
+        "eligible_records": int(eligible_records or 0),
+        "top_n": int(limit or 0),
+        "brief_generated_count": 0,
+        "index_written_count": 0,
+        "reports_index_updated": False,
+        "status": "unknown",
+        "notes": [],
+    }
+
+
 def generate_daily_briefs(config, records, limit=None):
+    today_key = now_cst().strftime("%Y-%m-%d")
+    effective_limit = limit or config.premium_top_n
+
     if not config.premium_enabled:
+        payload = _base_generation_status(config, today_key, limit=effective_limit)
+        payload["status"] = "disabled"
+        payload["notes"].append("premium_disabled")
+        _write_generation_status(config, payload)
         return []
 
-    today = now_cst().date()
-    today_records = []
-    for record in records:
-        collected_at = record.get("collected_at", "")
-        if not collected_at:
-            continue
-        try:
-            dt = datetime.fromisoformat(collected_at)
-        except ValueError:
-            continue
-        if dt.date() != today:
-            continue
-        if not _should_generate(record, config):
-            continue
-        today_records.append(record)
+    today_input_records = [r for r in records if _record_date_key(r) == today_key]
+    eligible_today_records = [r for r in today_input_records if _should_generate(r, config)]
+    status_payload = _base_generation_status(
+        config,
+        today_key,
+        today_input_records=len(today_input_records),
+        eligible_records=len(eligible_today_records),
+        limit=effective_limit,
+    )
 
-    if not today_records:
+    if not today_input_records:
+        status_payload["status"] = "no_today_records"
+        status_payload["notes"].append("today_input_records_empty")
+        _write_generation_status(config, status_payload)
         return []
 
-    today_records = sorted(today_records, key=_score_for_top, reverse=True)
-    limit = limit or config.premium_top_n
-    top_records = today_records[:limit]
+    if not eligible_today_records:
+        status_payload["status"] = "no_eligible_records"
+        status_payload["notes"].append("eligible_records_empty")
+        _write_generation_status(config, status_payload)
+        return []
+
+    today_records = sorted(eligible_today_records, key=_score_for_top, reverse=True)
+    top_records = today_records[:effective_limit]
 
     generator = PremiumBriefGenerator(config)
     output_dir, date_key = _today_dir(config.premium_dir)
     official_map = _load_official_domains(config)
 
+    generator_none_count = 0
+    quality_blocked_count = 0
+    write_error = ""
+
     def _generate_view_entries(record, base_report_id):
+        nonlocal generator_none_count, quality_blocked_count
         view_entries = []
         for view in ("policy", "industry", "capital"):
             report_id = f"{base_report_id}-{view}"
@@ -314,9 +357,11 @@ def generate_daily_briefs(config, records, limit=None):
             for lang in ("zh", "en"):
                 brief = generator.generate(record, lang=lang, view=view)
                 if brief is None:
+                    generator_none_count += 1
                     continue
                 quality = brief_quality_score(brief)
                 if quality < config.premium_min_quality:
+                    quality_blocked_count += 1
                     continue
                 entry_has_any = True
                 entry[f"quality_{lang}"] = quality
@@ -362,9 +407,11 @@ def generate_daily_briefs(config, records, limit=None):
         for lang in ("zh", "en"):
             brief = generator.generate(record, lang=lang)
             if brief is None:
+                generator_none_count += 1
                 continue
             quality = brief_quality_score(brief)
             if quality < config.premium_min_quality:
+                quality_blocked_count += 1
                 continue
             entry_has_any = True
             entry[f"quality_{lang}"] = quality
@@ -401,6 +448,10 @@ def generate_daily_briefs(config, records, limit=None):
                     (risk_score, impact_score_val, record.get("id"))
                 )
 
+    status_payload["brief_generated_count"] = len(prepared_entries)
+    status_payload["notes"].append(f"generator_none_count={generator_none_count}")
+    status_payload["notes"].append(f"quality_blocked_count={quality_blocked_count}")
+
     major_event_id = ""
     if major_candidates:
         major_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
@@ -417,11 +468,33 @@ def generate_daily_briefs(config, records, limit=None):
         else:
             index_entries.append(entry)
 
-    if index_entries:
-        index_path = os.path.join(output_dir, "index.json")
-        _merge_index(index_path, index_entries)
-        _merge_global_index(config.premium_dir, index_entries)
+    if not prepared_entries:
+        status_payload["status"] = "generation_failed"
+        status_payload["notes"].append("prepared_entries_empty")
+        _write_generation_status(config, status_payload)
+        return []
 
+    if index_entries:
+        try:
+            index_path = os.path.join(output_dir, "index.json")
+            _merge_index(index_path, index_entries)
+            _merge_global_index(config.premium_dir, index_entries)
+            status_payload["index_written_count"] = len(index_entries)
+            status_payload["reports_index_updated"] = True
+            status_payload["status"] = "healthy"
+        except Exception as exc:
+            write_error = f"write_error:{type(exc).__name__}:{exc}"
+            status_payload["status"] = "write_failed"
+            status_payload["notes"].append(write_error)
+            _write_generation_status(config, status_payload)
+            raise
+    else:
+        status_payload["status"] = "generation_failed"
+        status_payload["notes"].append("index_entries_empty")
+        _write_generation_status(config, status_payload)
+        return []
+
+    _write_generation_status(config, status_payload)
     return index_entries
 
 

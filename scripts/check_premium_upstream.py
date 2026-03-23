@@ -1,13 +1,19 @@
 import json
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 
 from src.config import Config
 from src.utils import isoformat, now_cst
 
 
 STATUS_PATH = os.path.join("data", "status", "premium_upstream_status.json")
+GENERATION_STATUS_PATH = os.path.join("data", "status", "premium_generation_status.json")
 REPORTS_RECENT_HOURS = 72
 SAMPLE_LIMIT = 5
 
@@ -125,12 +131,25 @@ def _load_top3_source(config):
 
 
 
+def _load_generation_status():
+    if not os.path.exists(GENERATION_STATUS_PATH):
+        return {}
+    try:
+        with open(GENERATION_STATUS_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+
 def build_premium_upstream_status(config):
     now_dt = now_cst()
     today_key = now_dt.strftime("%Y-%m-%d")
     today_records = _load_today_records(config, today_key)
     reports_recent = _load_reports_recent(config, now_dt)
     top3_source = _load_top3_source(config)
+    generation_status = _load_generation_status()
 
     min_cred = _safe_int(getattr(config, "premium_min_credibility", 60), 60)
     min_imp = _safe_int(getattr(config, "premium_min_importance", 3), 3)
@@ -188,6 +207,13 @@ def build_premium_upstream_status(config):
             "premium_min_credibility": min_cred,
             "premium_min_importance": min_imp,
             "reports_recent_hours": REPORTS_RECENT_HOURS,
+        },
+        "premium_generation": {
+            "status": str(generation_status.get("status") or ""),
+            "brief_generated_count": _safe_int(generation_status.get("brief_generated_count"), 0),
+            "index_written_count": _safe_int(generation_status.get("index_written_count"), 0),
+            "reports_index_updated": bool(generation_status.get("reports_index_updated")),
+            "notes": generation_status.get("notes") or [],
         },
         "sample_titles": {
             "eligible": _sample_titles(eligible_records),

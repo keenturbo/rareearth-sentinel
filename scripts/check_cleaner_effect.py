@@ -1,8 +1,13 @@
 import json
 import os
 import re
+import sys
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 
 from src.config import Config
 from src.utils import isoformat, now_cst
