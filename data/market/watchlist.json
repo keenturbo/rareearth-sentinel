@@ -1,0 +1,41 @@
+[
+  {
+    "signal_id": "indices_market_image_proxy",
+    "name": "Indices Market Manual Snapshot",
+    "category": "manual_market_snapshot",
+    "region": "CN",
+    "source_type": "manual_status",
+    "source_ref": "data/status/indices_market.json",
+    "field_hint": "image_url",
+    "unit": "snapshot",
+    "expected_frequency": "daily",
+    "enabled": true,
+    "note": "manual image fallback"
+  },
+  {
+    "signal_id": "indices_market_analysis_proxy",
+    "name": "Indices Market Analysis Proxy",
+    "category": "manual_market_analysis",
+    "region": "CN",
+    "source_type": "manual_status",
+    "source_ref": "data/status/indices_market.json",
+    "field_hint": "analysis_text",
+    "unit": "text",
+    "expected_frequency": "daily",
+    "enabled": true,
+    "note": "manual analysis fallback"
+  },
+  {
+    "signal_id": "rareearth_index_placeholder",
+    "name": "Rare Earth Index Placeholder",
+    "category": "rare_earth_index",
+    "region": "CN",
+    "source_type": "manual_status",
+    "source_ref": "data/status/indices_market.json",
+    "field_hint": "value",
+    "unit": "index",
+    "expected_frequency": "daily",
+    "enabled": true,
+    "note": "p0 placeholder"
+  }
+]
