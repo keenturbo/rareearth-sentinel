@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>管理员 · 市场信号监测</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=Noto+Sans+SC:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#111827;--muted:#6b7280;--bg:#f8f6f2;--card:#ffffff;--accent:#1e3a8a;--good:#065f46;--danger:#b91c1c;--warn:#92400e}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink)}
+.container{max-width:980px;margin:0 auto;padding:24px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:12px;flex-wrap:wrap}
+header h1{font-family:"Noto Serif SC",serif;margin:0;font-size:22px}
+header .meta{font-size:12px;color:var(--muted)}
+.section{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:16px}
+.section-title{font-size:14px;font-weight:600;margin-bottom:10px;color:var(--ink)}
+.pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;background:#f3f4f6;color:var(--muted);margin-right:6px;margin-bottom:4px}
+.pill.ok{background:#d1fae5;color:var(--good)}
+.pill.degraded{background:#fef3c7;color:var(--warn)}
+.pill.high{background:#fee2e2;color:var(--danger)}
+.pill.medium{background:#fef3c7;color:var(--warn)}
+.pill.low{background:#e0e7ff;color:var(--accent)}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px;margin-bottom:10px}
+.card-title{font-size:13px;font-weight:600;margin-bottom:4px}
+.card-meta{font-size:11px;color:var(--muted);margin-bottom:3px}
+.card-body{font-size:12px;line-height:1.6}
+.tag{display:inline-block;font-size:10px;padding:1px 6px;border-radius:999px;background:#f3f4f6;color:var(--muted);margin-right:4px;margin-bottom:3px}
+.tag.high{background:#fee2e2;color:var(--danger)}
+.tag.medium{background:#fef3c7;color:var(--warn)}
+.tag.low{background:#e0e7ff;color:var(--accent)}
+.empty{font-size:12px;color:var(--muted);padding:12px 0}
+table{width:100%;border-collapse:collapse;font-size:12px}
+table th{text-align:left;padding:6px 8px;border-bottom:2px solid #e5e7eb;font-size:11px;color:var(--muted)}
+table td{padding:6px 8px;border-bottom:1px solid #f3f4f6}
+.score-bar{display:inline-block;height:6px;border-radius:3px;background:#e5e7eb;width:60px;position:relative;vertical-align:middle}
+.score-fill{position:absolute;left:0;top:0;height:100%;border-radius:3px}
+.score-fill.high{background:var(--danger)}
+.score-fill.medium{background:var(--warn)}
+.score-fill.low{background:var(--accent)}
+.related-list{font-size:11px;color:var(--muted);margin-top:4px}
+.related-list li{margin-bottom:2px}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>管理员 · 市场信号监测</h1>
+      <div class="meta">更新 {{LAST_UPDATE}}</div>
+    </div>
+    <div class="meta"><a href="/cn/admin/premium/">报告列表</a> · <a href="/cn/admin/orders/">订单</a> · <a href="/cn/admin/task-orders/">任务订单</a> · <a href="/cn/admin/sources/">信源管理</a> · <a href="/cn/admin/social/">社媒</a> · <a href="/cn/admin/indices/">价格行情</a> · <a href="/cn/admin/keywords/">关键词</a> · <a href="/cn/admin/products/validate/">产品校验</a> · <a href="/cn/admin/leads/team-brief/">团队简报线索</a> · <a href="/cn/admin/funnel/">漏斗</a></div>
+  </header>
+
+  <section class="section">
+    <div class="section-title">构建状态</div>
+    <div class="row">{{STATUS_PILLS}}</div>
+    <div class="card-meta">{{STATUS_NOTES}}</div>
+  </section>
+
+  <section class="section">
+    <div class="section-title">信号概览</div>
+    <table>
+      <thead>
+        <tr>
+          <th>信号ID</th>
+          <th>名称</th>
+          <th>类别</th>
+          <th>异常分</th>
+          <th>等级</th>
+          <th>标签</th>
+          <th>关联情报</th>
+          <th>观测时间</th>
+        </tr>
+      </thead>
+      <tbody>{{SIGNAL_ROWS}}</tbody>
+    </table>
+  </section>
+
+  <section class="section">
+    <div class="section-title">信号详情</div>
+    {{SIGNAL_DETAILS}}
+  </section>
+</div>
+</body>
+</html>
