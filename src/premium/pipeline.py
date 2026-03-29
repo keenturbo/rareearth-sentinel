@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlparse
 
@@ -165,6 +165,23 @@ def _record_date_key(record):
     return dt.date().isoformat()
 
 
+def _collected_at_date_key(record):
+    """Return CST date key based on collected_at (ingestion time) only."""
+    ca = record.get("collected_at", "")
+    if not ca:
+        return ""
+    dt = _parse_date(ca)
+    if not dt:
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    try:
+        dt = dt.astimezone(now_cst().tzinfo)
+    except Exception:
+        pass
+    return dt.strftime("%Y-%m-%d")
+
+
 def _brief_exists(base_dir, date_key, report_id, lang):
     path = os.path.join(base_dir, date_key, _brief_filename(report_id, lang))
     return os.path.exists(path)
@@ -302,7 +319,10 @@ def generate_daily_briefs(config, records, limit=None):
         _write_generation_status(config, payload)
         return []
 
-    today_input_records = [r for r in records if _record_date_key(r) == today_key]
+    # Fix: use collected_at (ingestion time) not published_at (article date)
+    # to match original behavior — articles collected today should be candidates
+    # regardless of when they were originally published.
+    today_input_records = [r for r in records if _collected_at_date_key(r) == today_key]
     eligible_today_records = [r for r in today_input_records if _should_generate(r, config)]
     status_payload = _base_generation_status(
         config,
