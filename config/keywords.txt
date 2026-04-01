@@ -1,107 +1,215 @@
-# Core rare earth terms
-rare earth
-rare earths
-rare earth element
-rare earth oxide
-rare earth mining
-rare earth project
-rare earth deposit
-rare earth discovery
-rare earth resource estimate
-rare earth drilling results
-rare earth feasibility study
-rare earth pre-feasibility
-rare earth processing
-rare earth separation
-rare earth refinery
-rare earth processing plant
-rare earth concentrate
-rare earth magnet
-NdFeB magnet
-permanent magnet rare earth
-rare earth offtake agreement
-rare earth supply chain
-rare earth recycling
-monazite
-bastnaesite
-ion-adsorption clay
-rare earth carbonate
-rare earth chloride
-
-# Precision expansions (high-signal)
-heavy rare earth
-light rare earth
-REE
-REO
-NdPr
-NdPr oxide
-rare earth separation plant
-solvent extraction rare earth
-rare earth magnet recycling
-rare earth export control
-critical raw materials act
-
-# LREE/HREE specific minerals
-lanthanum project
-cerium project
-praseodymium project
-neodymium project
-samarium project
-europium project
-gadolinium project
-terbium project
-dysprosium project
-yttrium project
-holmium project
-erbium project
-thulium project
-ytterbium project
-lutetium project
-scandium project
 
 # Company-specific (precision)
-MP Materials rare earth
-Lynas rare earth
+# Core rare earth terms
+# Critical materials & policy (DOE/USGS aligned)
+# Critical minerals tied to REE supply chains
+# LREE/HREE specific minerals
+# Precision expansions (high-signal)
+# Project-specific (precision)
+ALCONIX
+Aclara Resources
+American Rare Earths
+American Resources
+Arafura Rare Earths
+Arafura rare earth
+Asaka理研
+Australian Strategic Materials
+Avalon Advanced Materials
+Brazilian Rare Earths
+Browns Range rare earth
 China Northern Rare Earth
 China Rare Earth Group
-Shenghe Resources rare earth
+Critical Metals
+Defense Metals
+ENVIPRO HOLDINGS
+Energy Fuels
 Energy Fuels rare earth
-Neo Performance Materials rare earth
-Iluka rare earth
-Arafura rare earth
+Fortescue Metals
+Geomega Resources
+Hastings Technology Metals
 Hastings rare earth
-Northern Minerals rare earth
-USA Rare Earth
-
-# Project-specific (precision)
+IDEA
+Iluka Resources
+Iluka rare earth
+Integral Metals
+JTEKT
+Lindian Resources
+Lynas Rare Earths
+Lynas rare earth
+MP Materials
+MP Materials rare earth
+Mitsuba
+Mkango Resources
 Mountain Pass rare earth
 Mt Weld rare earth
-Nolans rare earth
-Yangibana rare earth
-Browns Range rare earth
+NdFeB magnet
+NdPr
+NdPr oxide
 Nechalacho rare earth
-
-# Critical materials & policy (DOE/USGS aligned)
-critical minerals policy
-critical minerals strategy
-critical minerals list
+Neo Performance Materials
+Neo Performance Materials rare earth
+Nidec
+NioCorp Developments
+Nolans rare earth
+Northern Minerals
+Northern Minerals rare earth
+Pensana
+REE
+REO
+Rainbow Rare Earths
+Ramaco Resources
+Rare Element Resources
+Shenghe Resources rare earth
+TDK
+Texas Mineral Resources
+USA Rare Earth
+Ucore Rare Metals
+Yangibana rare earth
+bastnaesite
+cerium project
+cobalt mine investment
 critical materials list
-strategic minerals supply chain
+critical minerals export restriction
 critical minerals financing
+critical minerals list
+critical minerals offtake
+critical minerals policy
 critical minerals processing
 critical minerals refinery
-critical minerals offtake
-critical minerals export restriction
-
-# Critical minerals tied to REE supply chains
-lithium mine expansion
-cobalt mine investment
-nickel mine expansion
-graphite supply chain
+critical minerals strategy
+critical raw materials act
+dysprosium project
+erbium project
+europium project
+fluorine supply
+gadolinium project
 gallium supply
 germanium supply
+graphite supply chain
+heavy rare earth
+holmium project
+ion-adsorption clay
 iridium supply
-platinum group metals mining
-silicon carbide supply
+lanthanum project
+light rare earth
+lithium mine expansion
+lutetium project
 magnesium supply
-fluorine supply
+monazite
+neodymium project
+nickel mine expansion
+permanent magnet rare earth
+platinum group metals mining
+praseodymium project
+rare earth
+rare earth carbonate
+rare earth chloride
+rare earth concentrate
+rare earth deposit
+rare earth discovery
+rare earth drilling results
+rare earth element
+rare earth export control
+rare earth feasibility study
+rare earth magnet
+rare earth magnet recycling
+rare earth mining
+rare earth offtake agreement
+rare earth oxide
+rare earth pre-feasibility
+rare earth processing
+rare earth processing plant
+rare earth project
+rare earth recycling
+rare earth refinery
+rare earth resource estimate
+rare earth separation
+rare earth separation plant
+rare earth supply chain
+rare earths
+samarium project
+scandium project
+silicon carbide supply
+solvent extraction rare earth
+strategic minerals supply chain
+terbium project
+thulium project
+ytterbium project
+yttrium project
+万朗磁塑
+三井海洋开发
+三叶
+三川智慧
+三菱材料
+三菱电机
+东丽
+东亚建设工业
+东方锆业
+东洋工程
+中国稀土
+中国铝业
+中科三环
+中科磁业
+中稀有色
+中色股份
+中钢天源
+中铝国际
+丰田汽车
+丰田通商
+丸红
+久吾高科
+九菱科技
+京运通
+住友商事
+佳宏股份
+信越化学工业
+包钢
+北方稀土
+北矿科技
+华宏科技
+卧龙电驱
+厦门钨业
+双日
+古河机械金属
+同和控股
+国瓷材料
+大同特殊钢
+大地熊
+大洋电机
+天和磁材
+天通股份
+奔朗新材
+威孚高科
+宁波韵升
+宇晶股份
+安泰科技
+尼得科
+岩谷产业
+惠城环保
+捷太格特
+新莱福
+有研新材
+本田
+松田产业
+横店东磁
+正海磁材
+潍柴动力
+焦作万方
+盛和资源
+石油资源开发
+科净源
+科恒股份
+立中集团
+第一稀元素化学工业
+美蓓亚三美
+苏美达
+英威腾
+英思特
+英洛华
+金力永磁
+金力股份
+钢研纳克
+银河磁体
+阿石创
+领益智造
+龙磁科技
