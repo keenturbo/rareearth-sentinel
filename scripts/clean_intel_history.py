@@ -20,6 +20,25 @@ DEFAULT_CLEANED = os.path.join("data", "intel.cleaned.jsonl")
 DEFAULT_REMOVED = os.path.join("data", "intel.removed.jsonl")
 DEFAULT_REPORT = os.path.join("data", "status", "intel_clean_report.json")
 
+# Fields that indicate Gemini has already analysed this record successfully.
+# If ANY of these fields contain a non-empty string, we keep the record even
+# when the raw content field is dirty / empty.
+ANALYSIS_KEEP_FIELDS = (
+    "summary_zh",
+    "summary_en",
+    "expert_summary",
+    "expert_summary_en",
+)
+
+
+def _has_valid_analysis(row):
+    """Return True if the record already carries useful analysis output."""
+    for field in ANALYSIS_KEEP_FIELDS:
+        value = row.get(field)
+        if isinstance(value, str) and len(value.strip()) >= 20:
+            return True
+    return False
+
 
 def _read_jsonl(path):
     rows = []
@@ -99,6 +118,7 @@ def clean_history(config, input_path, cleaned_path, removed_path, report_path):
     removed_rows = []
     reason_counter = Counter()
     signal_counter = Counter()
+    kept_by_analysis = 0
     examples = []
 
     for row in rows:
@@ -124,7 +144,16 @@ def clean_history(config, input_path, cleaned_path, removed_path, report_path):
             continue
 
         content = str(row.get("content") or "")
-        if not content.strip():
+
+        # --- SAFE GUARD: keep records that already have valid analysis ---
+        if not content.strip() or len(content.strip()) < 50:
+            if _has_valid_analysis(row):
+                # Content is empty/tiny but Gemini already analysed it.
+                # Keep the record as-is (do NOT re-clean content).
+                out = {k: v for k, v in row.items() if not k.startswith("__")}
+                cleaned_rows.append(out)
+                kept_by_analysis += 1
+                continue
             reason = "empty_content"
             reason_counter[reason] += 1
             removed_rows.append(_build_removed_entry(row, reason))
@@ -145,6 +174,13 @@ def clean_history(config, input_path, cleaned_path, removed_path, report_path):
         signals = guard.get("pollution_signals") or []
 
         if not guard.get("pass"):
+            # Check if we should still keep it because analysis exists
+            if _has_valid_analysis(row):
+                out = {k: v for k, v in row.items() if not k.startswith("__")}
+                cleaned_rows.append(out)
+                kept_by_analysis += 1
+                continue
+
             reason_counter[reason] += 1
             for sig in signals:
                 signal_counter[sig] += 1
@@ -162,6 +198,12 @@ def clean_history(config, input_path, cleaned_path, removed_path, report_path):
 
         cleaned_text = clean_model_input(content)
         if _is_low_value_cleaned(cleaned_text):
+            if _has_valid_analysis(row):
+                out = {k: v for k, v in row.items() if not k.startswith("__")}
+                cleaned_rows.append(out)
+                kept_by_analysis += 1
+                continue
+
             reason = "low_value_wrapper"
             reason_counter[reason] += 1
             removed_rows.append(_build_removed_entry(row, reason, stats=stats, signals=signals))
@@ -192,6 +234,7 @@ def clean_history(config, input_path, cleaned_path, removed_path, report_path):
         "cleaned_count": len(cleaned_rows),
         "removed_count": len(removed_rows),
         "removed_rate": round(len(removed_rows) / max(1, len(rows)), 4),
+        "kept_by_analysis": kept_by_analysis,
         "reason_breakdown": dict(reason_counter),
         "signal_breakdown": dict(signal_counter),
         "examples": examples,
