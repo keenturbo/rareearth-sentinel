@@ -4,6 +4,7 @@ import random
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 
+from .input_guard import guard_article_text, clean_model_input
 from .storage import Storage
 from .utils import clean_text, now_cst
 
@@ -98,6 +99,19 @@ def _split_by_time(samples, train_ratio, valid_ratio):
     return train, valid, test
 
 
+def _content_passes_guard(content, config):
+    """Return cleaned content if it passes the quality guard, else None."""
+    if not content or not content.strip():
+        return None
+    guard = guard_article_text(content, config)
+    if not guard.get("pass"):
+        return None
+    cleaned = clean_model_input(content)
+    if not cleaned or len(cleaned) < 100:
+        return None
+    return cleaned
+
+
 def build_datasets(config):
     storage = Storage(config)
     records = list(storage.iter_records())
@@ -115,13 +129,20 @@ def build_datasets(config):
     positives = []
     negatives = []
     reason_samples = []
+    skipped_dirty = 0
 
     for record in records:
-        content = str(record.get("content", "")).strip()
-        if not content:
+        raw_content = str(record.get("content", "")).strip()
+        if not raw_content:
             continue
-        content = clean_text(content)
-        if len(content) < min_chars:
+
+        # --- Quality gate: skip dirty content from datasets ---
+        cleaned_content = _content_passes_guard(raw_content, config)
+        if cleaned_content is None:
+            skipped_dirty += 1
+            continue
+
+        if len(cleaned_content) < min_chars:
             continue
 
         credibility = record.get("credibility", {}) or {}
@@ -138,7 +159,7 @@ def build_datasets(config):
 
         item = {
             "record": record,
-            "content": content,
+            "content": cleaned_content,
             "ts": ts,
         }
 
@@ -221,6 +242,9 @@ def build_datasets(config):
             "min_credibility": min_score,
             "negative_ratio": negative_ratio,
             "min_chars": min_chars,
+        },
+        "quality_gate": {
+            "skipped_dirty": skipped_dirty,
         },
     }
 
