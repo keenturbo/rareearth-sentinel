@@ -303,6 +303,10 @@ Article:
     def _guard_input(self, text, prompt_key):
         guard = guard_article_text(text, self.config)
         if not guard.get("pass"):
+            meta = dict(guard.get("stats") or {})
+            signals = guard.get("pollution_signals") or []
+            if signals:
+                meta["pollution_signals"] = signals
             _append_prompt_qc_log(
                 self.config,
                 module="extractor",
@@ -310,7 +314,7 @@ Article:
                 input_quality=guard.get("quality", "invalid_input"),
                 fallback_used=False,
                 fallback_reason=guard.get("reason", "invalid_input"),
-                meta=guard.get("stats"),
+                meta=meta,
             )
             return None
         return guard
