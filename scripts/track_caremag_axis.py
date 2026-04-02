@@ -1,0 +1,330 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import argparse
+import json
+import os
+import sys
+from collections import Counter
+from urllib.parse import quote_plus, urlparse
+
+import feedparser
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
+from src.config import Config
+from src.utils import clean_text, hash_url, isoformat, normalize_token, now_cst
+
+RSS_URL_TEMPLATE = (
+    "https://news.google.com/rss/search?q={query}&hl={lang}&gl={region}&ceid={edition}"
+)
+DEFAULT_MAX_ITEMS = 8
+WATCH_REL_PATH = os.path.join("data", "trackers", "caremag_axis_watch.jsonl")
+STATUS_REL_PATH = os.path.join("data", "status", "caremag_axis_tracker_status.json")
+TARGETS_REL_PATH = os.path.join("data", "trackers", "caremag_axis_targets.json")
+
+OFFICIAL_DOMAINS = {
+    "meti.go.jp",
+    "jogmec.go.jp",
+    "elysee.fr",
+    "economie.gouv.fr",
+    "tresor.economie.gouv.fr",
+}
+COMPANY_DOMAINS = {
+    "carester.fr",
+    "stellantis.com",
+    "solvay.com",
+    "brazilianrareearths.com",
+}
+REGIONAL_MEDIA_DOMAINS = {
+    "larepubliquedespyrenees.fr",
+}
+
+
+def _abs_path(rel_path):
+    if os.path.isabs(rel_path):
+        return rel_path
+    return os.path.join(ROOT, rel_path)
+
+
+def _ensure_parent(path):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
+
+def _load_json(path, default):
+    abs_path = _abs_path(path)
+    if not os.path.exists(abs_path):
+        return default
+    try:
+        with open(abs_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return default
+
+
+def _iter_jsonl(path):
+    abs_path = _abs_path(path)
+    if not os.path.exists(abs_path):
+        return
+    with open(abs_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(row, dict):
+                yield row
+
+
+def _append_jsonl(path, rows):
+    abs_path = _abs_path(path)
+    _ensure_parent(abs_path)
+    with open(abs_path, "a", encoding="utf-8") as f:
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False))
+            f.write("\n")
+
+
+def _write_json(path, payload):
+    abs_path = _abs_path(path)
+    _ensure_parent(abs_path)
+    with open(abs_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def _normalize_title(text):
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+    lowered = normalize_token(raw)
+    return lowered[:240]
+
+
+def _source_tier(domain):
+    domain = str(domain or "").lower().lstrip("www.")
+    if not domain:
+        return "secondary"
+    if domain in OFFICIAL_DOMAINS or domain.endswith(".gouv.fr"):
+        return "official"
+    if domain in COMPANY_DOMAINS:
+        return "company"
+    if domain in REGIONAL_MEDIA_DOMAINS:
+        return "regional_media"
+    if domain in {"reuters.com", "asia.nikkei.com", "nikkei.com", "kyodonews.net"}:
+        return "media"
+    return "secondary"
+
+
+def _load_targets(path):
+    data = _load_json(path, {})
+    items = data.get("targets", []) if isinstance(data, dict) else []
+    out = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if not item.get("enabled", True):
+            continue
+        if not item.get("id"):
+            continue
+        source_type = str(item.get("source_type") or "").strip().lower()
+        if source_type not in {"rss", "site_search"}:
+            continue
+        out.append(item)
+    return out
+
+
+def _build_site_search_url(target, config):
+    domain = str(target.get("domain") or "").strip()
+    query_terms = str(target.get("query_terms") or "").strip()
+    if not domain or not query_terms:
+        return ""
+    query = f"site:{domain} {query_terms}".strip()
+    lang = target.get("news_lang") or config.google_news_lang
+    region = target.get("news_region") or config.google_news_region
+    edition = target.get("news_edition") or config.google_news_edition
+    return RSS_URL_TEMPLATE.format(
+        query=quote_plus(query),
+        lang=lang,
+        region=region,
+        edition=edition,
+    )
+
+
+def _fetch_target_entries(target, config, limit=0):
+    source_type = str(target.get("source_type") or "").strip().lower()
+    max_items = 0
+    try:
+        max_items = int(limit or target.get("max_items") or DEFAULT_MAX_ITEMS)
+    except (TypeError, ValueError):
+        max_items = DEFAULT_MAX_ITEMS
+
+    if source_type == "rss":
+        url = str(target.get("url") or "").strip()
+    else:
+        url = _build_site_search_url(target, config)
+
+    if not url:
+        return [], "missing_url"
+
+    feed = feedparser.parse(url)
+    entries = list(feed.entries or [])[:max_items]
+    return entries, ""
+
+
+def _clean_summary(text):
+    summary = clean_text(str(text or ""))
+    if len(summary) > 400:
+        summary = summary[:400].rstrip() + "…"
+    return summary
+
+
+def _build_candidate(target, entry):
+    title = str(entry.get("title") or "").strip()
+    url = str(entry.get("link") or "").strip()
+    if not title or not url:
+        return None
+
+    source_domain = str(target.get("domain") or "").strip().lower()
+    if not source_domain:
+        try:
+            source_domain = urlparse(url).netloc.lower().lstrip("www.")
+        except Exception:
+            source_domain = ""
+
+    now_text = isoformat(now_cst())
+    normalized_title = _normalize_title(title)
+    summary = _clean_summary(entry.get("summary") or entry.get("description") or "")
+    entity_tags = target.get("entity_tags") or []
+    if not isinstance(entity_tags, list):
+        entity_tags = []
+
+    return {
+        "id": f"caremag-axis-{now_cst().strftime('%Y%m%d')}-{hash_url(url)}",
+        "collected_at": now_text,
+        "target_id": str(target.get("id") or "").strip(),
+        "channel": str(target.get("channel") or "general").strip(),
+        "source_tier": _source_tier(source_domain),
+        "source_name": str(target.get("source_name") or target.get("label") or source_domain),
+        "source_domain": source_domain,
+        "title": title,
+        "url": url,
+        "published_at": str(entry.get("published") or entry.get("updated") or "").strip(),
+        "summary": summary,
+        "normalized_title": normalized_title,
+        "entity_tags": entity_tags,
+        "signal_type": "",
+        "impact_node": "",
+        "tracker_score": 0,
+        "promote_candidate": False,
+        "promoted_to_intel": False,
+    }
+
+
+def _dedupe_keys_for_row(row):
+    url = str(row.get("url") or "").strip()
+    source_domain = str(row.get("source_domain") or "").strip().lower()
+    normalized_title = str(row.get("normalized_title") or "").strip()
+    keys = set()
+    if url:
+        keys.add(f"url::{url}")
+    if source_domain and normalized_title:
+        keys.add(f"title::{source_domain}::{normalized_title}")
+    if normalized_title:
+        keys.add(f"title_only::{normalized_title}")
+    return keys
+
+
+def _load_existing_dedupe_keys(path):
+    keys = set()
+    for row in _iter_jsonl(path):
+        keys.update(_dedupe_keys_for_row(row))
+    return keys
+
+
+def _build_status(now_text, targets, fetched, added, deduped, source_breakdown, errors, dry_run):
+    return {
+        "generated_at": now_text,
+        "targets_enabled": len(targets),
+        "items_fetched": fetched,
+        "items_new": added,
+        "items_deduped": deduped,
+        "high_score_candidates": 0,
+        "promoted_count": 0,
+        "source_breakdown": dict(source_breakdown),
+        "dry_run": bool(dry_run),
+        "errors": errors,
+    }
+
+
+def run_tracker(config, dry_run=False, limit=0):
+    targets = _load_targets(TARGETS_REL_PATH)
+    existing_keys = _load_existing_dedupe_keys(WATCH_REL_PATH)
+
+    fetched_total = 0
+    deduped_total = 0
+    new_rows = []
+    errors = []
+    source_breakdown = Counter()
+
+    for target in targets:
+        target_id = str(target.get("id") or "").strip()
+        try:
+            entries, err = _fetch_target_entries(target, config, limit=limit)
+        except Exception as exc:
+            entries, err = [], f"{target_id}:fetch_exception:{type(exc).__name__}"
+        if err:
+            errors.append(err)
+        fetched_total += len(entries)
+
+        for entry in entries:
+            row = _build_candidate(target, entry)
+            if not row:
+                continue
+            row_keys = _dedupe_keys_for_row(row)
+            if any(key in existing_keys for key in row_keys):
+                deduped_total += 1
+                continue
+            existing_keys.update(row_keys)
+            new_rows.append(row)
+            source_breakdown[row.get("source_tier") or "secondary"] += 1
+
+    now_text = isoformat(now_cst())
+    status = _build_status(
+        now_text=now_text,
+        targets=targets,
+        fetched=fetched_total,
+        added=len(new_rows),
+        deduped=deduped_total,
+        source_breakdown=source_breakdown,
+        errors=errors,
+        dry_run=dry_run,
+    )
+
+    if not dry_run and new_rows:
+        _append_jsonl(WATCH_REL_PATH, new_rows)
+    if not dry_run:
+        _write_json(STATUS_REL_PATH, status)
+
+    return status
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Track France-Japan Caremag axis")
+    parser.add_argument("--run", action="store_true", help="Run tracker (default action)")
+    parser.add_argument("--dry-run", action="store_true", help="Fetch and print status without writing files")
+    parser.add_argument("--limit", type=int, default=0, help="Optional max items per target for this run")
+    args = parser.parse_args()
+
+    config = Config.from_env()
+    status = run_tracker(config, dry_run=args.dry_run, limit=args.limit)
+    print(json.dumps(status, ensure_ascii=False, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
