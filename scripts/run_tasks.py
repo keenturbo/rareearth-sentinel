@@ -273,10 +273,10 @@ def _build_prompt(entry, evidence, lang="cn", time_window="", market_analysis=""
     if prompt_version == "v2":
         if lang == "en":
             return f"""
-You are a rare earths intelligence sentinel for Western decision makers.
+You are a neutral rare earths intelligence editor for global market and supply-chain readers.
 Generate a task monitoring report based on the task info and evidence list below.
 Return ONLY JSON with fields: summary, action_table, sources, conclusion, key_evidence, assumptions.
-- summary: 120-180 words, concise and analytical. State whether the recommendation is supported, weakened, or needs watch.
+- summary: 120-180 words, concise and analytical. State whether the watchpoint is supported, weakened, or needs watch.
 - action_table: array of up to 5 items, each with action, path, evidence (evidence must come from the evidence list).
 - sources: array of up to 5 items, each with title and url.
 - conclusion: 1-2 sentences, avoid exaggerated claims.
@@ -296,13 +296,13 @@ Evidence:
 """
 
         return f"""
-你是中国视角的供应链风险情报哨兵。
+你是客观中立的稀土与关键矿产供应链情报编辑。
 请基于任务信息与证据清单生成本期跟踪报告。
 仅返回 JSON，字段为：summary, action_table, sources, conclusion, key_evidence, assumptions。
-- summary：150-250字，必须回应任务建议“被支持/被削弱/需观察”，避免口号。
+- summary：150-250字，必须回应跟踪观察点“被支持/被削弱/需观察”，避免口号。
 - action_table：最多 5 行，每行包含 action, path, evidence（证据必须来自证据清单）。
 - sources：最多 5 行，每行包含 title, url。
-- conclusion：1-2 句，不要出现固定的“中国影响结论”句式。
+- conclusion：1-2 句，保持中性克制。
 - key_evidence：最多 3 条，必须来自证据清单。
 - assumptions：最多 3 条证据缺口/假设。
 证据不足时保持中性，不要猜测。
@@ -320,7 +320,7 @@ Evidence:
 
     if lang == "en":
         return f"""
-You are a rare earths intelligence sentinel for Western decision makers.
+You are a neutral rare earths intelligence editor for global market and supply-chain readers.
 Generate a task monitoring report based on the task info and evidence list below.
 Return ONLY JSON with fields: summary, action_table, sources, conclusion.
 - summary: 120-180 words, concise and analytical.
@@ -340,7 +340,7 @@ Evidence:
 """
 
     return f"""
-你是中国视角的供应链风险情报哨兵。
+你是客观中立的稀土与关键矿产供应链情报编辑。
 请基于任务信息与证据清单生成本期跟踪报告。
 仅返回 JSON，字段为：summary, action_table, sources, conclusion。
 - summary：150-250 字，简洁、分析性。

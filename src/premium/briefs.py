@@ -11,12 +11,12 @@ from ..utils import extract_json
 AUDIENCE_FIT = {"investor", "industry", "policy", "mixed"}
 
 PERSONA_EN_PREMIUM = (
-    "You are the lead critical-minerals paid-brief editor for institutional investors. "
-    "Write concise, evidence-first, decision-oriented copy."
+    "You are a neutral critical-minerals research brief editor for global institutional investors "
+    "and supply-chain analysts. Write concise, evidence-first, objective copy."
 )
 PERSONA_ZH_PREMIUM = (
-    "你是『关键矿产付费简报主笔』，服务对象是机构投资者与供应链决策者。"
-    "写作要求：短句、事实优先、可执行、避免模板化空话。"
+    "你是『关键矿产行业简报主笔』，服务对象是机构投资者与供应链研究者。"
+    "写作要求：客观中立、短句、事实优先、可执行、避免模板化空话。"
 )
 
 
@@ -55,7 +55,7 @@ class PremiumBriefGenerator:
         content = str(record.get("content", "")).strip()
         if not content:
             return None
-        content = content[:6000]
+        content = content[:4000]
 
         title = str(record.get("title", "")).strip()
         summary_zh = str(record.get("summary_zh", "")).strip()
@@ -104,34 +104,34 @@ class PremiumBriefGenerator:
             if lang == "en":
                 if view == "policy":
                     view_note = (
-                        "Perspective: Policy/Government. Emphasize regulatory levers, export controls, "
-                        "strategic stockpiles, and policy alignment. Ensure at least one tracking_nodes "
-                        "item is a policy/government action."
+                        "Perspective: Regulatory/Policy. Focus objectively on regulatory filings, licensing rules, "
+                        "quotas, and compliance timelines. Ensure at least one tracking_nodes "
+                        "item monitors a verifiable regulatory milestone."
                     )
                 elif view == "industry":
                     view_note = (
                         "Perspective: Industrial/Supply Chain. Emphasize processing capacity, offtake "
                         "agreements, supply bottlenecks, and industrial execution. Ensure at least one "
-                        "tracking_nodes item is an industrial/supply-chain action."
+                        "tracking_nodes item is an industrial/supply-chain milestone."
                     )
                 elif view == "capital":
                     view_note = (
                         "Perspective: Capital/Finance. Emphasize financing structure, valuation risk, "
                         "capital deployment, and M&A windows. Ensure at least one tracking_nodes item is "
-                        "a capital/finance action."
+                        "a capital/finance milestone."
                     )
             else:
                 if view == "policy":
                     view_note = (
-                        "视角：政策/外交。强调政策工具、出口管制、战略储备等；行动清单至少包含1条政策动作。"
+                        "视角：政策/监管。客观关注行业监管文件、开采/冶炼指标、许可与合规节点；追踪清单至少包含1条可核验的政策公告节点。"
                     )
                 elif view == "industry":
                     view_note = (
-                        "视角：产业/供应链。强调产能、分离加工、供应瓶颈与工业执行；行动清单至少包含1条产业动作。"
+                        "视角：产业/供应链。强调产能、分离加工、供应瓶颈与工业执行；追踪清单至少包含1条产业兑现节点。"
                     )
                 elif view == "capital":
                     view_note = (
-                        "视角：资本/投融资。强调融资结构、估值风险、资金落地与并购窗口；行动清单至少包含1条资本动作。"
+                        "视角：资本/投融资。强调融资结构、估值风险、资金落地与并购窗口；追踪清单至少包含1条资本/财务节点。"
                     )
         if view_note:
             view_note = view_note.strip() + "\n"
@@ -142,7 +142,7 @@ class PremiumBriefGenerator:
                 prompt = f"""
 Role (persona): {PERSONA_EN_PREMIUM}
 
-You are a rare earth intelligence verification analyst. Generate a paid brief (USD $9) for Western investors (primary) and supply-chain decision makers (secondary). Tone: professional research brief, neutral and precise.
+You are an objective rare earth intelligence verification analyst. Generate a concise research brief for global investors (primary) and supply-chain analysts (secondary). Tone: professional research brief, neutral and precise, without geopolitical advocacy.
 Return ONLY JSON with fields:
 - conclusion (1 sentence)
 - fact_checks (array of 2-3 short items)
@@ -157,18 +157,18 @@ Return ONLY JSON with fields:
 - audience_fit (one of investor, industry, policy, mixed)
 
 Constraints:
-- Be structured, deep, and actionable. Use short sentences; avoid hype, slogans, moralizing, and rhetorical questions.
-- conclusion must be decision-oriented, <= 20 words, and not a rephrased headline.
+- Be structured, deep, and objective. Use short sentences; avoid hype, slogans, confrontational advocacy, and rhetorical questions.
+- conclusion must be analytical, <= 20 words, and not a rephrased headline.
 - fact_checks must be verifiable; do not invent facts.
 - fact_sources must be verifiable domains or URLs.
-- key_numbers must be supported by the article or summary; each item must include number + unit + context (e.g., "$7.5B OBBBA budget", "400M equity injection into MP Materials"); if missing, return an empty array (do NOT use "Unknown").
-- tracking_nodes must be an action checklist: verb + object + reason + time window + decision criteria; each item must include a numeric threshold. Include at least one investor/capital action (e.g., hedge exposure, financing watch, valuation trigger) and at least one policy or industrial action aligned with Western de-risking (e.g., offtake agreements, strategic stockpiles, subsidies, export controls, M&A).
+- key_numbers must be supported by the article or summary; each item must include number + unit + context (e.g., "$400M equity financing", "12% YoY NdPr output growth"); if missing, return an empty array (do NOT use "Unknown").
+- tracking_nodes must be a tracking checklist: verb + object + reason + time window + observable threshold (with numeric threshold). Include at least one capital/market checkpoint (e.g., financing close, earnings guidance, pricing trigger) and at least one commercial or industrial supply-chain checkpoint (e.g., offtake agreements, processing capacity ramp-up, regulatory filings, project commissioning, M&A).
 - time windows must be relative (next 30/90/180 days) and not in the past; if a past date is implied, rewrite as relative.
 - confidence_notes must include evidence weighting labels: Verified / Unverified / Inferred (include all three). Format each item exactly as "Verified: ...", "Unverified: ...", "Inferred: ...".
 - value_proposition must be multi-line and include:
   0) TL;DR: 3-5 bullet lines (each <= 20 words, prefix each line with '-' or '•')
   1) Impact Path: 3-5 steps
-  2) Scenarios & probabilities: 3 scenarios with rough % and trigger conditions with quantitative thresholds (e.g., yield <75%, capacity >50%, funding cut >20%)
+  2) Scenarios & probabilities: 3 scenarios with rough % and trigger conditions with quantitative thresholds (e.g., yield <75%, capacity >50%, capex overrun >20%)
   3) Next update focus: specific signals + time window
 - audience_fit should default to investor unless the content clearly favors industry or policy.
 - Market commentary is background-only; do NOT cite it as verified fact.
@@ -186,7 +186,7 @@ Article:
                 prompt = f"""
 Role (persona): {PERSONA_EN_PREMIUM}
 
-You are a rare earth intelligence verification analyst. Generate a paid brief (USD $9) for Western decision makers.
+You are an objective rare earth intelligence verification analyst. Generate a concise research brief for global market and supply-chain readers.
 Return ONLY JSON with fields:
 - conclusion (1 sentence)
 - fact_checks (array of 2-3 short items)
@@ -198,7 +198,7 @@ Return ONLY JSON with fields:
 - value_proposition (1 sentence explaining why this matters)
 
 Constraints:
-- Be concise, factual, and actionable.
+- Be concise, factual, neutral, and actionable.
 - If data is missing, mark with "Unknown" rather than guessing.
 
 Metadata:
@@ -215,7 +215,7 @@ Article:
                 prompt = f"""
 角色设定：{PERSONA_ZH_PREMIUM}
 
-你是一名稀土情报核查专家，请生成售价9美元的付费简报（面向投资者为主，其次供应链/政策）。立场以中国战略安全与供应链主导为背景，但输出以投资决策为主。语气为专业研究简报，短句、克制、去AI味。
+你是一名客观中立的稀土情报核查分析师，请生成面向行业投资者与供应链研究者的深度简报。语气为专业研究简报，短句、克制、事实优先、去AI味，不构成具体个股投资建议。
 只输出JSON，包含字段：
 - conclusion（一句话结论）
 - fact_checks（2-3条核查要点）
@@ -229,18 +229,18 @@ Article:
 - assumptions（最多3条证据缺口/假设）
 - audience_fit（investor/industry/policy/mixed）
 
-要求：结构化、深入、可执行，长度不限制。
-- conclusion 必须面向决策，<=20字，不得复述标题。
+要求：结构化、深入、客观可核验。
+- conclusion 必须面向研究判断，<=20字，不得复述标题。
 - fact_checks 必须可验证。
 - fact_sources 必须为可验证域名或链接。
-- key_numbers 必须来自原文或摘要；每条必须包含数值+单位+含义（如“75亿美元（OBBBA法案拨款）”），禁止裸数字；缺失直接返回空数组，禁止写“未知”。
-- tracking_nodes 必须为行动清单：动词 + 对象 + 原因 + 时间窗口 + 判断标准；每条必须包含量化阈值（数字+单位）；至少包含1条资本/投资动作（如对冲、估值触发、融资窗口、并购时点），且至少包含1条政策或产业动作（如出口管制、专利壁垒、并购整合、财政补贴、战略储备等）。
+- key_numbers 必须来自原文或摘要；每条必须包含数值+单位+含义（如“4亿美元（股权融资）”“氧化镨钕产量同比+12%”），禁止裸数字；缺失直接返回空数组，禁止写“未知”。
+- tracking_nodes 必须为观察清单：动词 + 对象 + 原因 + 时间窗口 + 量化判断标准（数字+单位）；至少包含1条资本/价格观察节点（如融资落地、财报指引、价格阈值），且至少包含1条产业或监管公开节点（如产能兑现、冶炼分离指标、长协采购、项目审批与并购进度等）。
 - 时间窗口必须 >= 当前日期，使用相对时间（未来30/90/180天）；若出现过去时间，改为相对时间。
 - confidence_notes 必须包含证据分层标签：已验证 / 待证实 / 推断（必须三层，简短）；固定格式为“已验证：...”“待证实：...”“推断：...”。
 - value_proposition 必须为多行并包含：
   0) 要点（必须使用中文标题“要点”，不要用TL;DR）：3-5条（每条<=20字，前缀使用“•”或“-”）
   1) 影响路径：3-5步
-  2) 情景与概率：3个情景 + 粗略百分比 + 触发条件（必须包含量化阈值，如良率<75%、产能>50%、预算削减>20%）
+  2) 情景与概率：3个情景 + 粗略百分比 + 触发条件（必须包含量化阈值，如良率<75%、产能>50%、资本开支超支>20%）
   3) 下次更新重点：具体信号 + 时间窗口
 - audience_fit 默认 investor，除非内容明显偏产业或政策。
 - 市场行情分析仅作背景评论，不得作为已验证事实引用。
@@ -258,7 +258,7 @@ Article:
                 prompt = f"""
 角色设定：{PERSONA_ZH_PREMIUM}
 
-你是一名稀土情报核查专家，请生成售价9美元的付费简报（给中国决策者）。
+你是一名客观中立的稀土情报核查分析师，请生成面向行业研究与供应链读者的深度简报。
 只输出JSON，包含字段：
 - conclusion（一句话结论）
 - fact_checks（2-3条核查要点）
@@ -269,7 +269,7 @@ Article:
 - confidence_notes（1-2条证据局限说明）
 - value_proposition（一句话说明为什么值得跟踪）
 
-要求：简洁、可执行，不要猜测，缺失数据写“未知”。
+要求：简洁、客观、可执行，不要猜测，缺失数据写“未知”。
 
 元信息：
 {meta_block}
@@ -346,9 +346,9 @@ def normalize_brief(data, lang="zh"):
 
     if not normalized["value_proposition"]:
         if lang == "en":
-            normalized["value_proposition"] = "Strategic signal with direct supply-chain implications."
+            normalized["value_proposition"] = "Market signal with direct supply-chain implications."
         else:
-            normalized["value_proposition"] = "具备直接供应链影响的战略信号，值得持续跟踪。"
+            normalized["value_proposition"] = "具备直接供应链影响的市场信号，值得持续跟踪。"
 
     return normalized
 

@@ -13,12 +13,13 @@ from src.config import Config
 from src.sources.registry import get_sources
 from src.fetcher import Fetcher
 from src.extractor import GeminiExtractor
+from src.input_guard import prefilter_domain_relevance
 from src.storage import Storage
 from src.reporter import Reporter
 from src.context import ContextBuilder, VectorContextBuilder
 from src.embeddings import EmbeddingStore
 from src.normalizer import Normalizer
-from src.utils import clean_text, isoformat, now_cst, is_homepage_url
+from src.utils import clean_text, hash_url, isoformat, now_cst, is_homepage_url
 from src.datasets import build_datasets
 from src.premium import generate_daily_briefs, backfill_daily_briefs
 from src.telegram import post_telegram_records, post_telegram_top3_due
@@ -47,6 +48,25 @@ _TOP3_PREFIXES = [
     "Highlights:",
     "Highlights",
 ]
+
+
+def _should_run_en_analysis(config, analysis):
+    mode = str(getattr(config, "en_analysis_mode", "high_score") or "high_score").strip().lower()
+    if mode == "off":
+        return False
+    if mode == "all":
+        return True
+    min_imp = int(getattr(config, "en_min_importance", 4) or 4)
+    min_risk = int(getattr(config, "en_min_risk_score", 70) or 70)
+    try:
+        imp = int((analysis or {}).get("importance_score", 0) or 0)
+    except (TypeError, ValueError):
+        imp = 0
+    try:
+        risk = int((analysis or {}).get("risk_score", 0) or 0)
+    except (TypeError, ValueError):
+        risk = 0
+    return imp >= min_imp or risk >= min_risk
 
 
 def _context_lines(context_summary, limit=0):
@@ -1248,6 +1268,7 @@ def _build_context_builder(config, records):
 def run_pipeline(config):
     storage = Storage(config)
     seen_ids = storage.load_existing_ids()
+    rejected_ids = storage.load_rejected_ids()
     candidate_path = os.path.join(
         config.data_dir, "keywords", "keyword_candidates.jsonl"
     )
@@ -1265,10 +1286,13 @@ def run_pipeline(config):
     stats = {
         "total_items": 0,
         "seen": 0,
+        "cached_reject": 0,
+        "prefilter_skip": 0,
         "fetch_fail": 0,
         "too_short": 0,
         "analyze_fail": 0,
         "analyze_en_fail": 0,
+        "en_skipped": 0,
         "saved": 0,
         "summary_fallback": 0,
     }
@@ -1343,6 +1367,11 @@ def run_pipeline(config):
                         print("  - skip: seen")
                         continue
 
+                    if storage.is_seen(url, rejected_ids):
+                        stats["cached_reject"] += 1
+                        print("  - skip: cached_reject")
+                        continue
+
                     fetch_result = fetcher.fetch(url)
                     content = (fetch_result.get("content") or "").strip()
                     fetch_status = fetch_result.get("status")
@@ -1354,6 +1383,8 @@ def run_pipeline(config):
                         resolved_host = urlparse(resolved_url or "").netloc
                         if is_homepage_url(resolved_url) or resolved_host == "news.google.com":
                             stats["fetch_fail"] += 1
+                            if storage.append_rejected_url(url, "official_homepage"):
+                                rejected_ids.add(hash_url(url))
                             print("  - skip: official_homepage")
                             continue
 
@@ -1372,6 +1403,8 @@ def run_pipeline(config):
                                 print("  - skip: fetch_fail")
                             else:
                                 stats["too_short"] += 1
+                                if storage.append_rejected_url(url, "too_short"):
+                                    rejected_ids.add(hash_url(url))
                                 print(f"  - skip: too_short ({len(content)} chars)")
                             continue
 
@@ -1380,16 +1413,29 @@ def run_pipeline(config):
                     if content_source == "rss_summary":
                         if len(content) < config.summary_min_chars:
                             stats["too_short"] += 1
+                            if storage.append_rejected_url(url, "too_short"):
+                                rejected_ids.add(hash_url(url))
                             print(f"  - skip: too_short ({len(content)} chars)")
                             continue
                     else:
                         if len(content) < config.min_content_chars:
                             stats["too_short"] += 1
+                            if storage.append_rejected_url(url, "too_short"):
+                                rejected_ids.add(hash_url(url))
                             print(f"  - skip: too_short ({len(content)} chars)")
                             continue
 
                     if config.fetch_delay_seconds > 0:
                         time.sleep(config.fetch_delay_seconds)
+
+                    prefilter = prefilter_domain_relevance(title, content, config)
+                    if not prefilter.get("pass"):
+                        stats["prefilter_skip"] += 1
+                        prefilter_reason = prefilter.get("reason", "off_topic_prefilter")
+                        if storage.append_rejected_url(url, prefilter_reason):
+                            rejected_ids.add(hash_url(url))
+                        print(f"  - skip: prefilter ({prefilter_reason})")
+                        continue
 
                     context_summary = context_builder.build_context(
                         title, summary or content[:600], exclude_id=""
@@ -1398,19 +1444,28 @@ def run_pipeline(config):
                         context_summary, limit=config.context_max_items
                     )
 
-                    # Chinese analysis (China perspective)
+                    # Primary Chinese market & supply-chain analysis
                     analysis = extractor.analyze(content, context_summary=context_summary)
                     if analysis is None:
+                        fail_reason = getattr(extractor, "last_failure_reason", "") or ""
+                        if storage.append_rejected_url(url, fail_reason):
+                            rejected_ids.add(hash_url(url))
                         stats["analyze_fail"] += 1
-                        print("  - skip: analyze_fail (zh)")
+                        print(f"  - skip: analyze_fail (zh: {fail_reason or 'unknown'})")
                         continue
 
-                    # English analysis (Western perspective)
-                    analysis_en = extractor.analyze_en(content, context_summary=context_summary)
-                    if analysis_en is None:
-                        stats["analyze_en_fail"] += 1
-                        print("  - warn: analyze_en_fail (en), continuing with zh only")
+                    # High-score gated English analysis (neutral international market view)
+                    if _should_run_en_analysis(config, analysis):
+                        analysis_en = extractor.analyze_en(content, context_summary=context_summary)
+                        if analysis_en is None:
+                            stats["analyze_en_fail"] += 1
+                            print("  - warn: analyze_en_fail (en), continuing with zh only")
+                            analysis_en = {}
+                        en_saved = bool(analysis_en)
+                    else:
+                        stats["en_skipped"] += 1
                         analysis_en = {}
+                        en_saved = False
 
                     normalized, credibility = normalizer.normalize_and_score(
                         item, analysis, content, content_source
@@ -1437,7 +1492,7 @@ def run_pipeline(config):
                     stats["saved"] += 1
                     new_records.append(record)
                     _append_keyword_candidates(record, config, candidate_seen)
-                    print("  + saved (zh + en)")
+                    print("  + saved (zh + en)" if en_saved else "  + saved (zh only)")
 
                     if config.analyze_delay_seconds > 0:
                         time.sleep(config.analyze_delay_seconds)

@@ -16,21 +16,35 @@ from .utils import (
 AUDIENCE_FIT = {"investor", "industry", "policy", "mixed"}
 
 PERSONA_ZH_INTEL = (
-    "你是『关键矿产情报主笔』，服务对象是机构投资者、供应链负责人与政策研究者。"
-    "写作要求：短句、先事实后判断、避免口号与模板化空话。"
+    "你是『关键矿产市场情报主笔』，服务对象是机构投资者、产业链从业者与行业研究者。"
+    "写作要求：客观中立、短句、先事实后判断、避免口号与模板化空话。"
 )
 PERSONA_EN_INTEL = (
-    "You are the lead critical-minerals intelligence editor for institutional investors, "
-    "supply-chain operators, and policy teams. Write in concise, evidence-first prose."
+    "You are an objective critical-minerals market intelligence editor for institutional investors, "
+    "commodity analysts, and supply-chain researchers. Write concise, neutral, evidence-first prose."
 )
 PERSONA_ZH_DAILY = (
-    "你是『关键矿产晨报主笔』，负责将复杂事件压缩为可执行日报。"
-    "风格：信息密度高但可读，避免重复与拼接感。"
+    "你是『关键矿产晨报主笔』，负责将公开行业事件压缩为客观可读的市场日报。"
+    "风格：信息密度高、中立克制、避免重复与拼接感。"
 )
 PERSONA_EN_DAILY = (
-    "You are the daily intelligence editor for critical minerals. "
-    "Produce concise, non-redundant, publish-ready daily summaries."
+    "You are a neutral daily market intelligence editor for critical minerals. "
+    "Produce concise, objective, non-redundant daily summaries."
 )
+
+_EN_OPTIONAL_SCORE_MAP = {
+    "supply_risk_score": "supply_risk_score_en",
+    "policy_risk_score": "policy_risk_score_en",
+    "price_pressure_score": "price_pressure_score_en",
+    "risk_score": "risk_score_en",
+    "risk_level": "risk_level_en",
+    "importance_score": "importance_score_en",
+    "confidence": "confidence_en",
+    "forecast_6m": "forecast_6m_en",
+    "forecast_12m": "forecast_12m_en",
+    "forecast_24m": "forecast_24m_en",
+    "forecast_48m": "forecast_48m_en",
+}
 
 
 def _safe_response_text(response):
@@ -48,6 +62,15 @@ def _safe_response_text(response):
         )
     except Exception:
         return ""
+
+
+def _is_null_response(raw_text):
+    cleaned = str(raw_text or "").strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`").strip()
+        if cleaned.lower().startswith("json"):
+            cleaned = cleaned[4:].strip()
+    return cleaned.lower() in {"null", "none"}
 
 
 def _as_list(value, limit=3):
@@ -69,6 +92,20 @@ def _as_audience_fit(value):
     if text in AUDIENCE_FIT:
         return text
     return "mixed"
+
+
+def _normalize_en_result(data):
+    if not isinstance(data, dict):
+        return None
+    normalized = normalize_analysis_en(data)
+    if normalized is None:
+        return None
+    # Preserve absent numeric/forecast keys as unset so Storage.build_record()
+    # inherits the authoritative values from the Chinese pass instead of defaults.
+    for raw_key, en_key in _EN_OPTIONAL_SCORE_MAP.items():
+        if raw_key not in data or data.get(raw_key) in (None, "", {}):
+            normalized.pop(en_key, None)
+    return normalized
 
 
 def _generate_with_timeout(model, prompt, timeout_seconds):
@@ -118,9 +155,26 @@ class GeminiExtractor:
         if not config.gemini_api_key:
             raise ValueError("GEMINI_API_KEY (or GOOGLE_API_KEY) is required")
         genai.configure(api_key=config.gemini_api_key)
+        self.analyze_max_output_tokens = int(
+            getattr(config, "analyze_max_output_tokens", 900) or 900
+        )
+        self.analyze_en_max_output_tokens = int(
+            getattr(config, "analyze_en_max_output_tokens", 500) or 500
+        )
+        zh_gen_cfg = {"temperature": 0.2}
+        if self.analyze_max_output_tokens > 0:
+            zh_gen_cfg["max_output_tokens"] = self.analyze_max_output_tokens
+        en_gen_cfg = {"temperature": 0.2}
+        if self.analyze_en_max_output_tokens > 0:
+            en_gen_cfg["max_output_tokens"] = self.analyze_en_max_output_tokens
+
         self.model = genai.GenerativeModel(
             config.gemini_model,
-            generation_config={"temperature": 0.2},
+            generation_config=zh_gen_cfg,
+        )
+        self.model_en = genai.GenerativeModel(
+            config.gemini_model,
+            generation_config=en_gen_cfg,
         )
         self.config = config
         self.analyze_timeout_seconds = config.analyze_timeout_seconds
@@ -128,6 +182,7 @@ class GeminiExtractor:
         self.prompt_min_evidence_sentences = max(
             1, int(getattr(config, "prompt_min_evidence_sentences", 2) or 2)
         )
+        self.last_failure_reason = ""
 
     def _build_context_block(self, context_summary):
         if not context_summary:
@@ -136,91 +191,50 @@ class GeminiExtractor:
 
     def _build_zh_prompt(self, content, context_block):
         recommendation_rule = (
-            "- Each recommendation must follow: verb + object + reason + time window.\n"
+            "- Each watchpoint follows: action/signal + object + reason + time window.\n"
             if self.prompt_version == "v2"
             else ""
         )
         return f"""
-Role (persona):
-- Chinese: {PERSONA_ZH_INTEL}
-- English: {PERSONA_EN_INTEL}
+Role: {PERSONA_ZH_INTEL}
 
-You are a rare earths and critical minerals intelligence analyst.
-Your analysis must be from China's strategic perspective (national interest and supply-chain advantage).
-Analyze the article and return ONLY a JSON object (no markdown, no commentary).
-If the content is not about rare earths or critical minerals, return null.
+You are an objective rare earths and critical minerals market and supply-chain analyst.
+Return ONLY one strict JSON object (no markdown, no commentary).
 
-Input quality rules:
-- The article body below has already been cleaned into plain text.
-- Ignore any residual navigation, cookie, subscription, share, and promotional fragments.
-- Base every conclusion only on explicit facts in the article.
-- If fewer than {self.prompt_min_evidence_sentences} fact sentences exist, return null.
+Early-exit rule (strict, saves tokens):
+- If the article is NOT primarily about rare earths or critical minerals, output ONLY:
+  {{"valid_input":false,"reject_reason":"off_topic"}}
+- If fewer than {self.prompt_min_evidence_sentences} explicit factual sentences exist in the article, output ONLY:
+  {{"valid_input":false,"reject_reason":"insufficient_evidence"}}
+- Do NOT include any other fields when rejecting.
 
-Location guidance:
-- country_primary is where the main project/action occurs.
-- Do NOT set country_primary to China unless the primary event is in China.
-- If China is only mentioned as background, set china_involved/china_role but keep country_primary as the main non-China country.
-- If unsure, set country_primary to "Unknown".
+Input & factual rules:
+- Ignore residual navigation, cookie, subscription, or promo text.
+- Rely strictly on explicit facts in the article; stay neutral and avoid geopolitical confrontation or investment guarantees.
 
-China perspective output:
-- china_impact must be one of [利好, 中性, 利空].
-- china_risk_trend must be one of [加强, 持平, 缓和].
-- expert_summary must be 1-2 Chinese sentences for decision makers.
-- recommendations_strategy is an array of 2-3 strategic suggestions (policy/industry chain).
-- recommendations_tactical is an array of 2-3 tactical actions (investment/M&A/export/stockpile).
-{recommendation_rule}
-Scores:
-- supply_risk_score, policy_risk_score, price_pressure_score, risk_score are integers 0-100.
-- risk_level and importance_score are integers 1-5 and should align with risk_score.
+Location rules:
+- country_primary: where the main project/action occurs (do NOT set to China unless the primary event is in China; use "Unknown" if unclear).
+- If China is only mentioned as background, set china_involved/china_role while keeping country_primary as the primary country.
 
-Forecast windows:
-- forecast_6m/12m/24m/48m are objects with price_pressure (Up|Down|Neutral) and confidence (0-100).
-
-Output rules:
-- summary_zh must be a concise professional Chinese summary.
-- minerals and entities must be arrays (can be empty).
-- action_type must be one of [Investment, Regulation, Discovery, Price, Geopolitics, Other].
-- china_involved is a boolean.
-- china_dependency is one of [None, Low, Medium, High].
-- china_role is one of [Supplier, Processor, Investor, Policy, Mentioned].
-- confidence is an integer 0-100.
-- valid_input is a boolean.
-- reject_reason is empty on success or one of [insufficient_evidence, invalid_input].
-- key_evidence: up to 3 evidence points from the article.
-- assumptions: up to 3 evidence gaps or assumptions.
+Concise output rules (valid_input=true):
+- summary_zh: concise neutral Chinese summary (<= 120 Chinese chars).
+- expert_summary: 1-2 neutral Chinese sentences on supply/demand/price impact (<= 80 Chinese chars).
+- china_impact: one of [利好, 中性, 利空] (objective impact on China's related industry/market).
+- china_risk_trend: one of [加强, 持平, 缓和].
+- minerals: array of mentioned minerals (empty if none).
+- entities: array of up to 8 key companies/projects/institutions.
+- action_type: one of [Investment, Regulation, Discovery, Price, Geopolitics, Other].
+- china_involved: boolean; china_dependency: [None, Low, Medium, High]; china_role: [Supplier, Processor, Investor, Policy, Mentioned].
+- Scores: supply_risk_score, policy_risk_score, price_pressure_score, risk_score, confidence are integers 0-100; risk_level and importance_score are integers 1-5 aligned with risk_score.
+- Forecast windows: forecast_6m and forecast_12m ONLY, each {{"price_pressure":"Up|Down|Neutral","confidence":0-100}}. Do NOT output forecast_24m or forecast_48m.
+- recommendations_strategy & recommendations_tactical: if importance_score <= 2, return [] for both. If importance_score >= 3, return 1-2 concise neutral industry/market watchpoints each (<= 45 Chinese chars per item).
+{recommendation_rule}- key_evidence: 2-3 factual points directly from the article (<= 50 Chinese chars each).
+- assumptions: up to 2 evidence gaps (<= 40 Chinese chars each).
 - audience_fit: one of [investor, industry, policy, mixed].
+- valid_input: true; reject_reason: "".
 
-Required JSON fields:
-- valid_input
-- reject_reason
-- summary_zh
-- country_primary
-- event_location
-- minerals
-- entities
-- action_type
-- risk_level
-- importance_score
-- china_involved
-- china_dependency
-- china_role
-- confidence
-- china_impact
-- china_risk_trend
-- expert_summary
-- recommendations_strategy
-- recommendations_tactical
-- supply_risk_score
-- policy_risk_score
-- price_pressure_score
-- risk_score
-- forecast_6m
-- forecast_12m
-- forecast_24m
-- forecast_48m
-- key_evidence
-- assumptions
-- audience_fit
+JSON keys when valid_input=true:
+valid_input, reject_reason, summary_zh, country_primary, event_location, minerals, entities, action_type, risk_level, importance_score, china_involved, china_dependency, china_role, confidence, china_impact, china_risk_trend, expert_summary, recommendations_strategy, recommendations_tactical, supply_risk_score, policy_risk_score, price_pressure_score, risk_score, forecast_6m, forecast_12m, key_evidence, assumptions, audience_fit
 
 Article:
 {content}
@@ -229,71 +243,36 @@ Article:
 
     def _build_en_prompt(self, content, context_block):
         recommendation_rule = (
-            "- Each recommendation must follow: verb + object + rationale + time window.\n"
+            "- Each watchpoint follows: signal/action + object + rationale + time window.\n"
             if self.prompt_version == "v2"
             else ""
         )
         return f"""
-Role (persona):
-- Chinese: {PERSONA_ZH_INTEL}
-- English: {PERSONA_EN_INTEL}
+Role: {PERSONA_EN_INTEL}
 
-You are a rare earths and critical minerals intelligence analyst serving Western governments, investors, and corporations.
-Your analysis must focus on supply-chain security, de-risking from China, and competitive positioning.
-Analyze the article and return ONLY a JSON object (no markdown, no commentary).
-If the content is not about rare earths or critical minerals, return null.
+You are an objective global rare earths and critical minerals market analyst serving institutional investors, commodity traders, and supply-chain researchers.
+Report factual supply, demand, capacity, pricing, and regulatory developments neutrally. Do NOT produce confrontational geopolitical strategies or policy advocacy.
+Return ONLY one strict JSON object (no markdown, no commentary).
 
-Input quality rules:
-- The article body below has already been cleaned into plain text.
-- Ignore any residual navigation, cookie, subscription, share, and promotional fragments.
-- Base every conclusion only on explicit facts in the article.
-- If fewer than {self.prompt_min_evidence_sentences} fact sentences exist, return null.
+Early-exit rule:
+- If the article is NOT primarily about rare earths/critical minerals or has fewer than {self.prompt_min_evidence_sentences} factual sentences, output ONLY:
+  {{"valid_input":false,"reject_reason":"off_topic"}}
 
-Western perspective output:
-- impact_west must be one of [Positive, Neutral, Negative].
-- risk_trend_west must be one of [Intensifying, Stable, Easing].
-- expert_summary_en must be 1-2 English sentences for Western decision makers.
-- recommendations_strategy_en is an array of 2-3 strategic suggestions (policy/industry chain).
-- recommendations_tactical_en is an array of 2-3 tactical actions (investment/M&A/stockpile/reshoring).
-{recommendation_rule}
-Scores:
-- supply_risk_score, policy_risk_score, price_pressure_score, risk_score are integers 0-100.
-- risk_level and importance_score are integers 1-5 and should align with risk_score.
-- confidence is an integer 0-100.
-
-Forecast windows:
-- forecast_6m/12m/24m/48m are objects with price_pressure (Up|Down|Neutral) and confidence (0-100).
-
-Output rules:
-- valid_input is a boolean.
-- reject_reason is empty on success or one of [insufficient_evidence, invalid_input].
-- key_evidence: up to 3 evidence points from the article.
-- assumptions: up to 3 evidence gaps or assumptions.
+Concise output rules (valid_input=true):
+- summary_en: concise neutral English summary (<= 65 words).
+- impact_west: one of [Positive, Neutral, Negative] (objective commercial impact on international/non-China markets and buyers).
+- risk_trend_west: one of [Intensifying, Stable, Easing] (supply/price volatility trend for international buyers).
+- expert_summary_en: 1-2 neutral English sentences on market implications (<= 45 words).
+- recommendations_strategy_en: 1-2 concise commercial/research watchpoints (<= 20 words each).
+- recommendations_tactical_en: 1-2 concise near-term market/operational tracking items (<= 20 words each).
+{recommendation_rule}- key_evidence: 2-3 factual points directly from the article (<= 25 words each).
+- assumptions: up to 2 evidence gaps (<= 20 words each).
 - audience_fit: one of [investor, industry, policy, mixed].
+- valid_input: true; reject_reason: "".
+- Do NOT output numeric scores or multi-year forecasts (inherited automatically).
 
-Required JSON fields:
-- valid_input
-- reject_reason
-- summary_en
-- impact_west
-- risk_trend_west
-- expert_summary_en
-- recommendations_strategy_en
-- recommendations_tactical_en
-- supply_risk_score
-- policy_risk_score
-- price_pressure_score
-- risk_score
-- risk_level
-- importance_score
-- confidence
-- forecast_6m
-- forecast_12m
-- forecast_24m
-- forecast_48m
-- key_evidence
-- assumptions
-- audience_fit
+JSON keys when valid_input=true:
+valid_input, reject_reason, summary_en, impact_west, risk_trend_west, expert_summary_en, recommendations_strategy_en, recommendations_tactical_en, key_evidence, assumptions, audience_fit
 
 Article:
 {content}
@@ -303,6 +282,8 @@ Article:
     def _guard_input(self, text, prompt_key):
         guard = guard_article_text(text, self.config)
         if not guard.get("pass"):
+            reason = guard.get("reason", "invalid_input")
+            self.last_failure_reason = reason
             meta = dict(guard.get("stats") or {})
             signals = guard.get("pollution_signals") or []
             if signals:
@@ -313,14 +294,25 @@ Article:
                 prompt_key=prompt_key,
                 input_quality=guard.get("quality", "invalid_input"),
                 fallback_used=False,
-                fallback_reason=guard.get("reason", "invalid_input"),
+                fallback_reason=reason,
                 meta=meta,
             )
             return None
         return guard
 
-    def _analyze_common(self, text, context_summary, prompt_key, prompt_builder, normalizer, summary_key):
+    def _analyze_common(
+        self,
+        text,
+        context_summary,
+        prompt_key,
+        prompt_builder,
+        normalizer,
+        summary_key,
+        model=None,
+    ):
+        self.last_failure_reason = ""
         if not text:
+            self.last_failure_reason = "empty_input"
             _append_prompt_qc_log(
                 self.config,
                 module="extractor",
@@ -337,6 +329,7 @@ Article:
 
         content = guard.get("prompt_text") or ""
         if not content:
+            self.last_failure_reason = "empty_prompt_text"
             _append_prompt_qc_log(
                 self.config,
                 module="extractor",
@@ -350,15 +343,17 @@ Article:
 
         context_block = self._build_context_block(context_summary)
         prompt = prompt_builder(content, context_block)
+        active_model = model or self.model
 
         try:
             response = _generate_with_timeout(
-                self.model,
+                active_model,
                 prompt,
                 self.analyze_timeout_seconds,
             )
         except concurrent.futures.TimeoutError:
             print("[!] Gemini request timed out")
+            self.last_failure_reason = "timeout"
             _append_prompt_qc_log(
                 self.config,
                 module="extractor",
@@ -370,6 +365,7 @@ Article:
             )
             return None
         except Exception:
+            self.last_failure_reason = "gemini_exception"
             _append_prompt_qc_log(
                 self.config,
                 module="extractor",
@@ -383,6 +379,7 @@ Article:
 
         raw_text = _safe_response_text(response)
         if not raw_text.strip():
+            self.last_failure_reason = "empty_response"
             _append_prompt_qc_log(
                 self.config,
                 module="extractor",
@@ -394,8 +391,22 @@ Article:
             )
             return None
 
+        if _is_null_response(raw_text):
+            self.last_failure_reason = "off_topic"
+            _append_prompt_qc_log(
+                self.config,
+                module="extractor",
+                prompt_key=prompt_key,
+                input_quality="invalid_input",
+                fallback_used=False,
+                fallback_reason="off_topic",
+                meta=guard.get("stats"),
+            )
+            return None
+
         data = extract_json(raw_text)
         if data is None:
+            self.last_failure_reason = "invalid_json"
             _append_prompt_qc_log(
                 self.config,
                 module="extractor",
@@ -411,19 +422,26 @@ Article:
             valid_input = data.get("valid_input")
             reject_reason = str(data.get("reject_reason", "")).strip()
             if valid_input is False or reject_reason:
+                reason = reject_reason or "model_rejected"
+                self.last_failure_reason = reason
                 _append_prompt_qc_log(
                     self.config,
                     module="extractor",
                     prompt_key=prompt_key,
-                    input_quality="invalid_input" if reject_reason == "invalid_input" else "insufficient_evidence",
+                    input_quality=(
+                        "invalid_input"
+                        if reason in {"invalid_input", "off_topic"}
+                        else "insufficient_evidence"
+                    ),
                     fallback_used=False,
-                    fallback_reason=reject_reason or "model_rejected",
+                    fallback_reason=reason,
                     meta=guard.get("stats"),
                 )
                 return None
 
         normalized = normalizer(data)
         if normalized is None:
+            self.last_failure_reason = "normalizer_failed"
             _append_prompt_qc_log(
                 self.config,
                 module="extractor",
@@ -443,6 +461,7 @@ Article:
         normalized["audience_fit"] = audience_fit
 
         if len(key_evidence) < self.prompt_min_evidence_sentences:
+            self.last_failure_reason = "too_few_evidence_sentences"
             _append_prompt_qc_log(
                 self.config,
                 module="extractor",
@@ -455,6 +474,7 @@ Article:
             return None
 
         if not str(normalized.get(summary_key, "")).strip():
+            self.last_failure_reason = "missing_summary"
             _append_prompt_qc_log(
                 self.config,
                 module="extractor",
@@ -485,6 +505,7 @@ Article:
             prompt_builder=self._build_zh_prompt,
             normalizer=normalize_analysis,
             summary_key="summary_zh",
+            model=self.model,
         )
 
     def analyze_en(self, text, context_summary=""):
@@ -493,8 +514,9 @@ Article:
             context_summary=context_summary,
             prompt_key="extractor_en",
             prompt_builder=self._build_en_prompt,
-            normalizer=normalize_analysis_en,
+            normalizer=_normalize_en_result,
             summary_key="summary_en",
+            model=self.model_en,
         )
 
     def _normalize_daily_report(self, data):
@@ -540,7 +562,7 @@ Article:
                 prompt = f"""
 Role (persona): {PERSONA_EN_DAILY}
 
-You are an intelligence editor. Write a concise daily report in English for Western decision makers.
+You are a neutral intelligence editor. Write a concise daily report in English for global market and supply-chain readers.
 Use the event list below. Output ONLY JSON with fields: headline, body, bullets.
 Constraints:
 - headline: short and clear (<= 12 words).
@@ -555,7 +577,7 @@ Event list:
                 prompt = f"""
 Role (persona): {PERSONA_EN_DAILY}
 
-You are an intelligence editor. Write a concise daily report in English for Western decision makers.
+You are a neutral intelligence editor. Write a concise daily report in English for global market and supply-chain readers.
 Use the event list below. Output ONLY JSON with fields: headline, body, bullets.
 Constraints:
 - headline: short and clear (<= 12 words).
@@ -571,7 +593,7 @@ Event list:
                 prompt = f"""
 角色设定：{PERSONA_ZH_DAILY}
 
-你是情报编辑，请基于事件清单撰写中文日报（给中国决策者）。
+你是中立客观的情报编辑，请基于事件清单撰写中文市场日报（面向产业与投资者读者）。
 只输出 JSON，字段为：headline, body, bullets。
 要求：
 - headline：<= 20 个汉字。
@@ -586,7 +608,7 @@ Event list:
                 prompt = f"""
 角色设定：{PERSONA_ZH_DAILY}
 
-You are an intelligence editor. Write a concise daily report in Chinese for Chinese decision makers.
+You are a neutral intelligence editor. Write a concise daily report in Chinese for industry and market readers.
 Use the event list below. Output ONLY JSON with fields: headline, body, bullets.
 Constraints:
 - headline: <= 20 Chinese characters.
