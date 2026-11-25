@@ -33,6 +33,49 @@ FACT_HINT_RE = re.compile(
     re.I,
 )
 
+# High-precision domain signals that pass prefilter on a single match.
+DOMAIN_STRONG_EN_RE = re.compile(
+    r"(?i)\b("
+    r"rare\s*earths?|rees?|reo|lree|hree|ndpr|ndfeb|smco|"
+    r"permanent\s+magnets?|magnet\s+recycl\w*|monazite|bastnaesite|ion[- ]adsorption\s+clay|"
+    r"neodymium|praseodymium|dysprosium|terbium|lanthanum|cerium|samarium|europium|"
+    r"gadolinium|holmium|erbium|thulium|ytterbium|lutetium|yttrium|scandium|promethium|"
+    r"critical\s+(?:minerals?|materials?|raw\s+materials?)|strategic\s+minerals?|"
+    r"gallium|germanium|antimony|tungsten|graphite|iridium|platinum\s+group|silicon\s+carbide|"
+    r"lynas|mp\s+materials|iluka|arafura|aclara|hastings\s+technology|energy\s+fuels|"
+    r"ucore|pensana|mkango|lindian|niocorp|northern\s+minerals|rainbow\s+rare|"
+    r"ramaco|usa\s+rare\s+earth|neo\s+performance|shenghe|mountain\s+pass|mt\s+weld|"
+    r"yangibana|browns\s+range|nolans\s+project|nechalacho|caremag|"
+    r"australian\s+strategic\s+materials|brazilian\s+rare|defense\s+metals|"
+    r"critical\s+metals|rare\s+element\s+resources|texas\s+mineral|geomega|"
+    r"avalon\s+advanced|integral\s+metals"
+    r")\b"
+)
+
+DOMAIN_STRONG_ZH_RE = re.compile(
+    r"("
+    r"稀土|镨钕|氧化镨钕|氧化铽|氧化镝|氧化镧|氧化铈|钕铁硼|永磁|磁材|磁体|"
+    r"独居石|氟碳铈矿|离子型稀土|轻稀土|重稀土|中重稀土|"
+    r"关键矿产|战略矿产|金属镓|氧化镓|金属锗|氧化锗|金属锑|钨矿|仲钨酸铵|"
+    r"开采指标|冶炼分离|分离冶炼|稀土配额|"
+    r"北方稀土|中国稀土|盛和资源|中稀有色|广晟有色|金力永磁|中科三环|正海磁材|"
+    r"宁波韵升|大地熊|银河磁体|英洛华|包钢稀土|龙磁科技|天和磁材|中科磁业|"
+    r"华宏科技|有研新材|厦门钨业|第一稀元素"
+    r")"
+)
+
+# Broader battery/industrial minerals require a supply-chain/mining context term
+# so generic consumer-electronics or EV reviews are filtered out locally.
+DOMAIN_BROAD_MINERAL_RE = re.compile(
+    r"(?i)(\b(?:lithium|cobalt|nickel|magnesium|fluorine|zircon\w*)\b|锂矿|钴矿|镍矿|金属镁|萤石|石墨|锆)"
+)
+DOMAIN_SUPPLY_CONTEXT_RE = re.compile(
+    r"(?i)(\b(?:mine|mining|miner|deposit|ore|oxide|concentrate|refinery|refining|smelter|"
+    r"processing|separation|offtake|supply\s*chain|export\s*control|export\s*restriction|"
+    r"tariff|quota|stockpile|drilling|feasibility|resource\s*estimate)\b|"
+    r"矿山|矿区|矿床|采矿|选矿|冶炼|精炼|分离|产能|供应链|出口管制|配额|关税|储备|勘探|资源量)"
+)
+
 
 def _html_ratio(raw_text):
     raw = str(raw_text or "")
@@ -70,11 +113,47 @@ def clean_model_input(raw_text):
     return text.strip()
 
 
+def prefilter_domain_relevance(title, text, config=None):
+    """Zero-cost local relevance gate before calling the LLM."""
+    if config is not None and not getattr(config, "prefilter_domain_enabled", True):
+        return {"pass": True, "reason": "disabled", "matched": []}
+
+    max_chars = 4000
+    if config is not None:
+        max_chars = int(getattr(config, "input_guard_max_prompt_chars", 4000) or 4000)
+
+    sample = f"{title or ''}\n{str(text or '')[:max_chars]}".strip()
+    if not sample:
+        return {"pass": False, "reason": "off_topic_prefilter", "matched": []}
+
+    matched = []
+    for pattern in (DOMAIN_STRONG_EN_RE, DOMAIN_STRONG_ZH_RE):
+        for match in pattern.finditer(sample):
+            token = match.group(0).strip()
+            if token and token.lower() not in {m.lower() for m in matched}:
+                matched.append(token)
+            if len(matched) >= 5:
+                break
+        if len(matched) >= 5:
+            break
+
+    if matched:
+        return {"pass": True, "reason": "ok", "matched": matched}
+
+    broad_match = DOMAIN_BROAD_MINERAL_RE.search(sample)
+    if broad_match and DOMAIN_SUPPLY_CONTEXT_RE.search(sample):
+        ctx_match = DOMAIN_SUPPLY_CONTEXT_RE.search(sample)
+        tokens = [broad_match.group(0).strip(), ctx_match.group(0).strip()]
+        return {"pass": True, "reason": "ok", "matched": tokens}
+
+    return {"pass": False, "reason": "off_topic_prefilter", "matched": []}
+
+
 def guard_article_text(raw_text, config):
     raw = str(raw_text or "")
     max_raw_len = int(getattr(config, "input_guard_max_raw_len", 50000) or 50000)
     max_prompt_chars = int(
-        getattr(config, "input_guard_max_prompt_chars", 12000) or 12000
+        getattr(config, "input_guard_max_prompt_chars", 4000) or 4000
     )
     min_text_len = int(getattr(config, "input_guard_min_text_len", 240) or 240)
     max_script_hits = int(getattr(config, "input_guard_max_script_hits", 2) or 2)

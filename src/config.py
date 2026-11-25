@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+VALID_EN_ANALYSIS_MODES = {"high_score", "all", "off"}
+
 
 def _get_env(key, default=None):
     value = os.getenv(key)
@@ -46,6 +48,13 @@ def _get_list(key, default):
     if value is None:
         return default
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _get_en_analysis_mode(default="high_score"):
+    raw = str(_get_env("EN_ANALYSIS_MODE", default) or default).strip().lower()
+    if raw in VALID_EN_ANALYSIS_MODES:
+        return raw
+    return default
 
 
 def _load_custom_keywords(path):
@@ -167,6 +176,13 @@ class Config:
     content_variants_top_n: int
     content_variants_timeout_seconds: int
     content_variants_max_content_chars: int
+    en_analysis_mode: str = "high_score"
+    en_min_importance: int = 4
+    en_min_risk_score: int = 70
+    analyze_max_output_tokens: int = 900
+    analyze_en_max_output_tokens: int = 500
+    prefilter_domain_enabled: bool = True
+    rejected_url_ttl_days: int = 14
 
     @classmethod
     def from_env(cls):
@@ -272,7 +288,7 @@ class Config:
             input_guard_max_script_hits=_get_int("INPUT_GUARD_MAX_SCRIPT_HITS", 2),
             input_guard_min_text_len=_get_int("INPUT_GUARD_MIN_TEXT_LEN", 240),
             input_guard_max_raw_len=_get_int("INPUT_GUARD_MAX_RAW_LEN", 50000),
-            input_guard_max_prompt_chars=_get_int("INPUT_GUARD_MAX_PROMPT_CHARS", 12000),
+            input_guard_max_prompt_chars=_get_int("INPUT_GUARD_MAX_PROMPT_CHARS", 4000),
             prompt_min_evidence_sentences=_get_int("PROMPT_MIN_EVIDENCE_SENTENCES", 2),
             show_related_context=_get_bool("SHOW_RELATED_CONTEXT", False),
             content_variants_enabled=_get_bool("CONTENT_VARIANTS_ENABLED", True),
@@ -282,6 +298,13 @@ class Config:
             content_variants_top_n=_get_int("CONTENT_VARIANTS_TOP_N", 5),
             content_variants_timeout_seconds=_get_int("CONTENT_VARIANTS_TIMEOUT_SECONDS", 20),
             content_variants_max_content_chars=_get_int("CONTENT_VARIANTS_MAX_CONTENT_CHARS", 8000),
+            en_analysis_mode=_get_en_analysis_mode("high_score"),
+            en_min_importance=_get_int("EN_MIN_IMPORTANCE", 4),
+            en_min_risk_score=_get_int("EN_MIN_RISK_SCORE", 70),
+            analyze_max_output_tokens=_get_int("ANALYZE_MAX_OUTPUT_TOKENS", 900),
+            analyze_en_max_output_tokens=_get_int("ANALYZE_EN_MAX_OUTPUT_TOKENS", 500),
+            prefilter_domain_enabled=_get_bool("PREFILTER_DOMAIN_ENABLED", True),
+            rejected_url_ttl_days=_get_int("REJECTED_URL_TTL_DAYS", 14),
         )
 
 

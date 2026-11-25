@@ -1,8 +1,32 @@
 import json
 import os
 from collections import deque
+from datetime import datetime, timedelta
 
 from .utils import hash_url, isoformat, now_cst
+
+# Only deterministic rejections may be cached; transient API/network failures
+# (timeout, gemini_exception, empty_response, invalid_json, fetch_fail) are excluded.
+CACHEABLE_REJECT_REASONS = {
+    "off_topic_prefilter",
+    "off_topic",
+    "model_rejected",
+    "insufficient_evidence",
+    "invalid_input",
+    "too_few_evidence_sentences",
+    "missing_summary",
+    "too_short",
+    "empty_input",
+    "empty_after_clean",
+    "cleaned_too_short",
+    "wrapper_noise",
+    "navigation_noise",
+    "script_noise",
+    "noise_tokens",
+    "html_wrapper",
+    "html_ratio",
+    "official_homepage",
+}
 
 
 class Storage:
@@ -28,6 +52,10 @@ class Storage:
     @property
     def jsonl_path(self):
         return os.path.join(self.config.data_dir, "intel.jsonl")
+
+    @property
+    def rejected_urls_path(self):
+        return os.path.join(self.config.data_dir, "status", "rejected_urls.jsonl")
 
     @property
     def content_variants_jsonl_path(self):
@@ -88,6 +116,65 @@ class Storage:
                 except json.JSONDecodeError:
                     continue
         return seen
+
+    def load_rejected_ids(self, ttl_days=None, now=None):
+        if ttl_days is None:
+            ttl_days = int(getattr(self.config, "rejected_url_ttl_days", 14) or 0)
+        if ttl_days <= 0 or not os.path.exists(self.rejected_urls_path):
+            return set()
+
+        current = now or now_cst()
+        cutoff = current - timedelta(days=ttl_days)
+        rejected = set()
+
+        with open(self.rejected_urls_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                record_id = str(entry.get("id") or "").strip()
+                if not record_id:
+                    continue
+                raw_ts = str(entry.get("rejected_at") or "").strip()
+                if not raw_ts:
+                    continue
+                try:
+                    ts = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+                if ts.tzinfo is None and current.tzinfo is not None:
+                    ts = ts.replace(tzinfo=current.tzinfo)
+                elif ts.tzinfo is not None and current.tzinfo is not None:
+                    ts = ts.astimezone(current.tzinfo)
+                if ts >= cutoff:
+                    rejected.add(record_id)
+        return rejected
+
+    def append_rejected_url(self, url, reason):
+        ttl_days = int(getattr(self.config, "rejected_url_ttl_days", 14) or 0)
+        if ttl_days <= 0 or not url:
+            return False
+        reason_str = str(reason or "").strip()
+        if reason_str not in CACHEABLE_REJECT_REASONS:
+            return False
+
+        os.makedirs(os.path.dirname(self.rejected_urls_path), exist_ok=True)
+        payload = {
+            "id": hash_url(url),
+            "url": str(url),
+            "reason": reason_str,
+            "rejected_at": isoformat(now_cst()),
+        }
+        with open(self.rejected_urls_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=False))
+            f.write("\n")
+        return True
 
     def is_seen(self, url, seen_ids):
         return hash_url(url) in seen_ids
@@ -168,22 +255,38 @@ class Storage:
             "assumptions_en": analysis_en.get("assumptions", []),
             "audience_fit_en": analysis_en.get("audience_fit", "mixed"),
             "supply_risk_score_en": analysis_en.get(
-                "supply_risk_score_en", 50
+                "supply_risk_score_en", analysis.get("supply_risk_score", 50)
             ),
             "policy_risk_score_en": analysis_en.get(
-                "policy_risk_score_en", 50
+                "policy_risk_score_en", analysis.get("policy_risk_score", 50)
             ),
             "price_pressure_score_en": analysis_en.get(
-                "price_pressure_score_en", 50
+                "price_pressure_score_en", analysis.get("price_pressure_score", 50)
             ),
-            "risk_score_en": analysis_en.get("risk_score_en", 50),
-            "risk_level_en": analysis_en.get("risk_level_en", 3),
-            "importance_score_en": analysis_en.get("importance_score_en", 3),
-            "confidence_en": analysis_en.get("confidence_en", 60),
-            "forecast_6m_en": analysis_en.get("forecast_6m_en", {}),
-            "forecast_12m_en": analysis_en.get("forecast_12m_en", {}),
-            "forecast_24m_en": analysis_en.get("forecast_24m_en", {}),
-            "forecast_48m_en": analysis_en.get("forecast_48m_en", {}),
+            "risk_score_en": analysis_en.get(
+                "risk_score_en", analysis.get("risk_score", 50)
+            ),
+            "risk_level_en": analysis_en.get(
+                "risk_level_en", analysis.get("risk_level", 3)
+            ),
+            "importance_score_en": analysis_en.get(
+                "importance_score_en", analysis.get("importance_score", 3)
+            ),
+            "confidence_en": analysis_en.get(
+                "confidence_en", analysis.get("confidence", 60)
+            ),
+            "forecast_6m_en": analysis_en.get(
+                "forecast_6m_en", analysis.get("forecast_6m", {})
+            ),
+            "forecast_12m_en": analysis_en.get(
+                "forecast_12m_en", analysis.get("forecast_12m", {})
+            ),
+            "forecast_24m_en": analysis_en.get(
+                "forecast_24m_en", analysis.get("forecast_24m", {})
+            ),
+            "forecast_48m_en": analysis_en.get(
+                "forecast_48m_en", analysis.get("forecast_48m", {})
+            ),
             "analysis_with_context": bool(analysis_with_context),
             "related_context": related_context or [],
             "content_source": content_source,

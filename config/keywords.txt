@@ -1,4 +1,3 @@
-
 # Company-specific (precision)
 # Core rare earth terms
 # Critical materials & policy (DOE/USGS aligned)
@@ -6,39 +5,37 @@
 # LREE/HREE specific minerals
 # Precision expansions (high-signal)
 # Project-specific (precision)
-ALCONIX
+ALCONIX rare earth
 Aclara Resources
 American Rare Earths
-American Resources
+American Resources rare earth
 Arafura Rare Earths
 Arafura rare earth
-Asaka理研
+Asaka理研 稀土
 Australian Strategic Materials
 Avalon Advanced Materials
 Brazilian Rare Earths
 Browns Range rare earth
 China Northern Rare Earth
 China Rare Earth Group
-Critical Metals
+Critical Metals rare earth
 Defense Metals
-ENVIPRO HOLDINGS
-Energy Fuels
+ENVIPRO HOLDINGS rare earth
 Energy Fuels rare earth
-Fortescue Metals
+Fortescue Metals rare earth
 Geomega Resources
 Hastings Technology Metals
 Hastings rare earth
-IDEA
-Iluka Resources
+Iluka Resources rare earth
 Iluka rare earth
 Integral Metals
-JTEKT
+JTEKT rare earth magnet
 Lindian Resources
 Lynas Rare Earths
 Lynas rare earth
 MP Materials
 MP Materials rare earth
-Mitsuba
+Mitsuba rare earth magnet
 Mkango Resources
 Mountain Pass rare earth
 Mt Weld rare earth
@@ -48,19 +45,19 @@ NdPr oxide
 Nechalacho rare earth
 Neo Performance Materials
 Neo Performance Materials rare earth
-Nidec
+Nidec rare earth magnet
 NioCorp Developments
 Nolans rare earth
 Northern Minerals
 Northern Minerals rare earth
 Pensana
-REE
-REO
+"REE" rare earth
+"REO" rare earth oxide
 Rainbow Rare Earths
-Ramaco Resources
+Ramaco Resources rare earth
 Rare Element Resources
 Shenghe Resources rare earth
-TDK
+TDK rare earth magnet
 Texas Mineral Resources
 USA Rare Earth
 Ucore Rare Metals
@@ -136,80 +133,79 @@ terbium project
 thulium project
 ytterbium project
 yttrium project
-万朗磁塑
-三井海洋开发
-三叶
-三川智慧
-三菱材料
-三菱电机
-东丽
-东亚建设工业
-东方锆业
-东洋工程
+万朗磁塑 稀土
+三井海洋开发 稀土
+三川智慧 稀土
+三菱材料 稀土
+三菱电机 稀土
+东丽 稀土
+东亚建设工业 稀土
+东方锆业 稀土
+东洋工程 稀土
 中国稀土
-中国铝业
+中国铝业 稀土
 中科三环
 中科磁业
 中稀有色
-中色股份
-中钢天源
-中铝国际
-丰田汽车
-丰田通商
-丸红
-久吾高科
-九菱科技
-京运通
-住友商事
-佳宏股份
-信越化学工业
-包钢
+中色股份 稀土
+中钢天源 稀土
+中铝国际 稀土
+丰田汽车 稀土
+丰田通商 稀土
+丸红 稀土
+久吾高科 稀土
+九菱科技 稀土
+京运通 稀土
+住友商事 稀土
+佳宏股份 稀土
+信越化学工业 稀土
+包钢 稀土
 北方稀土
-北矿科技
-华宏科技
-卧龙电驱
-厦门钨业
-双日
-古河机械金属
-同和控股
-国瓷材料
-大同特殊钢
+北矿科技 稀土
+华宏科技 稀土
+卧龙电驱 稀土
+厦门钨业 稀土
+双日 稀土
+古河机械金属 稀土
+同和控股 稀土
+国瓷材料 稀土
+大同特殊钢 稀土
 大地熊
-大洋电机
+大洋电机 稀土
 天和磁材
-天通股份
-奔朗新材
-威孚高科
+天通股份 稀土
+奔朗新材 稀土
+威孚高科 稀土
 宁波韵升
-宇晶股份
-安泰科技
-尼得科
-岩谷产业
-惠城环保
-捷太格特
-新莱福
-有研新材
-本田
-松田产业
-横店东磁
+宇晶股份 稀土
+安泰科技 稀土
+尼得科 稀土
+岩谷产业 稀土
+惠城环保 稀土
+捷太格特 稀土
+新莱福 稀土
+有研新材 稀土
+本田 稀土
+松田产业 稀土
+横店东磁 稀土
 正海磁材
-潍柴动力
-焦作万方
+潍柴动力 稀土
+焦作万方 稀土
 盛和资源
-石油资源开发
-科净源
-科恒股份
-立中集团
+石油资源开发 稀土
+科净源 稀土
+科恒股份 稀土
+立中集团 稀土
 第一稀元素化学工业
-美蓓亚三美
-苏美达
-英威腾
-英思特
+美蓓亚三美 稀土
+苏美达 稀土
+英威腾 稀土
+英思特 稀土
 英洛华
 金力永磁
-金力股份
-钢研纳克
+金力股份 稀土
+钢研纳克 稀土
 银河磁体
-阿石创
-领益智造
+阿石创 稀土
+领益智造 稀土
 龙磁科技
