@@ -26,6 +26,15 @@ FORBIDDEN_STANCE_TERMS = [
     "中国战略安全",
 ]
 
+# Must stay longer than input_guard_min_text_len (default 240) so the input
+# guard passes and the test reaches the early-exit / token-cap logic.
+SAMPLE_ARTICLE = (
+    "Lynas Rare Earths announced a $120 million separation upgrade at its Malaysian plant in 2026. "
+    "NdPr oxide output reached 1,850 tons in Q3, up 14 percent year-on-year according to the quarterly report. "
+    "The company signed a three-year offtake agreement covering 600 tons annually with a Japanese magnet maker. "
+    "Site works are scheduled to begin in the second quarter of 2027, subject to final permits."
+)
+
 
 def _make_test_config(tmpdir, **overrides):
     base = Config.from_env()
@@ -258,11 +267,6 @@ class TestCostAndPromptGuard(unittest.TestCase):
     def test_extractor_early_exit_null_and_max_output_tokens(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             cfg = _make_test_config(tmpdir, analyze_max_output_tokens=900, analyze_en_max_output_tokens=500)
-            valid_article = (
-                "Lynas Rare Earths announced a $120 million separation upgrade in 2026. "
-                "NdPr oxide output reached 1,850 tons in Q3, up 14% year-on-year. "
-                "The company signed a 3-year offtake agreement covering 600 tons annually."
-            )
 
             with patch("src.extractor.genai") as mock_genai:
                 zh_model = MagicMock()
@@ -277,16 +281,21 @@ class TestCostAndPromptGuard(unittest.TestCase):
                 zh_model.generate_content.return_value = SimpleNamespace(
                     text='{"valid_input":false,"reject_reason":"off_topic"}'
                 )
-                self.assertIsNone(extractor.analyze(valid_article))
+                self.assertIsNone(extractor.analyze(SAMPLE_ARTICLE))
                 self.assertEqual(extractor.last_failure_reason, "off_topic")
 
                 zh_model.generate_content.return_value = SimpleNamespace(text="null")
-                self.assertIsNone(extractor.analyze(valid_article))
+                self.assertIsNone(extractor.analyze(SAMPLE_ARTICLE))
                 self.assertEqual(extractor.last_failure_reason, "off_topic")
 
                 zh_model.generate_content.return_value = SimpleNamespace(text="{truncated json")
-                self.assertIsNone(extractor.analyze(valid_article))
+                self.assertIsNone(extractor.analyze(SAMPLE_ARTICLE))
                 self.assertEqual(extractor.last_failure_reason, "invalid_json")
+
+                # Transient failures must stay distinguishable from deterministic rejects.
+                zh_model.generate_content.side_effect = Exception("network down")
+                self.assertIsNone(extractor.analyze(SAMPLE_ARTICLE))
+                self.assertEqual(extractor.last_failure_reason, "gemini_exception")
 
     def test_e2e_pipeline_prefilter_reject_cache_and_en_gate(self):
         with tempfile.TemporaryDirectory() as tmpdir:
